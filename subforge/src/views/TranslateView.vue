@@ -18,6 +18,10 @@ import {
   Globe,
   Key,
   Zap,
+  Info,
+  HelpCircle,
+  ChevronDown,
+  ChevronUp,
 } from "lucide-vue-next";
 
 const translateStore = useTranslateStore();
@@ -25,6 +29,8 @@ const appStore = useAppStore();
 
 const selectedFile = ref("");
 const translating = ref(false);
+const enginesExpanded = ref(false);
+const showEngineHelp = ref<EngineType | null>(null);
 
 const fileName = computed(() => {
   if (!selectedFile.value) return null;
@@ -32,11 +38,53 @@ const fileName = computed(() => {
   return parts[parts.length - 1];
 });
 
-const engines: { id: EngineType; label: string; icon: typeof Brain; desc: string }[] = [
-  { id: "ollama", label: "Ollama", icon: Brain, desc: "Local LLM via Ollama" },
-  { id: "libretranslate", label: "LibreTranslate", icon: Globe, desc: "Self-hosted MT" },
-  { id: "deepl", label: "DeepL", icon: Zap, desc: "Cloud API (BYOK)" },
-  { id: "openai", label: "OpenAI", icon: Key, desc: "Cloud API (BYOK)" },
+const engines: { id: EngineType; label: string; icon: typeof Brain }[] = [
+  { id: "ollama", label: "Ollama", icon: Brain },
+  { id: "libretranslate", label: "LibreTranslate", icon: Globe },
+  { id: "deepl", label: "DeepL", icon: Zap },
+  { id: "openai", label: "OpenAI", icon: Key },
+];
+
+const engineHelp: Record<EngineType, { what: string; install: string; security: string }> = {
+  ollama: {
+    what: "Ollama runs large language models locally on your machine.",
+    install: "Install from https://ollama.com — then pull a model with: ollama pull llama3",
+    security: "Fully local — your subtitles never leave your machine. Open-source.",
+  },
+  libretranslate: {
+    what: "LibreTranslate is a self-hosted machine translation API.",
+    install: "Run via Docker: docker run -it -p 5000:5000 libretranslate/libretranslate",
+    security: "Self-hosted — you control the server. Open-source (AGPL).",
+  },
+  deepl: {
+    what: "DeepL is a cloud translation service with high-quality neural MT.",
+    install: "Get a free or Pro API key at https://www.deepl.com/pro-api",
+    security: "Cloud service — subtitles are sent to DeepL servers over HTTPS. Data handled per DeepL's privacy policy.",
+  },
+  openai: {
+    what: "OpenAI provides GPT models for high-quality translation via API.",
+    install: "Get an API key at https://platform.openai.com/api-keys",
+    security: "Cloud service — subtitles are sent to OpenAI servers over HTTPS. Review OpenAI's data usage policy.",
+  },
+};
+
+const languageOptions = [
+  { code: "auto", label: "Auto-detect" },
+  { code: "en", label: "English" },
+  { code: "ar", label: "Arabic" },
+  { code: "es", label: "Spanish" },
+  { code: "fr", label: "French" },
+  { code: "de", label: "German" },
+  { code: "ja", label: "Japanese" },
+  { code: "ko", label: "Korean" },
+  { code: "zh", label: "Chinese" },
+  { code: "ru", label: "Russian" },
+  { code: "pt", label: "Portuguese" },
+  { code: "it", label: "Italian" },
+  { code: "tr", label: "Turkish" },
+  { code: "hi", label: "Hindi" },
+  { code: "fa", label: "Persian" },
+  { code: "ur", label: "Urdu" },
 ];
 
 async function pickFile() {
@@ -98,11 +146,14 @@ onUnmounted(() => {
   <div class="flex flex-col h-full">
     <!-- Header -->
     <div class="flex items-center justify-between px-6 py-4 border-b border-border">
-      <div>
+      <div class="flex items-center gap-2">
         <h1 class="text-xl font-semibold text-text-primary">Translate</h1>
-        <p class="text-sm text-text-secondary mt-0.5">
-          Translate subtitles with AI or machine translation
-        </p>
+        <span
+          class="text-text-muted hover:text-text-secondary cursor-help"
+          title="Translate subtitles with AI or machine translation engines. Choose a local or cloud provider, set languages, and run."
+        >
+          <Info class="w-4 h-4" />
+        </span>
       </div>
       <button
         class="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg bg-accent text-white text-sm font-medium hover:bg-accent-hover active:bg-accent-active transition-colors"
@@ -127,17 +178,42 @@ onUnmounted(() => {
         </div>
       </div>
 
-      <!-- Engine Selector -->
+      <!-- Engine Selector (Collapsible) -->
       <div class="space-y-3">
-        <h2 class="text-sm font-semibold text-text-primary uppercase tracking-wide">
-          Translation Engine
-        </h2>
-        <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <div class="flex items-center justify-between">
+          <h2 class="text-sm font-semibold text-text-primary uppercase tracking-wide">
+            Translation Engine
+          </h2>
+          <button
+            class="inline-flex items-center gap-1 text-xs text-text-secondary hover:text-text-primary transition-colors"
+            @click="enginesExpanded = !enginesExpanded"
+          >
+            <component :is="enginesExpanded ? ChevronUp : ChevronDown" class="w-4 h-4" />
+            {{ enginesExpanded ? "Collapse" : "Change" }}
+          </button>
+        </div>
+
+        <!-- Collapsed: show only selected engine -->
+        <div
+          v-if="!enginesExpanded"
+          class="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-accent bg-accent/10 text-accent"
+        >
+          <component
+            :is="engines.find((e) => e.id === translateStore.selectedEngine)?.icon"
+            class="w-4 h-4"
+          />
+          <span class="text-sm font-medium">
+            {{ engines.find((e) => e.id === translateStore.selectedEngine)?.label }}
+          </span>
+        </div>
+
+        <!-- Expanded: full grid -->
+        <div v-else class="grid grid-cols-2 md:grid-cols-4 gap-3">
           <button
             v-for="engine in engines"
             :key="engine.id"
             :class="[
-              'flex flex-col items-center gap-2 p-4 rounded-lg border transition-colors text-left',
+              'relative flex flex-col items-center gap-2 p-4 rounded-lg border transition-colors text-left',
               translateStore.selectedEngine === engine.id
                 ? 'border-accent bg-accent/10 text-accent'
                 : 'border-border bg-bg-secondary text-text-secondary hover:bg-bg-hover',
@@ -146,8 +222,44 @@ onUnmounted(() => {
           >
             <component :is="engine.icon" class="w-5 h-5" />
             <span class="text-sm font-medium">{{ engine.label }}</span>
-            <span class="text-xs opacity-70">{{ engine.desc }}</span>
+            <button
+              class="absolute top-2 right-2 text-text-muted hover:text-text-primary transition-colors"
+              :title="`About ${engine.label}`"
+              @click.stop="showEngineHelp = showEngineHelp === engine.id ? null : engine.id"
+            >
+              <HelpCircle class="w-3.5 h-3.5" />
+            </button>
           </button>
+        </div>
+
+        <!-- Engine Help Panel -->
+        <div
+          v-if="showEngineHelp"
+          class="p-4 rounded-lg bg-bg-secondary border border-border space-y-2"
+        >
+          <div class="flex items-center justify-between">
+            <h3 class="text-sm font-semibold text-text-primary">
+              {{ engines.find((e) => e.id === showEngineHelp)?.label }}
+            </h3>
+            <button
+              class="text-text-muted hover:text-text-secondary transition-colors"
+              @click="showEngineHelp = null"
+            >
+              <X class="w-4 h-4" />
+            </button>
+          </div>
+          <p class="text-xs text-text-secondary">
+            <strong class="text-text-primary">What:</strong>
+            {{ engineHelp[showEngineHelp].what }}
+          </p>
+          <p class="text-xs text-text-secondary">
+            <strong class="text-text-primary">Setup:</strong>
+            {{ engineHelp[showEngineHelp].install }}
+          </p>
+          <p class="text-xs text-text-secondary">
+            <strong class="text-text-primary">Security:</strong>
+            {{ engineHelp[showEngineHelp].security }}
+          </p>
         </div>
       </div>
 
@@ -165,11 +277,11 @@ onUnmounted(() => {
                 class="flex-1 px-4 py-2.5 rounded-lg bg-bg-secondary border border-border text-sm text-text-primary focus:outline-none focus:border-accent"
               />
               <button
-                class="inline-flex items-center gap-1.5 px-3 py-2.5 rounded-lg bg-bg-tertiary text-text-primary text-xs font-medium hover:bg-bg-hover transition-colors"
+                class="inline-flex items-center justify-center w-10 h-10 rounded-lg bg-bg-tertiary text-text-primary hover:bg-bg-hover transition-colors shrink-0"
+                title="Auto-detect running Ollama instance"
                 @click="translateStore.detectOllama"
               >
-                <RefreshCw class="w-3.5 h-3.5" />
-                Detect
+                <RefreshCw class="w-4 h-4" />
               </button>
             </div>
           </div>
@@ -199,11 +311,11 @@ onUnmounted(() => {
                 class="flex-1 px-4 py-2.5 rounded-lg bg-bg-secondary border border-border text-sm text-text-primary focus:outline-none focus:border-accent"
               />
               <button
-                class="inline-flex items-center gap-1.5 px-3 py-2.5 rounded-lg bg-bg-tertiary text-text-primary text-xs font-medium hover:bg-bg-hover transition-colors"
+                class="inline-flex items-center justify-center w-10 h-10 rounded-lg bg-bg-tertiary text-text-primary hover:bg-bg-hover transition-colors shrink-0"
+                title="Auto-detect running LibreTranslate instance"
                 @click="translateStore.detectLibreTranslate"
               >
-                <RefreshCw class="w-3.5 h-3.5" />
-                Detect
+                <RefreshCw class="w-4 h-4" />
               </button>
             </div>
           </div>
@@ -259,21 +371,25 @@ onUnmounted(() => {
           <div class="grid grid-cols-2 gap-3">
             <div>
               <label class="block text-xs font-medium text-text-secondary mb-1.5">Source</label>
-              <input
+              <select
                 v-model="translateStore.sourceLang"
-                type="text"
-                placeholder="auto or en, ja..."
-                class="w-full px-4 py-2.5 rounded-lg bg-bg-secondary border border-border text-sm text-text-primary placeholder-text-muted focus:outline-none focus:border-accent"
-              />
+                class="w-full px-4 py-2.5 rounded-lg bg-bg-secondary border border-border text-sm text-text-primary focus:outline-none focus:border-accent"
+              >
+                <option v-for="lang in languageOptions" :key="lang.code" :value="lang.code">
+                  {{ lang.label }}
+                </option>
+              </select>
             </div>
             <div>
               <label class="block text-xs font-medium text-text-secondary mb-1.5">Target</label>
-              <input
+              <select
                 v-model="translateStore.targetLang"
-                type="text"
-                placeholder="es, de, fr..."
-                class="w-full px-4 py-2.5 rounded-lg bg-bg-secondary border border-border text-sm text-text-primary placeholder-text-muted focus:outline-none focus:border-accent"
-              />
+                class="w-full px-4 py-2.5 rounded-lg bg-bg-secondary border border-border text-sm text-text-primary focus:outline-none focus:border-accent"
+              >
+                <option v-for="lang in languageOptions" :key="lang.code" :value="lang.code">
+                  {{ lang.label }}
+                </option>
+              </select>
             </div>
           </div>
         </div>

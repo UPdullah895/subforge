@@ -15,6 +15,7 @@ import {
   X,
   Merge,
   ArrowLeftRight,
+  Info,
 } from "lucide-vue-next";
 
 const subtitleStore = useSubtitleStore();
@@ -192,11 +193,14 @@ onMounted(() => {
   <div class="flex flex-col h-full">
     <!-- Header -->
     <div class="flex items-center justify-between px-6 py-4 border-b border-border">
-      <div>
+      <div class="flex items-center gap-2">
         <h1 class="text-xl font-semibold text-text-primary">Subtitles</h1>
-        <p class="text-sm text-text-secondary mt-0.5">
-          Extract, merge, and convert subtitle tracks
-        </p>
+        <span
+          class="text-text-muted hover:text-text-secondary cursor-help"
+          title="Inspect video files, extract subtitle tracks to SRT/ASS/VTT, merge external subtitles into MKV, convert formats, and shift timings."
+        >
+          <Info class="w-4 h-4" />
+        </span>
       </div>
       <button
         class="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg bg-accent text-white text-sm font-medium hover:bg-accent-hover active:bg-accent-active transition-colors"

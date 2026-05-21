@@ -1,7 +1,7 @@
 import { defineStore } from "pinia";
 import { apiInvoke } from "../api/client";
 import { ref } from "vue";
-
+import { useJobQueue } from "../composables/useJobQueue";
 
 export interface WhisperInfo {
   faster_whisper_version: string;
@@ -9,20 +9,12 @@ export interface WhisperInfo {
   devices: string[];
 }
 
-export interface TranscribeJob {
-  id: string;
-  status: "pending" | "running" | "completed" | "failed";
-  input_file: string;
-  progress: number;
-  message?: string;
-}
-
 export const useTranscribeStore = defineStore("transcribe", () => {
   const whisperInfo = ref<WhisperInfo | null>(null);
   const downloadedModels = ref<string[]>([]);
   const loadingInfo = ref(false);
   const downloadingModel = ref<string | null>(null);
-  const jobs = ref<TranscribeJob[]>([]);
+  const { jobs, addJob, updateJobProgress, completeJob, clearCompleted } = useJobQueue();
 
   const allModels = [
     "tiny",
@@ -99,37 +91,10 @@ export const useTranscribeStore = defineStore("transcribe", () => {
         },
       });
 
-      jobs.value.push({
-        id: jobId,
-        status: "pending",
-        input_file: options.input,
-        progress: 0,
-      });
+      addJob(jobId, options.input);
     } catch (e) {
       console.error("Failed to start transcription:", e);
     }
-  }
-
-  function updateJobProgress(jobId: string, progress: number, message?: string) {
-    const job = jobs.value.find((j) => j.id === jobId);
-    if (job) {
-      job.progress = progress;
-      job.status = "running";
-      if (message) job.message = message;
-    }
-  }
-
-  function completeJob(jobId: string, status: string, message?: string) {
-    const job = jobs.value.find((j) => j.id === jobId);
-    if (job) {
-      job.status = status as "completed" | "failed";
-      job.progress = 100;
-      if (message) job.message = message;
-    }
-  }
-
-  function clearCompleted() {
-    jobs.value = jobs.value.filter((j) => j.status === "running" || j.status === "pending");
   }
 
   return {

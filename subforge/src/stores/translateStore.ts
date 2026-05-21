@@ -1,7 +1,7 @@
 import { defineStore } from "pinia";
 import { apiInvoke } from "../api/client";
 import { ref } from "vue";
-
+import { useJobQueue } from "../composables/useJobQueue";
 
 export interface OllamaInfo {
   available: boolean;
@@ -16,14 +16,6 @@ export interface LibreLanguage {
 export interface LibreInfo {
   available: boolean;
   languages: LibreLanguage[];
-}
-
-export interface TranslateJob {
-  id: string;
-  status: "pending" | "running" | "completed" | "failed";
-  input_file: string;
-  progress: number;
-  message?: string;
 }
 
 export type EngineType = "ollama" | "libretranslate" | "deepl" | "openai";
@@ -41,7 +33,7 @@ export const useTranslateStore = defineStore("translate", () => {
   const deeplPro = ref(false);
   const openaiKey = ref("");
   const openaiModel = ref("gpt-4o-mini");
-  const jobs = ref<TranslateJob[]>([]);
+  const { jobs, addJob, updateJobProgress, completeJob, clearCompleted } = useJobQueue();
   const previewOriginal = ref<string[]>([]);
   const previewTranslated = ref<string[]>([]);
 
@@ -99,39 +91,12 @@ export const useTranslateStore = defineStore("translate", () => {
       const jobId = await apiInvoke<string>("translate_subtitles", {
         request: options,
       });
-      jobs.value.push({
-        id: jobId,
-        status: "pending",
-        input_file: input,
-        progress: 0,
-      });
+      addJob(jobId, input);
       return jobId;
     } catch (e) {
       console.error("Failed to start translation:", e);
       return null;
     }
-  }
-
-  function updateJobProgress(jobId: string, progress: number, message?: string) {
-    const job = jobs.value.find((j) => j.id === jobId);
-    if (job) {
-      job.progress = progress;
-      job.status = "running";
-      if (message) job.message = message;
-    }
-  }
-
-  function completeJob(jobId: string, status: string, message?: string) {
-    const job = jobs.value.find((j) => j.id === jobId);
-    if (job) {
-      job.status = status as "completed" | "failed";
-      job.progress = 100;
-      if (message) job.message = message;
-    }
-  }
-
-  function clearCompleted() {
-    jobs.value = jobs.value.filter((j) => j.status === "running" || j.status === "pending");
   }
 
   function setPreview(original: string[], translated: string[]) {

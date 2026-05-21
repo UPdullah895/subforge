@@ -12,12 +12,10 @@ import {
   Loader2,
   CheckCircle2,
   Download,
-
-
-
   X,
   XCircle,
   Play,
+  Info,
 } from "lucide-vue-next";
 
 const transcribeStore = useTranscribeStore();
@@ -114,11 +112,14 @@ onUnmounted(() => {
   <div class="flex flex-col h-full">
     <!-- Header -->
     <div class="flex items-center justify-between px-6 py-4 border-b border-border">
-      <div>
+      <div class="flex items-center gap-2">
         <h1 class="text-xl font-semibold text-text-primary">Speech to Text</h1>
-        <p class="text-sm text-text-secondary mt-0.5">
-          Transcribe audio and video to subtitles with Whisper
-        </p>
+        <span
+          class="text-text-muted hover:text-text-secondary cursor-help"
+          title="Transcribe audio and video to subtitles using faster-whisper. Choose a model, set options, and run."
+        >
+          <Info class="w-4 h-4" />
+        </span>
       </div>
       <button
         class="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg bg-accent text-white text-sm font-medium hover:bg-accent-hover active:bg-accent-active transition-colors"
@@ -185,12 +186,12 @@ onUnmounted(() => {
               <button
                 v-if="!isModelDownloaded"
                 :disabled="transcribeStore.downloadingModel === selectedModel"
-                class="inline-flex items-center gap-1.5 px-3 py-2.5 rounded-lg bg-bg-tertiary text-text-primary text-xs font-medium hover:bg-bg-hover transition-colors disabled:opacity-50"
+                class="inline-flex items-center justify-center w-10 h-10 rounded-lg bg-bg-tertiary text-text-primary hover:bg-bg-hover transition-colors disabled:opacity-50 shrink-0"
+                title="Download this model"
                 @click="transcribeStore.downloadModel(selectedModel)"
               >
-                <Loader2 v-if="transcribeStore.downloadingModel === selectedModel" class="w-3.5 h-3.5 animate-spin" />
-                <Download v-else class="w-3.5 h-3.5" />
-                Download
+                <Loader2 v-if="transcribeStore.downloadingModel === selectedModel" class="w-4 h-4 animate-spin" />
+                <Download v-else class="w-4 h-4" />
               </button>
             </div>
             <p v-if="!isModelDownloaded" class="text-xs text-warning mt-1.5">

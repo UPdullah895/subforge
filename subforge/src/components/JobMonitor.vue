@@ -3,6 +3,7 @@ import { ref, onMounted, onUnmounted } from "vue";
 import { apiListen } from "../api/events";
 import type { UnlistenFn } from "@tauri-apps/api/event";
 import { Loader2, CheckCircle2, XCircle } from "lucide-vue-next";
+import { JOB_STATUS } from "../constants/jobStatus";
 
 interface JobEvent {
   job_id: string;
@@ -26,7 +27,7 @@ onUnmounted(() => {
 
 function clearCompleted() {
   for (const [id, job] of jobs.value) {
-    if (job.status === "completed" || job.status === "failed") {
+    if (job.status === JOB_STATUS.COMPLETED || job.status === JOB_STATUS.FAILED) {
       jobs.value.delete(id);
     }
   }
@@ -53,11 +54,11 @@ function clearCompleted() {
         class="flex items-center gap-3 px-4 py-3 rounded-lg bg-bg-secondary border border-border"
       >
         <CheckCircle2
-          v-if="job.status === 'completed'"
+          v-if="job.status === JOB_STATUS.COMPLETED"
           class="w-4 h-4 text-success shrink-0"
         />
         <XCircle
-          v-else-if="job.status === 'failed'"
+          v-else-if="job.status === JOB_STATUS.FAILED"
           class="w-4 h-4 text-error shrink-0"
         />
         <Loader2 v-else class="w-4 h-4 text-accent animate-spin shrink-0" />

@@ -6,7 +6,6 @@ import { useAppStore } from "../stores/appStore";
 import AudioTrackTable from "../components/AudioTrackTable.vue";
 import {
   FolderOpen,
-
   Loader2,
   AlertTriangle,
   Volume2,
@@ -15,6 +14,7 @@ import {
   CheckCircle2,
   XCircle,
   X,
+  Info,
 } from "lucide-vue-next";
 
 const audioStore = useAudioStore();
@@ -101,11 +101,14 @@ onMounted(() => {
   <div class="flex flex-col h-full">
     <!-- Header -->
     <div class="flex items-center justify-between px-6 py-4 border-b border-border">
-      <div>
+      <div class="flex items-center gap-2">
         <h1 class="text-xl font-semibold text-text-primary">Audio</h1>
-        <p class="text-sm text-text-secondary mt-0.5">
-          Extract, merge, and remove audio tracks
-        </p>
+        <span
+          class="text-text-muted hover:text-text-secondary cursor-help"
+          title="Extract audio tracks from video, merge external audio into containers, and remove unwanted audio tracks."
+        >
+          <Info class="w-4 h-4" />
+        </span>
       </div>
       <div class="flex items-center gap-2">
         <button

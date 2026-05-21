@@ -1,8 +1,8 @@
 import { defineStore } from "pinia";
 import { apiInvoke } from "../api/client";
 import { ref } from "vue";
+import { useJobQueue } from "../composables/useJobQueue";
 
-// Track type is defined in the Rust backend and used via JSON
 interface Track {
   id: number;
   track_type: string;
@@ -28,20 +28,12 @@ export interface ScanOptions {
   extensions: string[];
 }
 
-export interface BatchJob {
-  id: string;
-  status: "pending" | "running" | "completed" | "failed";
-  input_file: string;
-  message?: string;
-  progress: number;
-}
-
 export const useBatchStore = defineStore("batch", () => {
   const scannedFiles = ref<VideoFileInfo[]>([]);
   const selectedFiles = ref<Set<string>>(new Set());
   const loading = ref(false);
   const error = ref<string | null>(null);
-  const jobs = ref<BatchJob[]>([]);
+  const { jobs, addJob, clearAll } = useJobQueue();
 
   async function scanDirectory(path: string, recursive: boolean = true) {
     loading.value = true;
@@ -74,12 +66,7 @@ export const useBatchStore = defineStore("batch", () => {
       });
 
       jobIds.forEach((id, i) => {
-        jobs.value.push({
-          id,
-          status: "pending",
-          input_file: files[i] || "",
-          progress: 0,
-        });
+        addJob(id, files[i] || "");
       });
     } catch (e) {
       error.value = String(e);
@@ -103,7 +90,7 @@ export const useBatchStore = defineStore("batch", () => {
   }
 
   function clearJobs() {
-    jobs.value = [];
+    clearAll();
   }
 
   return {

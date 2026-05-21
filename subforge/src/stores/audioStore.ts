@@ -1,7 +1,7 @@
 import { defineStore } from "pinia";
 import { apiInvoke } from "../api/client";
 import { ref } from "vue";
-
+import { JOB_STATUS, type JobStatus } from "../constants/jobStatus";
 
 export interface AudioTrackInfo {
   id: number;
@@ -14,7 +14,7 @@ export interface AudioTrackInfo {
 export interface AudioJob {
   id: string;
   type: "extract" | "merge" | "remove";
-  status: "running" | "completed" | "failed";
+  status: JobStatus;
   message?: string;
 }
 
@@ -42,15 +42,11 @@ export const useAudioStore = defineStore("audio", () => {
     }
   }
 
-  async function extractTrack(
-    trackIndex: number,
-    outputPath: string,
-    format?: string
-  ) {
+  async function extractTrack(trackIndex: number, outputPath: string, format?: string) {
     const job: AudioJob = {
       id: `extract-${trackIndex}-${Date.now()}`,
       type: "extract",
-      status: "running",
+      status: JOB_STATUS.RUNNING,
     };
     jobs.value.push(job);
 
@@ -61,10 +57,10 @@ export const useAudioStore = defineStore("audio", () => {
         outputPath,
         format,
       });
-      job.status = "completed";
+      job.status = JOB_STATUS.COMPLETED;
       job.message = `Saved to ${outputPath}`;
     } catch (e) {
-      job.status = "failed";
+      job.status = JOB_STATUS.FAILED;
       job.message = String(e);
     }
   }
@@ -73,7 +69,7 @@ export const useAudioStore = defineStore("audio", () => {
     const job: AudioJob = {
       id: `merge-${Date.now()}`,
       type: "merge",
-      status: "running",
+      status: JOB_STATUS.RUNNING,
     };
     jobs.value.push(job);
 
@@ -83,10 +79,10 @@ export const useAudioStore = defineStore("audio", () => {
         audioPath,
         outputPath,
       });
-      job.status = "completed";
+      job.status = JOB_STATUS.COMPLETED;
       job.message = `Saved to ${outputPath}`;
     } catch (e) {
-      job.status = "failed";
+      job.status = JOB_STATUS.FAILED;
       job.message = String(e);
     }
   }
@@ -95,7 +91,7 @@ export const useAudioStore = defineStore("audio", () => {
     const job: AudioJob = {
       id: `remove-${Date.now()}`,
       type: "remove",
-      status: "running",
+      status: JOB_STATUS.RUNNING,
     };
     jobs.value.push(job);
 
@@ -104,10 +100,10 @@ export const useAudioStore = defineStore("audio", () => {
         filePath: selectedFile.value,
         outputPath,
       });
-      job.status = "completed";
+      job.status = JOB_STATUS.COMPLETED;
       job.message = `Saved to ${outputPath}`;
     } catch (e) {
-      job.status = "failed";
+      job.status = JOB_STATUS.FAILED;
       job.message = String(e);
     }
   }

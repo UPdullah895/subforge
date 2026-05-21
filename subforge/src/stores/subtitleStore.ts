@@ -1,7 +1,7 @@
 import { defineStore } from "pinia";
 import { apiInvoke } from "../api/client";
 import { ref } from "vue";
-
+import { JOB_STATUS, type JobStatus } from "../constants/jobStatus";
 
 export interface TrackInfo {
   id: number;
@@ -16,7 +16,7 @@ export interface TrackInfo {
 export interface ExtractJob {
   id: string;
   trackId: number;
-  status: "pending" | "running" | "completed" | "failed";
+  status: JobStatus;
   message?: string;
 }
 
@@ -48,7 +48,7 @@ export const useSubtitleStore = defineStore("subtitle", () => {
     const job: ExtractJob = {
       id: `${trackId}-${Date.now()}`,
       trackId,
-      status: "running",
+      status: JOB_STATUS.RUNNING,
     };
     extractJobs.value.push(job);
 
@@ -58,10 +58,10 @@ export const useSubtitleStore = defineStore("subtitle", () => {
         trackId,
         outputPath,
       });
-      job.status = "completed";
+      job.status = JOB_STATUS.COMPLETED;
       job.message = `Saved to ${outputPath}`;
     } catch (e) {
-      job.status = "failed";
+      job.status = JOB_STATUS.FAILED;
       job.message = String(e);
     }
   }

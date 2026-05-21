@@ -11,7 +11,7 @@ import {
   AlertTriangle,
   FileVideo,
   Download,
-
+  Info,
 } from "lucide-vue-next";
 
 const batchStore = useBatchStore();
@@ -62,11 +62,14 @@ onMounted(() => {
   <div class="flex flex-col h-full">
     <!-- Header -->
     <div class="flex items-center justify-between px-6 py-4 border-b border-border">
-      <div>
+      <div class="flex items-center gap-2">
         <h1 class="text-xl font-semibold text-text-primary">Batch Operations</h1>
-        <p class="text-sm text-text-secondary mt-0.5">
-          Process multiple files at once
-        </p>
+        <span
+          class="text-text-muted hover:text-text-secondary cursor-help"
+          title="Scan directories for video files and run batch subtitle extraction across multiple files at once."
+        >
+          <Info class="w-4 h-4" />
+        </span>
       </div>
       <button
         class="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg bg-accent text-white text-sm font-medium hover:bg-accent-hover active:bg-accent-active transition-colors"
