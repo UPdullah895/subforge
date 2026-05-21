@@ -30,10 +30,10 @@ export type EngineType = "ollama" | "libretranslate" | "deepl" | "openai";
 
 export const useTranslateStore = defineStore("translate", () => {
   const selectedEngine = ref<EngineType>("ollama");
-  const ollamaHost = ref("http://localhost:11434");
+  const ollamaHost = ref(import.meta.env.VITE_OLLAMA_HOST ?? "http://localhost:11434");
   const ollamaModels = ref<string[]>([]);
   const selectedOllamaModel = ref("");
-  const libreHost = ref("http://localhost:5000");
+  const libreHost = ref(import.meta.env.VITE_LIBRE_HOST ?? "http://localhost:5000");
   const libreLanguages = ref<LibreLanguage[]>([]);
   const sourceLang = ref("en");
   const targetLang = ref("es");

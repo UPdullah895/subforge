@@ -69,8 +69,8 @@ function trackLabel(track: TrackInfo) {
           <td class="px-4 py-3 text-right">
             <button
               v-if="track.track_type === 'subtitles'"
-              @click="emit('extract', track)"
               class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-accent/10 text-accent text-xs font-medium hover:bg-accent hover:text-white transition-colors"
+              @click="emit('extract', track)"
             >
               <Download class="w-3.5 h-3.5" />
               Extract

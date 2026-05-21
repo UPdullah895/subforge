@@ -59,7 +59,6 @@ const navItems = [
       <button
         v-for="item in navItems"
         :key="item.id"
-        @click="item.active ? emit('navigate', item.id) : undefined"
         :class="[
           'flex items-center gap-3 w-full px-3 py-2.5 rounded-lg text-sm font-medium transition-colors',
           props.current === item.id
@@ -69,6 +68,7 @@ const navItems = [
               : 'text-text-muted cursor-not-allowed opacity-60',
         ]"
         :title="app.sidebarCollapsed ? item.label : undefined"
+        @click="item.active ? emit('navigate', item.id) : undefined"
       >
         <component :is="item.icon" class="w-5 h-5 shrink-0" />
         <span
@@ -91,9 +91,9 @@ const navItems = [
     <!-- Footer -->
     <div class="p-2 border-t border-border space-y-1">
       <button
-        @click="app.toggleSidebar"
         class="flex items-center gap-3 w-full px-3 py-2.5 rounded-lg text-sm font-medium text-text-secondary hover:bg-bg-hover hover:text-text-primary transition-colors"
         :title="app.sidebarCollapsed ? 'Expand' : 'Collapse'"
+        @click="app.toggleSidebar"
       >
         <PanelLeftClose v-if="!app.sidebarCollapsed" class="w-5 h-5 shrink-0" />
         <PanelLeftOpen v-else class="w-5 h-5 shrink-0" />

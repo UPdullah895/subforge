@@ -109,15 +109,15 @@ onMounted(() => {
       </div>
       <div class="flex items-center gap-2">
         <button
-          @click="mergeAudio"
           class="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg bg-bg-tertiary text-text-primary text-sm font-medium hover:bg-bg-hover transition-colors"
+          @click="mergeAudio"
         >
           <Merge class="w-4 h-4" />
           Merge Audio
         </button>
         <button
-          @click="pickFile"
           class="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg bg-accent text-white text-sm font-medium hover:bg-accent-hover active:bg-accent-active transition-colors"
+          @click="pickFile"
         >
           <FolderOpen class="w-4 h-4" />
           Open Video
@@ -156,8 +156,8 @@ onMounted(() => {
           <p class="text-xs text-text-muted">{{ audioStore.tracks.length }} audio tracks</p>
         </div>
         <button
-          @click="removeAllAudio"
           class="ml-auto inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-error/10 text-error text-xs font-medium hover:bg-error hover:text-white transition-colors"
+          @click="removeAllAudio"
         >
           <VolumeX class="w-3.5 h-3.5" />
           Remove All
@@ -207,8 +207,8 @@ onMounted(() => {
           Open a video file to view and extract its audio tracks.
         </p>
         <button
-          @click="pickFile"
           class="mt-4 inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-bg-tertiary text-text-primary text-sm font-medium hover:bg-bg-hover transition-colors"
+          @click="pickFile"
         >
           <FolderOpen class="w-4 h-4" />
           Browse
@@ -222,8 +222,8 @@ onMounted(() => {
             Recent Jobs
           </h2>
           <button
-            @click="audioStore.clearJobs"
             class="text-xs text-text-muted hover:text-text-secondary transition-colors"
+            @click="audioStore.clearJobs"
           >
             Clear
           </button>
@@ -244,8 +244,8 @@ onMounted(() => {
               </p>
             </div>
             <button
-              @click="audioStore.jobs = audioStore.jobs.filter((j) => j.id !== job.id)"
               class="text-text-muted hover:text-text-secondary transition-colors"
+              @click="audioStore.jobs = audioStore.jobs.filter((j) => j.id !== job.id)"
             >
               <X class="w-4 h-4" />
             </button>

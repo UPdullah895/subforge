@@ -69,8 +69,8 @@ onMounted(() => {
         </p>
       </div>
       <button
-        @click="pickDirectory"
         class="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg bg-accent text-white text-sm font-medium hover:bg-accent-hover active:bg-accent-active transition-colors"
+        @click="pickDirectory"
       >
         <FolderOpen class="w-4 h-4" />
         Scan Directory
@@ -110,9 +110,9 @@ onMounted(() => {
           </div>
           <div class="flex items-center gap-2">
             <button
-              @click="runBatchExtract"
               :disabled="selectedCount === 0"
               class="inline-flex items-center gap-1.5 px-3 py-2 rounded-md bg-accent/10 text-accent text-xs font-medium hover:bg-accent hover:text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              @click="runBatchExtract"
             >
               <Download class="w-3.5 h-3.5" />
               Extract Subs
@@ -124,7 +124,7 @@ onMounted(() => {
           :files="batchStore.scannedFiles"
           :selected="batchStore.selectedFiles"
           @toggle="toggleSelection"
-          @toggleAll="toggleAll"
+          @toggle-all="toggleAll"
         />
       </template>
 
@@ -143,8 +143,8 @@ onMounted(() => {
           Select a directory to recursively scan for video files and preview their tracks.
         </p>
         <button
-          @click="pickDirectory"
           class="mt-4 inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-bg-tertiary text-text-primary text-sm font-medium hover:bg-bg-hover transition-colors"
+          @click="pickDirectory"
         >
           <FolderOpen class="w-4 h-4" />
           Browse

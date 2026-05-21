@@ -199,8 +199,8 @@ onMounted(() => {
         </p>
       </div>
       <button
-        @click="pickFile"
         class="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg bg-accent text-white text-sm font-medium hover:bg-accent-hover active:bg-accent-active transition-colors"
+        @click="pickFile"
       >
         <FolderOpen class="w-4 h-4" />
         Open Video
@@ -210,35 +210,35 @@ onMounted(() => {
     <!-- Tabs -->
     <div class="flex items-center gap-1 px-6 pt-4 border-b border-border">
       <button
-        @click="activeTab = 'tracks'"
         :class="[
           'px-4 py-2 text-sm font-medium rounded-t-lg transition-colors',
           activeTab === 'tracks'
             ? 'bg-bg-secondary text-accent border-b-2 border-accent'
             : 'text-text-secondary hover:text-text-primary',
         ]"
+        @click="activeTab = 'tracks'"
       >
         Tracks
       </button>
       <button
-        @click="activeTab = 'merge'"
         :class="[
           'px-4 py-2 text-sm font-medium rounded-t-lg transition-colors',
           activeTab === 'merge'
             ? 'bg-bg-secondary text-accent border-b-2 border-accent'
             : 'text-text-secondary hover:text-text-primary',
         ]"
+        @click="activeTab = 'merge'"
       >
         Merge
       </button>
       <button
-        @click="activeTab = 'convert'"
         :class="[
           'px-4 py-2 text-sm font-medium rounded-t-lg transition-colors',
           activeTab === 'convert'
             ? 'bg-bg-secondary text-accent border-b-2 border-accent'
             : 'text-text-secondary hover:text-text-primary',
         ]"
+        @click="activeTab = 'convert'"
       >
         Convert & Retime
       </button>
@@ -307,7 +307,7 @@ onMounted(() => {
           </div>
           <h3 class="text-base font-medium text-text-primary">No file selected</h3>
           <p class="text-sm text-text-secondary mt-1 max-w-sm">Open a video file to enumerate its tracks and extract subtitles.</p>
-          <button @click="pickFile" class="mt-4 inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-bg-tertiary text-text-primary text-sm font-medium hover:bg-bg-hover transition-colors">
+          <button class="mt-4 inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-bg-tertiary text-text-primary text-sm font-medium hover:bg-bg-hover transition-colors" @click="pickFile">
             <FolderOpen class="w-4 h-4" /> Browse
           </button>
         </div>
@@ -315,7 +315,7 @@ onMounted(() => {
         <div v-if="subtitleStore.extractJobs.length > 0" class="space-y-2">
           <div class="flex items-center justify-between">
             <h2 class="text-sm font-semibold text-text-primary uppercase tracking-wide">Recent Jobs</h2>
-            <button @click="subtitleStore.clearJobs" class="text-xs text-text-muted hover:text-text-secondary">Clear</button>
+            <button class="text-xs text-text-muted hover:text-text-secondary" @click="subtitleStore.clearJobs">Clear</button>
           </div>
           <div class="space-y-2">
             <div v-for="job in subtitleStore.extractJobs" :key="job.id" class="flex items-center gap-3 px-4 py-3 rounded-lg bg-bg-secondary border border-border">
@@ -326,7 +326,7 @@ onMounted(() => {
                 <p class="text-sm text-text-primary">Track #{{ job.trackId }}</p>
                 <p v-if="job.message" class="text-xs text-text-secondary truncate">{{ job.message }}</p>
               </div>
-              <button @click="subtitleStore.extractJobs = subtitleStore.extractJobs.filter((j) => j.id !== job.id)" class="text-text-muted hover:text-text-secondary">
+              <button class="text-text-muted hover:text-text-secondary" @click="subtitleStore.extractJobs = subtitleStore.extractJobs.filter((j) => j.id !== job.id)">
                 <X class="w-4 h-4" />
               </button>
             </div>
@@ -342,7 +342,7 @@ onMounted(() => {
           <div class="space-y-3">
             <div>
               <label class="block text-xs font-medium text-text-secondary mb-1.5">Video file</label>
-              <button @click="pickMergeVideo" class="flex items-center gap-2 w-full px-4 py-2.5 rounded-lg bg-bg-secondary border border-border text-sm text-text-primary hover:bg-bg-hover transition-colors text-left">
+              <button class="flex items-center gap-2 w-full px-4 py-2.5 rounded-lg bg-bg-secondary border border-border text-sm text-text-primary hover:bg-bg-hover transition-colors text-left" @click="pickMergeVideo">
                 <FileVideo class="w-4 h-4 text-text-muted" />
                 <span class="truncate">{{ mergeVideoPath || "Select video file..." }}</span>
               </button>
@@ -350,7 +350,7 @@ onMounted(() => {
 
             <div>
               <label class="block text-xs font-medium text-text-secondary mb-1.5">Subtitle file</label>
-              <button @click="pickMergeSubtitle" class="flex items-center gap-2 w-full px-4 py-2.5 rounded-lg bg-bg-secondary border border-border text-sm text-text-primary hover:bg-bg-hover transition-colors text-left">
+              <button class="flex items-center gap-2 w-full px-4 py-2.5 rounded-lg bg-bg-secondary border border-border text-sm text-text-primary hover:bg-bg-hover transition-colors text-left" @click="pickMergeSubtitle">
                 <Merge class="w-4 h-4 text-text-muted" />
                 <span class="truncate">{{ mergeSubtitlePath || "Select subtitle file..." }}</span>
               </button>
@@ -362,9 +362,9 @@ onMounted(() => {
             </div>
 
             <button
-              @click="runMerge"
               :disabled="!mergeVideoPath || !mergeSubtitlePath || mergeLoading"
               class="w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-accent text-white text-sm font-medium hover:bg-accent-hover active:bg-accent-active transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              @click="runMerge"
             >
               <Loader2 v-if="mergeLoading" class="w-4 h-4 animate-spin" />
               <Merge v-else class="w-4 h-4" />
@@ -391,7 +391,7 @@ onMounted(() => {
 
             <div>
               <label class="block text-xs font-medium text-text-secondary mb-1.5">Subtitle file</label>
-              <button @click="pickConvertInput" class="flex items-center gap-2 w-full px-4 py-2.5 rounded-lg bg-bg-secondary border border-border text-sm text-text-primary hover:bg-bg-hover transition-colors text-left">
+              <button class="flex items-center gap-2 w-full px-4 py-2.5 rounded-lg bg-bg-secondary border border-border text-sm text-text-primary hover:bg-bg-hover transition-colors text-left" @click="pickConvertInput">
                 <ArrowLeftRight class="w-4 h-4 text-text-muted" />
                 <span class="truncate">{{ convertInputPath || "Select subtitle file..." }}</span>
               </button>
@@ -408,9 +408,9 @@ onMounted(() => {
             </div>
 
             <button
-              @click="runConvert"
               :disabled="!convertInputPath || convertLoading"
               class="w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-accent text-white text-sm font-medium hover:bg-accent-hover active:bg-accent-active transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              @click="runConvert"
             >
               <Loader2 v-if="convertLoading" class="w-4 h-4 animate-spin" />
               <ArrowLeftRight v-else class="w-4 h-4" />
@@ -433,9 +433,9 @@ onMounted(() => {
             </div>
 
             <button
-              @click="runShift"
               :disabled="!convertInputPath || convertLoading"
               class="w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-bg-tertiary text-text-primary text-sm font-medium hover:bg-bg-hover transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              @click="runShift"
             >
               <Loader2 v-if="convertLoading" class="w-4 h-4 animate-spin" />
               Shift Timing

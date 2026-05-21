@@ -41,8 +41,8 @@ function toggleAll() {
             <input
               type="checkbox"
               :checked="allSelected"
-              @change="toggleAll"
               class="rounded border-border bg-bg-primary text-accent focus:ring-accent"
+              @change="toggleAll"
             />
           </th>
           <th class="px-4 py-3 font-medium">File</th>
@@ -59,8 +59,8 @@ function toggleAll() {
               <input
                 type="checkbox"
                 :checked="props.selected.has(file.path)"
-                @change="emit('toggle', file.path)"
                 class="rounded border-border bg-bg-primary text-accent focus:ring-accent"
+                @change="emit('toggle', file.path)"
               />
             </td>
             <td class="px-4 py-3">
@@ -73,7 +73,7 @@ function toggleAll() {
             <td class="px-4 py-3 text-center text-text-muted">{{ file.audio_count }}</td>
             <td class="px-4 py-3 text-center text-text-muted">{{ file.subtitle_count }}</td>
             <td class="px-4 py-3">
-              <button @click="toggleExpand(file.path)" class="text-text-muted hover:text-text-primary">
+              <button class="text-text-muted hover:text-text-primary" @click="toggleExpand(file.path)">
                 <ChevronDown v-if="expanded.has(file.path)" class="w-4 h-4" />
                 <ChevronRight v-else class="w-4 h-4" />
               </button>

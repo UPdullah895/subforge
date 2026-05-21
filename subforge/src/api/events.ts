@@ -5,7 +5,7 @@ const isTauri =
   !!(window as unknown as Record<string, unknown>).__TAURI__;
 
 let ws: WebSocket | null = null;
-let wsListeners: Map<string, ((payload: unknown) => void)[]> = new Map();
+const wsListeners: Map<string, ((payload: unknown) => void)[]> = new Map();
 
 function ensureWs(): WebSocket {
   if (!ws || ws.readyState !== WebSocket.OPEN) {

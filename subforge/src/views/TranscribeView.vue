@@ -121,8 +121,8 @@ onUnmounted(() => {
         </p>
       </div>
       <button
-        @click="pickFile"
         class="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg bg-accent text-white text-sm font-medium hover:bg-accent-hover active:bg-accent-active transition-colors"
+        @click="pickFile"
       >
         <FolderOpen class="w-4 h-4" />
         Open Media
@@ -184,9 +184,9 @@ onUnmounted(() => {
               </select>
               <button
                 v-if="!isModelDownloaded"
-                @click="transcribeStore.downloadModel(selectedModel)"
                 :disabled="transcribeStore.downloadingModel === selectedModel"
                 class="inline-flex items-center gap-1.5 px-3 py-2.5 rounded-lg bg-bg-tertiary text-text-primary text-xs font-medium hover:bg-bg-hover transition-colors disabled:opacity-50"
+                @click="transcribeStore.downloadModel(selectedModel)"
               >
                 <Loader2 v-if="transcribeStore.downloadingModel === selectedModel" class="w-3.5 h-3.5 animate-spin" />
                 <Download v-else class="w-3.5 h-3.5" />
@@ -260,9 +260,9 @@ onUnmounted(() => {
 
       <!-- Transcribe Button -->
       <button
-        @click="startTranscription"
         :disabled="!selectedFile || transcribing"
         class="w-full md:w-auto inline-flex items-center justify-center gap-2 px-6 py-3 rounded-lg bg-accent text-white text-sm font-medium hover:bg-accent-hover active:bg-accent-active transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+        @click="startTranscription"
       >
         <Loader2 v-if="transcribing" class="w-4 h-4 animate-spin" />
         <Play v-else class="w-4 h-4" />
@@ -276,8 +276,8 @@ onUnmounted(() => {
             Transcription Jobs
           </h2>
           <button
-            @click="transcribeStore.clearCompleted"
             class="text-xs text-text-muted hover:text-text-secondary transition-colors"
+            @click="transcribeStore.clearCompleted"
           >
             Clear completed
           </button>
@@ -297,8 +297,8 @@ onUnmounted(() => {
                 <p v-if="job.message" class="text-xs text-text-secondary truncate">{{ job.message }}</p>
               </div>
               <button
-                @click="transcribeStore.jobs = transcribeStore.jobs.filter((j) => j.id !== job.id)"
                 class="text-text-muted hover:text-text-secondary transition-colors"
+                @click="transcribeStore.jobs = transcribeStore.jobs.filter((j) => j.id !== job.id)"
               >
                 <X class="w-4 h-4" />
               </button>
@@ -329,8 +329,8 @@ onUnmounted(() => {
           Open an audio or video file to transcribe it to subtitles.
         </p>
         <button
-          @click="pickFile"
           class="mt-4 inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-bg-tertiary text-text-primary text-sm font-medium hover:bg-bg-hover transition-colors"
+          @click="pickFile"
         >
           <FolderOpen class="w-4 h-4" />
           Browse

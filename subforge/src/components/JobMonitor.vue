@@ -40,8 +40,8 @@ function clearCompleted() {
         Background Jobs
       </h3>
       <button
-        @click="clearCompleted"
         class="text-xs text-text-muted hover:text-text-secondary transition-colors"
+        @click="clearCompleted"
       >
         Clear completed
       </button>

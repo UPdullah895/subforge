@@ -105,8 +105,8 @@ onUnmounted(() => {
         </p>
       </div>
       <button
-        @click="pickFile"
         class="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg bg-accent text-white text-sm font-medium hover:bg-accent-hover active:bg-accent-active transition-colors"
+        @click="pickFile"
       >
         <FolderOpen class="w-4 h-4" />
         Open Subtitle
@@ -136,13 +136,13 @@ onUnmounted(() => {
           <button
             v-for="engine in engines"
             :key="engine.id"
-            @click="translateStore.selectedEngine = engine.id"
             :class="[
               'flex flex-col items-center gap-2 p-4 rounded-lg border transition-colors text-left',
               translateStore.selectedEngine === engine.id
                 ? 'border-accent bg-accent/10 text-accent'
                 : 'border-border bg-bg-secondary text-text-secondary hover:bg-bg-hover',
             ]"
+            @click="translateStore.selectedEngine = engine.id"
           >
             <component :is="engine.icon" class="w-5 h-5" />
             <span class="text-sm font-medium">{{ engine.label }}</span>
@@ -165,8 +165,8 @@ onUnmounted(() => {
                 class="flex-1 px-4 py-2.5 rounded-lg bg-bg-secondary border border-border text-sm text-text-primary focus:outline-none focus:border-accent"
               />
               <button
-                @click="translateStore.detectOllama"
                 class="inline-flex items-center gap-1.5 px-3 py-2.5 rounded-lg bg-bg-tertiary text-text-primary text-xs font-medium hover:bg-bg-hover transition-colors"
+                @click="translateStore.detectOllama"
               >
                 <RefreshCw class="w-3.5 h-3.5" />
                 Detect
@@ -199,8 +199,8 @@ onUnmounted(() => {
                 class="flex-1 px-4 py-2.5 rounded-lg bg-bg-secondary border border-border text-sm text-text-primary focus:outline-none focus:border-accent"
               />
               <button
-                @click="translateStore.detectLibreTranslate"
                 class="inline-flex items-center gap-1.5 px-3 py-2.5 rounded-lg bg-bg-tertiary text-text-primary text-xs font-medium hover:bg-bg-hover transition-colors"
+                @click="translateStore.detectLibreTranslate"
               >
                 <RefreshCw class="w-3.5 h-3.5" />
                 Detect
@@ -281,9 +281,9 @@ onUnmounted(() => {
 
       <!-- Translate Button -->
       <button
-        @click="startTranslation"
         :disabled="!selectedFile || translating"
         class="w-full md:w-auto inline-flex items-center justify-center gap-2 px-6 py-3 rounded-lg bg-accent text-white text-sm font-medium hover:bg-accent-hover active:bg-accent-active transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+        @click="startTranslation"
       >
         <Loader2 v-if="translating" class="w-4 h-4 animate-spin" />
         <Play v-else class="w-4 h-4" />
@@ -297,8 +297,8 @@ onUnmounted(() => {
             Translation Jobs
           </h2>
           <button
-            @click="translateStore.clearCompleted"
             class="text-xs text-text-muted hover:text-text-secondary transition-colors"
+            @click="translateStore.clearCompleted"
           >
             Clear completed
           </button>
@@ -318,8 +318,8 @@ onUnmounted(() => {
                 <p v-if="job.message" class="text-xs text-text-secondary truncate">{{ job.message }}</p>
               </div>
               <button
-                @click="translateStore.jobs = translateStore.jobs.filter((j) => j.id !== job.id)"
                 class="text-text-muted hover:text-text-secondary transition-colors"
+                @click="translateStore.jobs = translateStore.jobs.filter((j) => j.id !== job.id)"
               >
                 <X class="w-4 h-4" />
               </button>
@@ -350,8 +350,8 @@ onUnmounted(() => {
           Open a subtitle file and choose a translation engine to get started.
         </p>
         <button
-          @click="pickFile"
           class="mt-4 inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-bg-tertiary text-text-primary text-sm font-medium hover:bg-bg-hover transition-colors"
+          @click="pickFile"
         >
           <FolderOpen class="w-4 h-4" />
           Browse
