@@ -12,7 +12,10 @@
     "tauri:dev:wayland": "WEBKIT_DISABLE_DMABUF_RENDERER=1 WEBKIT_DISABLE_COMPOSITING_MODE=1 tauri dev",
     "lint": "eslint . --ext .ts,.vue",
     "lint:fix": "eslint . --ext .ts,.vue --fix",
-    "format": "prettier --write \"src/**/*.{ts,vue,css}\""
+    "format": "prettier --write \"src/**/*.{ts,vue,css}\"",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:ui": "vitest --ui"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.3.0",
@@ -27,14 +30,18 @@
   "devDependencies": {
     "@tauri-apps/cli": "^2",
     "@vitejs/plugin-vue": "^5.2.1",
+    "@vitest/ui": "^4.1.7",
+    "@vue/test-utils": "^2.4.10",
     "eslint": "^10.4.0",
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-prettier": "^5.5.5",
     "eslint-plugin-vue": "^10.9.1",
+    "jsdom": "^29.1.1",
     "prettier": "^3.8.3",
     "typescript": "~5.6.2",
     "typescript-eslint": "^8.59.4",
     "vite": "^6.0.3",
+    "vitest": "^4.1.7",
     "vue-eslint-parser": "^10.4.0",
     "vue-tsc": "^2.1.10"
   }
