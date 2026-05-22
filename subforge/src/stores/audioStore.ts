@@ -43,6 +43,10 @@ export const useAudioStore = defineStore("audio", () => {
   }
 
   async function extractTrack(trackIndex: number, outputPath: string, format?: string) {
+    if (!selectedFile.value) {
+      error.value = "No file selected.";
+      return;
+    }
     const job: AudioJob = {
       id: `extract-${trackIndex}-${Date.now()}`,
       type: "extract",
@@ -88,6 +92,10 @@ export const useAudioStore = defineStore("audio", () => {
   }
 
   async function removeAllAudio(outputPath: string) {
+    if (!selectedFile.value) {
+      error.value = "No file selected.";
+      return;
+    }
     const job: AudioJob = {
       id: `remove-${Date.now()}`,
       type: "remove",

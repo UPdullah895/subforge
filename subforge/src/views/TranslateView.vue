@@ -1,10 +1,12 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from "vue";
-import { open, save } from "@tauri-apps/plugin-dialog";
+import { ref, computed, onMounted, onUnmounted, watch } from "vue";
+import { open } from "@tauri-apps/plugin-dialog";
 import { apiListen } from "../api/events";
 import type { UnlistenFn } from "@tauri-apps/api/event";
 import { useTranslateStore, type EngineType } from "../stores/translateStore";
+import { JOB_STATUS, type JobStatus } from "../constants/jobStatus";
 import { useAppStore } from "../stores/appStore";
+import ErrorBanner from "../components/ErrorBanner.vue";
 import {
   FolderOpen,
   Languages,
@@ -27,16 +29,16 @@ import {
 const translateStore = useTranslateStore();
 const appStore = useAppStore();
 
-const selectedFile = ref("");
+const selectedFiles = ref<string[]>([]);
 const translating = ref(false);
 const enginesExpanded = ref(false);
 const showEngineHelp = ref<EngineType | null>(null);
 
-const fileName = computed(() => {
-  if (!selectedFile.value) return null;
-  const parts = selectedFile.value.split(/[/\\]/);
-  return parts[parts.length - 1];
-});
+const fileCount = computed(() => selectedFiles.value.length);
+
+const activeJob = computed(() =>
+  translateStore.jobs.find((j) => j.status === JOB_STATUS.RUNNING || j.status === JOB_STATUS.PENDING)
+);
 
 const engines: { id: EngineType; label: string; icon: typeof Brain }[] = [
   { id: "ollama", label: "Ollama", icon: Brain },
@@ -87,29 +89,70 @@ const languageOptions = [
   { code: "ur", label: "Urdu" },
 ];
 
-async function pickFile() {
+const knownLangCodes = languageOptions.map((l) => l.code).filter((c) => c !== "auto");
+const langPattern = new RegExp(`\\.(${knownLangCodes.join("|")})\\.(srt|ass|ssa|vtt)$`, "i");
+
+function detectLangFromFileName(name: string): string | null {
+  const m = name.match(langPattern);
+  return m ? m[1].toLowerCase() : null;
+}
+
+function buildOutputPath(inputPath: string, targetLang: string): string {
+  const lastSlash = Math.max(inputPath.lastIndexOf("/"), inputPath.lastIndexOf("\\"));
+  const dir = inputPath.substring(0, lastSlash + 1);
+  const name = inputPath.substring(lastSlash + 1);
+
+  // Strip existing language code if present
+  const base = name.replace(langPattern, "");
+  const extMatch = name.match(/\.(srt|ass|ssa|vtt)$/i);
+  const ext = extMatch ? extMatch[1] : "srt";
+
+  return `${dir}${base}.${targetLang}.${ext}`;
+}
+
+async function pickFiles() {
   const selected = await open({
-    multiple: false,
+    multiple: true,
     directory: false,
     filters: [{ name: "Subtitle files", extensions: ["srt", "ass", "ssa", "vtt"] }],
   });
-  if (selected && typeof selected === "string") {
-    selectedFile.value = selected;
+  if (Array.isArray(selected)) {
+    selectedFiles.value.push(...selected);
+  } else if (selected && typeof selected === "string") {
+    selectedFiles.value.push(selected);
   }
 }
 
+function removeFile(index: number) {
+  selectedFiles.value.splice(index, 1);
+}
+
+function clearFiles() {
+  selectedFiles.value = [];
+}
+
+watch(selectedFiles, (files) => {
+  if (files.length === 0) return;
+  // Detect language from the first file that has a language code
+  for (const path of files) {
+    const parts = path.split(/[/\\]/);
+    const name = parts[parts.length - 1];
+    const detected = detectLangFromFileName(name);
+    if (detected) {
+      translateStore.sourceLang = detected;
+      break;
+    }
+  }
+}, { deep: true });
+
 async function startTranslation() {
-  if (!selectedFile.value) return;
-
-  const output = await save({
-    defaultPath: `translated.srt`,
-    filters: [{ name: "Subtitle files", extensions: ["srt", "ass", "ssa", "vtt"] }],
-  });
-
-  if (!output || typeof output !== "string") return;
+  if (selectedFiles.value.length === 0) return;
 
   translating.value = true;
-  await translateStore.startTranslation(selectedFile.value, output);
+  for (const file of selectedFiles.value) {
+    const output = buildOutputPath(file, translateStore.targetLang);
+    await translateStore.startTranslation(file, output);
+  }
   translating.value = false;
 }
 
@@ -118,6 +161,21 @@ let unlistenCompleted: UnlistenFn | null = null;
 
 onMounted(async () => {
   appStore.discoverTools();
+  await appStore.loadConfig();
+
+  // Apply defaults from config
+  if (appStore.config) {
+    if (appStore.config.default_engine) {
+      translateStore.selectedEngine = appStore.config.default_engine as EngineType;
+    }
+    if (appStore.config.default_source_lang) {
+      translateStore.sourceLang = appStore.config.default_source_lang;
+    }
+    if (appStore.config.default_target_lang) {
+      translateStore.targetLang = appStore.config.default_target_lang;
+    }
+  }
+
   await translateStore.detectOllama();
   await translateStore.detectLibreTranslate();
 
@@ -131,7 +189,7 @@ onMounted(async () => {
   unlistenCompleted = await apiListen<{ job_id: string; status: string; message?: string }>(
     "job-completed",
     ({ job_id, status, message }) => {
-      translateStore.completeJob(job_id, status, message);
+      translateStore.completeJob(job_id, status as JobStatus, message);
     }
   );
 });
@@ -157,24 +215,47 @@ onUnmounted(() => {
       </div>
       <button
         class="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg bg-accent text-white text-sm font-medium hover:bg-accent-hover active:bg-accent-active transition-colors"
-        @click="pickFile"
+        @click="pickFiles"
       >
         <FolderOpen class="w-4 h-4" />
-        Open Subtitle
+        Open Subtitle(s)
       </button>
     </div>
 
     <!-- Content -->
     <div class="flex-1 overflow-auto p-6 space-y-6">
-      <!-- File Info -->
-      <div
-        v-if="fileName"
-        class="flex items-center gap-3 px-4 py-3 rounded-lg bg-bg-secondary border border-border"
-      >
-        <Languages class="w-5 h-5 text-accent shrink-0" />
-        <div class="min-w-0">
-          <p class="text-sm font-medium text-text-primary truncate">{{ fileName }}</p>
-          <p class="text-xs text-text-muted">Ready to translate</p>
+      <ErrorBanner :message="translateStore.error" @dismiss="translateStore.error = null" />
+
+      <!-- File List -->
+      <div v-if="fileCount > 0" class="space-y-2">
+        <div class="flex items-center justify-between">
+          <h2 class="text-sm font-semibold text-text-primary uppercase tracking-wide">
+            Files ({{ fileCount }})
+          </h2>
+          <button
+            class="text-xs text-text-muted hover:text-text-secondary transition-colors"
+            @click="clearFiles"
+          >
+            Clear all
+          </button>
+        </div>
+        <div class="space-y-1.5">
+          <div
+            v-for="(file, i) in selectedFiles"
+            :key="file"
+            class="flex items-center gap-2 px-3 py-2 rounded-lg bg-bg-secondary border border-border"
+          >
+            <Languages class="w-4 h-4 text-accent shrink-0" />
+            <p class="flex-1 text-sm text-text-primary truncate">
+              {{ file.split(/[/\\]/).pop() }}
+            </p>
+            <button
+              class="text-text-muted hover:text-error transition-colors"
+              @click="removeFile(i)"
+            >
+              <X class="w-3.5 h-3.5" />
+            </button>
+          </div>
         </div>
       </div>
 
@@ -397,7 +478,7 @@ onUnmounted(() => {
 
       <!-- Translate Button -->
       <button
-        :disabled="!selectedFile || translating"
+        :disabled="fileCount === 0 || translating"
         class="w-full md:w-auto inline-flex items-center justify-center gap-2 px-6 py-3 rounded-lg bg-accent text-white text-sm font-medium hover:bg-accent-hover active:bg-accent-active transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
         @click="startTranslation"
       >
@@ -405,6 +486,28 @@ onUnmounted(() => {
         <Play v-else class="w-4 h-4" />
         {{ translating ? "Starting..." : "Translate" }}
       </button>
+
+      <!-- Active Job Progress Banner -->
+      <div
+        v-if="activeJob"
+        class="sticky bottom-0 p-4 rounded-lg bg-bg-secondary border border-accent/30 space-y-2"
+      >
+        <div class="flex items-center justify-between">
+          <div class="flex items-center gap-2">
+            <Loader2 class="w-4 h-4 text-accent animate-spin" />
+            <span class="text-sm font-medium text-text-primary">
+              {{ activeJob.message || "Translating..." }}
+            </span>
+          </div>
+          <span class="text-sm font-bold text-accent">{{ Math.round(activeJob.progress) }}%</span>
+        </div>
+        <div class="w-full bg-bg-tertiary rounded-full h-2 overflow-hidden">
+          <div
+            class="h-full rounded-full bg-accent transition-all duration-300"
+            :style="{ width: `${activeJob.progress}%` }"
+          />
+        </div>
+      </div>
 
       <!-- Jobs -->
       <div v-if="translateStore.jobs.length > 0" class="space-y-2">
@@ -426,8 +529,8 @@ onUnmounted(() => {
             class="px-4 py-3 rounded-lg bg-bg-secondary border border-border"
           >
             <div class="flex items-center gap-3 mb-2">
-              <CheckCircle2 v-if="job.status === 'completed'" class="w-4 h-4 text-success shrink-0" />
-              <XCircle v-else-if="job.status === 'failed'" class="w-4 h-4 text-error shrink-0" />
+              <CheckCircle2 v-if="job.status === JOB_STATUS.COMPLETED" class="w-4 h-4 text-success shrink-0" />
+              <XCircle v-else-if="job.status === JOB_STATUS.FAILED" class="w-4 h-4 text-error shrink-0" />
               <Loader2 v-else class="w-4 h-4 text-accent animate-spin shrink-0" />
               <div class="flex-1 min-w-0">
                 <p class="text-xs text-text-muted font-mono truncate">{{ job.id.slice(0, 24) }}…</p>
@@ -444,7 +547,7 @@ onUnmounted(() => {
               <div
                 :class="[
                   'h-full rounded-full transition-all duration-300',
-                  job.status === 'failed' ? 'bg-error' : 'bg-accent',
+                  job.status === JOB_STATUS.FAILED ? 'bg-error' : 'bg-accent',
                 ]"
                 :style="{ width: `${job.progress}%` }"
               />
@@ -455,7 +558,7 @@ onUnmounted(() => {
 
       <!-- Empty State -->
       <div
-        v-if="!selectedFile && translateStore.jobs.length === 0"
+        v-if="fileCount === 0 && translateStore.jobs.length === 0"
         class="flex flex-col items-center justify-center py-16 text-center"
       >
         <div class="w-16 h-16 rounded-2xl bg-bg-secondary border border-border flex items-center justify-center mb-4">
@@ -467,7 +570,7 @@ onUnmounted(() => {
         </p>
         <button
           class="mt-4 inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-bg-tertiary text-text-primary text-sm font-medium hover:bg-bg-hover transition-colors"
-          @click="pickFile"
+          @click="pickFiles"
         >
           <FolderOpen class="w-4 h-4" />
           Browse

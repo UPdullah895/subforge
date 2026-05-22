@@ -21,10 +21,15 @@ import {
 const subtitleStore = useSubtitleStore();
 const appStore = useAppStore();
 const activeTab = ref<"tracks" | "merge" | "convert">("tracks");
+const selectedFiles = ref<string[]>([]);
+const activeFile = ref<string | null>(null);
+const batchLoading = ref(false);
 
-const fileName = computed(() => {
-  if (!subtitleStore.selectedFile) return null;
-  const parts = subtitleStore.selectedFile.split(/[/\\]/);
+const fileCount = computed(() => selectedFiles.value.length);
+
+const activeFileName = computed(() => {
+  if (!activeFile.value) return null;
+  const parts = activeFile.value.split(/[/\\]/);
   return parts[parts.length - 1];
 });
 
@@ -49,18 +54,51 @@ const convertLoading = ref(false);
 const convertError = ref<string | null>(null);
 const convertSuccess = ref(false);
 
-async function pickFile() {
+async function pickFiles() {
   const selected = await open({
-    multiple: false,
+    multiple: true,
     directory: false,
     filters: [{ name: "Video files", extensions: ["mkv", "mp4", "avi", "mov", "wmv", "flv", "webm"] }],
   });
-  if (selected && typeof selected === "string") {
-    await subtitleStore.loadTracks(selected);
+  if (Array.isArray(selected)) {
+    selectedFiles.value.push(...selected);
+  } else if (selected && typeof selected === "string") {
+    selectedFiles.value.push(selected);
+  }
+  if (selectedFiles.value.length > 0 && !activeFile.value) {
+    activeFile.value = selectedFiles.value[0];
+    await subtitleStore.loadTracks(activeFile.value);
   }
 }
 
+async function selectFile(path: string) {
+  activeFile.value = path;
+  await subtitleStore.loadTracks(path);
+}
+
+function removeFile(index: number) {
+  const removed = selectedFiles.value[index];
+  selectedFiles.value.splice(index, 1);
+  if (activeFile.value === removed) {
+    activeFile.value = selectedFiles.value[0] || null;
+    if (activeFile.value) {
+      subtitleStore.loadTracks(activeFile.value);
+    } else {
+      subtitleStore.selectedFile = null;
+      subtitleStore.tracks = [];
+    }
+  }
+}
+
+function clearFiles() {
+  selectedFiles.value = [];
+  activeFile.value = null;
+  subtitleStore.selectedFile = null;
+  subtitleStore.tracks = [];
+}
+
 async function extractTrack(track: { id: number; language: string; track_name?: string }) {
+  if (!activeFile.value) return;
   const ext = ".srt";
   const lang = track.language || "und";
   const name = track.track_name || `track_${track.id}`;
@@ -74,6 +112,24 @@ async function extractTrack(track: { id: number; language: string; track_name?: 
   if (outputPath && typeof outputPath === "string") {
     await subtitleStore.extractTrack(track.id, outputPath);
   }
+}
+
+async function batchExtractAllSubtitles() {
+  if (selectedFiles.value.length === 0) return;
+  batchLoading.value = true;
+  for (const file of selectedFiles.value) {
+    await subtitleStore.loadTracks(file);
+    for (const track of subtitleTracks.value) {
+      const lastSlash = Math.max(file.lastIndexOf("/"), file.lastIndexOf("\\"));
+      const dir = file.substring(0, lastSlash + 1);
+      const base = file.substring(lastSlash + 1).replace(/\.[^.]+$/, "");
+      const lang = track.language || "und";
+      const name = track.track_name || `track_${track.id}`;
+      const output = `${dir}${base}_${name}_${lang}.srt`;
+      await subtitleStore.extractTrack(track.id, output);
+    }
+  }
+  batchLoading.value = false;
 }
 
 async function pickMergeVideo() {
@@ -204,10 +260,10 @@ onMounted(() => {
       </div>
       <button
         class="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg bg-accent text-white text-sm font-medium hover:bg-accent-hover active:bg-accent-active transition-colors"
-        @click="pickFile"
+        @click="pickFiles"
       >
         <FolderOpen class="w-4 h-4" />
-        Open Video
+        Open Video(s)
       </button>
     </div>
 
@@ -271,22 +327,72 @@ onMounted(() => {
 
       <!-- Tracks Tab -->
       <template v-if="activeTab === 'tracks'">
+        <!-- File List -->
+        <div v-if="fileCount > 0" class="space-y-3">
+          <div class="flex items-center justify-between">
+            <h2 class="text-sm font-semibold text-text-primary uppercase tracking-wide">
+              Files ({{ fileCount }})
+            </h2>
+            <div class="flex items-center gap-2">
+              <button
+                :disabled="batchLoading"
+                class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-bg-tertiary text-text-secondary text-xs font-medium hover:bg-bg-hover transition-colors disabled:opacity-50"
+                @click="batchExtractAllSubtitles"
+              >
+                <FileVideo class="w-3.5 h-3.5" />
+                Extract All Subtitles
+              </button>
+              <button
+                class="text-xs text-text-muted hover:text-text-secondary transition-colors"
+                @click="clearFiles"
+              >
+                Clear all
+              </button>
+            </div>
+          </div>
+          <div class="space-y-1.5">
+            <div
+              v-for="(file, i) in selectedFiles"
+              :key="file"
+              :class="[
+                'flex items-center gap-2 px-3 py-2 rounded-lg border cursor-pointer transition-colors',
+                activeFile === file
+                  ? 'border-accent bg-accent/10'
+                  : 'border-border bg-bg-secondary hover:bg-bg-hover',
+              ]"
+              @click="selectFile(file)"
+            >
+              <FileVideo class="w-4 h-4 text-accent shrink-0" />
+              <p class="flex-1 text-sm text-text-primary truncate">
+                {{ file.split(/[/\\]/).pop() }}
+              </p>
+              <button
+                class="text-text-muted hover:text-error transition-colors"
+                @click.stop="removeFile(i)"
+              >
+                <X class="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Active File Info -->
         <div
-          v-if="fileName"
+          v-if="activeFileName"
           class="flex items-center gap-3 px-4 py-3 rounded-lg bg-bg-secondary border border-border"
         >
           <FileVideo class="w-5 h-5 text-accent shrink-0" />
           <div class="min-w-0">
-            <p class="text-sm font-medium text-text-primary truncate">{{ fileName }}</p>
+            <p class="text-sm font-medium text-text-primary truncate">{{ activeFileName }}</p>
             <p class="text-xs text-text-muted">
               {{ subtitleTracks.length }} subtitle · {{ subtitleStore.tracks.filter(t => t.track_type === 'audio').length }} audio · {{ subtitleStore.tracks.filter(t => t.track_type === 'video').length }} video
             </p>
           </div>
         </div>
 
-        <div v-if="subtitleStore.loading" class="flex items-center justify-center py-12">
+        <div v-if="subtitleStore.loading || batchLoading" class="flex items-center justify-center py-12">
           <Loader2 class="w-6 h-6 text-accent animate-spin" />
-          <span class="ml-3 text-sm text-text-secondary">Reading tracks...</span>
+          <span class="ml-3 text-sm text-text-secondary">Processing...</span>
         </div>
 
         <div v-else-if="subtitleStore.error" class="flex items-start gap-3 px-4 py-4 rounded-lg bg-error/10 border border-error/20">
@@ -311,7 +417,7 @@ onMounted(() => {
           </div>
           <h3 class="text-base font-medium text-text-primary">No file selected</h3>
           <p class="text-sm text-text-secondary mt-1 max-w-sm">Open a video file to enumerate its tracks and extract subtitles.</p>
-          <button class="mt-4 inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-bg-tertiary text-text-primary text-sm font-medium hover:bg-bg-hover transition-colors" @click="pickFile">
+          <button class="mt-4 inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-bg-tertiary text-text-primary text-sm font-medium hover:bg-bg-hover transition-colors" @click="pickFiles">
             <FolderOpen class="w-4 h-4" /> Browse
           </button>
         </div>

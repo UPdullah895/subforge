@@ -34,10 +34,12 @@ export const useTranslateStore = defineStore("translate", () => {
   const openaiKey = ref("");
   const openaiModel = ref("gpt-4o-mini");
   const { jobs, addJob, updateJobProgress, completeJob, clearCompleted } = useJobQueue();
+  const error = ref<string | null>(null);
   const previewOriginal = ref<string[]>([]);
   const previewTranslated = ref<string[]>([]);
 
   async function detectOllama() {
+    error.value = null;
     try {
       const info = await apiInvoke<OllamaInfo>("detect_ollama", {
         host: ollamaHost.value,
@@ -47,21 +49,24 @@ export const useTranslateStore = defineStore("translate", () => {
         selectedOllamaModel.value = info.models[0];
       }
       return info.available;
-    } catch {
+    } catch (e) {
       ollamaModels.value = [];
+      error.value = `Cannot reach Ollama at ${ollamaHost.value}: ${e instanceof Error ? e.message : String(e)}`;
       return false;
     }
   }
 
   async function detectLibreTranslate() {
+    error.value = null;
     try {
       const info = await apiInvoke<LibreInfo>("detect_libretranslate", {
         host: libreHost.value,
       });
       libreLanguages.value = info.languages;
       return info.available;
-    } catch {
+    } catch (e) {
       libreLanguages.value = [];
+      error.value = `Cannot reach LibreTranslate at ${libreHost.value}: ${e instanceof Error ? e.message : String(e)}`;
       return false;
     }
   }
@@ -87,6 +92,7 @@ export const useTranslateStore = defineStore("translate", () => {
       options.model = openaiModel.value;
     }
 
+    error.value = null;
     try {
       const jobId = await apiInvoke<string>("translate_subtitles", {
         request: options,
@@ -94,7 +100,7 @@ export const useTranslateStore = defineStore("translate", () => {
       addJob(jobId, input);
       return jobId;
     } catch (e) {
-      console.error("Failed to start translation:", e);
+      error.value = `Failed to start translation: ${e instanceof Error ? e.message : String(e)}`;
       return null;
     }
   }
@@ -117,6 +123,7 @@ export const useTranslateStore = defineStore("translate", () => {
     deeplPro,
     openaiKey,
     openaiModel,
+    error,
     jobs,
     previewOriginal,
     previewTranslated,

@@ -14,6 +14,7 @@ export const useTranscribeStore = defineStore("transcribe", () => {
   const downloadedModels = ref<string[]>([]);
   const loadingInfo = ref(false);
   const downloadingModel = ref<string | null>(null);
+  const error = ref<string | null>(null);
   const { jobs, addJob, updateJobProgress, completeJob, clearCompleted } = useJobQueue();
 
   const allModels = [
@@ -32,10 +33,11 @@ export const useTranscribeStore = defineStore("transcribe", () => {
 
   async function loadInfo() {
     loadingInfo.value = true;
+    error.value = null;
     try {
       whisperInfo.value = await apiInvoke<WhisperInfo>("get_whisper_info");
     } catch (e) {
-      console.error("Failed to load whisper info:", e);
+      error.value = `Failed to load Whisper info: ${e instanceof Error ? e.message : String(e)}`;
     } finally {
       loadingInfo.value = false;
     }
@@ -47,12 +49,13 @@ export const useTranscribeStore = defineStore("transcribe", () => {
         cacheDir: null,
       });
     } catch (e) {
-      console.error("Failed to list models:", e);
+      error.value = `Failed to list models: ${e instanceof Error ? e.message : String(e)}`;
     }
   }
 
   async function downloadModel(name: string) {
     downloadingModel.value = name;
+    error.value = null;
     try {
       await apiInvoke("download_whisper_model", {
         model: name,
@@ -60,7 +63,7 @@ export const useTranscribeStore = defineStore("transcribe", () => {
       });
       await loadModels();
     } catch (e) {
-      console.error("Failed to download model:", e);
+      error.value = `Failed to download model: ${e instanceof Error ? e.message : String(e)}`;
     } finally {
       downloadingModel.value = null;
     }
@@ -76,6 +79,7 @@ export const useTranscribeStore = defineStore("transcribe", () => {
     wordTimestamps: boolean;
     vadFilter: boolean;
   }) {
+    error.value = null;
     try {
       const jobId = await apiInvoke<string>("transcribe_audio", {
         request: {
@@ -93,7 +97,7 @@ export const useTranscribeStore = defineStore("transcribe", () => {
 
       addJob(jobId, options.input);
     } catch (e) {
-      console.error("Failed to start transcription:", e);
+      error.value = `Failed to start transcription: ${e instanceof Error ? e.message : String(e)}`;
     }
   }
 
@@ -102,6 +106,7 @@ export const useTranscribeStore = defineStore("transcribe", () => {
     downloadedModels,
     loadingInfo,
     downloadingModel,
+    error,
     jobs,
     allModels,
     loadInfo,

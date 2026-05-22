@@ -16,7 +16,7 @@ const props = defineProps<{
 }>();
 
 const emit = defineEmits<{
-  (e: "navigate", view: "subtitle" | "audio" | "batch" | "transcribe" | "translate"): void;
+  (e: "navigate", view: "subtitle" | "audio" | "batch" | "transcribe" | "translate" | "settings"): void;
 }>();
 
 const app = useAppStore();
@@ -28,6 +28,8 @@ const navItems = [
   { id: "transcribe" as const, label: "Speech to Text", icon: Mic, active: true },
   { id: "translate" as const, label: "Translate", icon: Languages, active: true },
 ];
+
+
 </script>
 
 <template>
@@ -107,8 +109,14 @@ const navItems = [
         </span>
       </button>
       <button
-        class="flex items-center gap-3 w-full px-3 py-2.5 rounded-lg text-sm font-medium text-text-secondary hover:bg-bg-hover hover:text-text-primary transition-colors"
+        :class="[
+          'flex items-center gap-3 w-full px-3 py-2.5 rounded-lg text-sm font-medium transition-colors',
+          props.current === 'settings'
+            ? 'bg-accent/10 text-accent'
+            : 'text-text-secondary hover:bg-bg-hover hover:text-text-primary',
+        ]"
         :title="app.sidebarCollapsed ? 'Settings' : undefined"
+        @click="emit('navigate', 'settings')"
       >
         <Settings class="w-5 h-5 shrink-0" />
         <span

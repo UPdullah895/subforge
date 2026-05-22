@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted } from "vue";
+import { computed, onMounted, ref } from "vue";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { useAudioStore } from "../stores/audioStore";
 import { useAppStore } from "../stores/appStore";
@@ -15,31 +15,71 @@ import {
   XCircle,
   X,
   Info,
+  Play,
 } from "lucide-vue-next";
 
 const audioStore = useAudioStore();
 const appStore = useAppStore();
+const selectedFiles = ref<string[]>([]);
+const activeFile = ref<string | null>(null);
+const batchLoading = ref(false);
 
-const fileName = computed(() => {
-  if (!audioStore.selectedFile) return null;
-  const parts = audioStore.selectedFile.split(/[/\\]/);
+const fileCount = computed(() => selectedFiles.value.length);
+
+const activeFileName = computed(() => {
+  if (!activeFile.value) return null;
+  const parts = activeFile.value.split(/[/\\]/);
   return parts[parts.length - 1];
 });
 
-async function pickFile() {
+async function pickFiles() {
   const selected = await open({
-    multiple: false,
+    multiple: true,
     directory: false,
     filters: [
       { name: "Video files", extensions: ["mkv", "mp4", "avi", "mov", "wmv", "flv", "webm"] },
     ],
   });
-  if (selected && typeof selected === "string") {
-    await audioStore.loadTracks(selected);
+  if (Array.isArray(selected)) {
+    selectedFiles.value.push(...selected);
+  } else if (selected && typeof selected === "string") {
+    selectedFiles.value.push(selected);
+  }
+  // Auto-load tracks for the first file if none active
+  if (selectedFiles.value.length > 0 && !activeFile.value) {
+    activeFile.value = selectedFiles.value[0];
+    await audioStore.loadTracks(activeFile.value);
   }
 }
 
+async function selectFile(path: string) {
+  activeFile.value = path;
+  await audioStore.loadTracks(path);
+}
+
+function removeFile(index: number) {
+  const removed = selectedFiles.value[index];
+  selectedFiles.value.splice(index, 1);
+  if (activeFile.value === removed) {
+    activeFile.value = selectedFiles.value[0] || null;
+    if (activeFile.value) {
+      audioStore.loadTracks(activeFile.value);
+    } else {
+      audioStore.selectedFile = null;
+      audioStore.tracks = [];
+    }
+  }
+}
+
+function clearFiles() {
+  selectedFiles.value = [];
+  activeFile.value = null;
+  audioStore.selectedFile = null;
+  audioStore.tracks = [];
+}
+
 async function extractTrack(track: { id: number; codec: string; language: string }) {
+  if (!activeFile.value) return;
   const format = "aac";
   const lang = track.language || "und";
   const suggested = `audio_${track.id}_${lang}.${format}`;
@@ -82,14 +122,35 @@ async function mergeAudio() {
   }
 }
 
-async function removeAllAudio() {
-  const outputPath = await save({
-    defaultPath: fileName.value?.replace(/\.[^.]+$/, "_no_audio.mkv") || "output.mkv",
-    filters: [{ name: "MKV", extensions: ["mkv"] }],
-  });
-  if (outputPath && typeof outputPath === "string") {
-    await audioStore.removeAllAudio(outputPath);
+async function batchExtractAllAudio() {
+  if (selectedFiles.value.length === 0) return;
+  batchLoading.value = true;
+  for (const file of selectedFiles.value) {
+    await audioStore.loadTracks(file);
+    for (const track of audioStore.tracks) {
+      const lastSlash = Math.max(file.lastIndexOf("/"), file.lastIndexOf("\\"));
+      const dir = file.substring(0, lastSlash + 1);
+      const base = file.substring(lastSlash + 1).replace(/\.[^.]+$/, "");
+      const lang = track.language || "und";
+      const output = `${dir}${base}_audio_${track.id}_${lang}.aac`;
+      await audioStore.extractTrack(track.id, output, "aac");
+    }
   }
+  batchLoading.value = false;
+}
+
+async function batchRemoveAllAudio() {
+  if (selectedFiles.value.length === 0) return;
+  batchLoading.value = true;
+  for (const file of selectedFiles.value) {
+    const lastSlash = Math.max(file.lastIndexOf("/"), file.lastIndexOf("\\"));
+    const dir = file.substring(0, lastSlash + 1);
+    const base = file.substring(lastSlash + 1).replace(/\.[^.]+$/, "");
+    const output = `${dir}${base}_noaudio.mkv`;
+    await audioStore.loadTracks(file);
+    await audioStore.removeAllAudio(output);
+  }
+  batchLoading.value = false;
 }
 
 onMounted(() => {
@@ -120,10 +181,10 @@ onMounted(() => {
         </button>
         <button
           class="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg bg-accent text-white text-sm font-medium hover:bg-accent-hover active:bg-accent-active transition-colors"
-          @click="pickFile"
+          @click="pickFiles"
         >
           <FolderOpen class="w-4 h-4" />
-          Open Video
+          Open Video(s)
         </button>
       </div>
     </div>
@@ -148,29 +209,79 @@ onMounted(() => {
         </div>
       </div>
 
-      <!-- File Info -->
+      <!-- File List -->
+      <div v-if="fileCount > 0" class="space-y-3">
+        <div class="flex items-center justify-between">
+          <h2 class="text-sm font-semibold text-text-primary uppercase tracking-wide">
+            Files ({{ fileCount }})
+          </h2>
+          <div class="flex items-center gap-2">
+            <button
+              :disabled="batchLoading"
+              class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-bg-tertiary text-text-secondary text-xs font-medium hover:bg-bg-hover transition-colors disabled:opacity-50"
+              @click="batchExtractAllAudio"
+            >
+              <Play class="w-3.5 h-3.5" />
+              Extract All Audio
+            </button>
+            <button
+              :disabled="batchLoading"
+              class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-error/10 text-error text-xs font-medium hover:bg-error hover:text-white transition-colors disabled:opacity-50"
+              @click="batchRemoveAllAudio"
+            >
+              <VolumeX class="w-3.5 h-3.5" />
+              Remove All Audio
+            </button>
+            <button
+              class="text-xs text-text-muted hover:text-text-secondary transition-colors"
+              @click="clearFiles"
+            >
+              Clear all
+            </button>
+          </div>
+        </div>
+        <div class="space-y-1.5">
+          <div
+            v-for="(file, i) in selectedFiles"
+            :key="file"
+            :class="[
+              'flex items-center gap-2 px-3 py-2 rounded-lg border cursor-pointer transition-colors',
+              activeFile === file
+                ? 'border-accent bg-accent/10'
+                : 'border-border bg-bg-secondary hover:bg-bg-hover',
+            ]"
+            @click="selectFile(file)"
+          >
+            <Volume2 class="w-4 h-4 text-accent shrink-0" />
+            <p class="flex-1 text-sm text-text-primary truncate">
+              {{ file.split(/[/\\]/).pop() }}
+            </p>
+            <button
+              class="text-text-muted hover:text-error transition-colors"
+              @click.stop="removeFile(i)"
+            >
+              <X class="w-3.5 h-3.5" />
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Active File Info -->
       <div
-        v-if="fileName"
+        v-if="activeFileName"
         class="flex items-center gap-3 px-4 py-3 rounded-lg bg-bg-secondary border border-border"
       >
         <Volume2 class="w-5 h-5 text-accent shrink-0" />
         <div class="min-w-0">
-          <p class="text-sm font-medium text-text-primary truncate">{{ fileName }}</p>
+          <p class="text-sm font-medium text-text-primary truncate">{{ activeFileName }}</p>
           <p class="text-xs text-text-muted">{{ audioStore.tracks.length }} audio tracks</p>
         </div>
-        <button
-          class="ml-auto inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-error/10 text-error text-xs font-medium hover:bg-error hover:text-white transition-colors"
-          @click="removeAllAudio"
-        >
-          <VolumeX class="w-3.5 h-3.5" />
-          Remove All
-        </button>
       </div>
 
       <!-- Loading -->
-      <div v-if="audioStore.loading" class="flex items-center justify-center py-12">
+      <div v-if="audioStore.loading || batchLoading" class="flex items-center justify-center py-12">
         <Loader2 class="w-6 h-6 text-accent animate-spin" />
-        <span class="ml-3 text-sm text-text-secondary">Reading tracks...</span>
+        <span class="ml-3 text-sm text-text-secondary">Processing...</span>
       </div>
 
       <!-- Error -->
@@ -211,7 +322,7 @@ onMounted(() => {
         </p>
         <button
           class="mt-4 inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-bg-tertiary text-text-primary text-sm font-medium hover:bg-bg-hover transition-colors"
-          @click="pickFile"
+          @click="pickFiles"
         >
           <FolderOpen class="w-4 h-4" />
           Browse

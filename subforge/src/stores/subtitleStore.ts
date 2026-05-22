@@ -45,6 +45,10 @@ export const useSubtitleStore = defineStore("subtitle", () => {
   }
 
   async function extractTrack(trackId: number, outputPath: string) {
+    if (!selectedFile.value) {
+      error.value = "No file selected.";
+      return;
+    }
     const job: ExtractJob = {
       id: `${trackId}-${Date.now()}`,
       trackId,

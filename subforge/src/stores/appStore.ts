@@ -9,6 +9,10 @@ export interface AppConfig {
   mkvextract_path?: string;
   ffmpeg_path?: string;
   ffprobe_path?: string;
+  default_engine?: string;
+  default_source_lang?: string;
+  default_target_lang?: string;
+  default_output_dir?: string;
 }
 
 export interface ToolInfo {
@@ -30,20 +34,34 @@ export const useAppStore = defineStore("app", () => {
   const sidebarCollapsed = ref(false);
   const toolRegistry = ref<ToolRegistry | null>(null);
   const config = ref<AppConfig | null>(null);
+  const error = ref<string | null>(null);
 
   async function loadConfig() {
-    config.value = await apiInvoke<AppConfig>("load_config");
-    theme.value = config.value.theme;
+    try {
+      config.value = await apiInvoke<AppConfig>("load_config");
+      theme.value = config.value.theme;
+    } catch {
+      config.value = { theme: "dark" };
+      theme.value = "dark";
+    }
   }
 
   async function saveConfig() {
-    if (config.value) {
-      await apiInvoke("save_config", { config: config.value });
+    try {
+      if (config.value) {
+        await apiInvoke("save_config", { config: config.value });
+      }
+    } catch (e) {
+      error.value = `Failed to save settings: ${e instanceof Error ? e.message : String(e)}`;
     }
   }
 
   async function discoverTools() {
-    toolRegistry.value = await apiInvoke<ToolRegistry>("get_tool_registry");
+    try {
+      toolRegistry.value = await apiInvoke<ToolRegistry>("get_tool_registry");
+    } catch (e) {
+      error.value = `Failed to detect tools: ${e instanceof Error ? e.message : String(e)}`;
+    }
   }
 
   async function toggleTheme() {
@@ -63,6 +81,7 @@ export const useAppStore = defineStore("app", () => {
     sidebarCollapsed,
     toolRegistry,
     config,
+    error,
     loadConfig,
     saveConfig,
     discoverTools,
