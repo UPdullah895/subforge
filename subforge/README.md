@@ -1,5 +1,7 @@
 # SubForge
 
+[![CI](https://github.com/updullah/subforge/actions/workflows/ci.yml/badge.svg)](https://github.com/updullah/subforge/actions/workflows/ci.yml)
+
 > Open-source subtitle & audio toolkit — built with Tauri 2, Vue 3, and Rust.
 
 SubForge is a free, cross-platform desktop application for subtitle manipulation, audio extraction, speech-to-text transcription, and machine translation. This repository contains through **Phase 4**: AI and machine translation on top of the Phase 1–3 foundation.
