@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { commandSchemas } from "./schemas";
 
 const isTauri =
   typeof window !== "undefined" &&
@@ -25,7 +26,9 @@ export async function apiInvoke<T>(
     throw new Error(text || `HTTP ${resp.status}`);
   }
 
-  return resp.json();
+  const data = await resp.json();
+  const schema = commandSchemas[cmd];
+  return schema ? (schema.parse(data) as T) : (data as T);
 }
 
 export async function apiGet<T>(cmd: string, params?: Record<string, string>): Promise<T> {

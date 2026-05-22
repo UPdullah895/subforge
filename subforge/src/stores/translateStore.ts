@@ -29,6 +29,8 @@ export const useTranslateStore = defineStore("translate", () => {
   const libreLanguages = ref<LibreLanguage[]>([]);
   const sourceLang = ref("en");
   const targetLang = ref("es");
+  // Session-only credentials — never include in saveConfig().
+  // In server mode, these must be handled backend-side only.
   const deeplKey = ref("");
   const deeplPro = ref(false);
   const openaiKey = ref("");

@@ -5,36 +5,45 @@ const isTauri =
   !!(window as unknown as Record<string, unknown>).__TAURI__;
 
 let ws: WebSocket | null = null;
+let retryCount = 0;
+const MAX_RETRIES = 5;
 const wsListeners: Map<string, ((payload: unknown) => void)[]> = new Map();
 
-function ensureWs(): WebSocket {
-  if (!ws || ws.readyState !== WebSocket.OPEN) {
-    const protocol = location.protocol === "https:" ? "wss:" : "ws:";
-    ws = new WebSocket(`${protocol}//${location.host}/ws`);
+function ensureWs(): void {
+  if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return;
 
-    ws.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data);
-        const eventType = data.type as string;
-        const payload = data.payload;
-        const handlers = wsListeners.get(eventType);
-        if (handlers) {
-          handlers.forEach((h) => h(payload));
-        }
-      } catch {
-        // ignore malformed messages
-      }
-    };
+  const wsUrl =
+    (import.meta.env.VITE_WS_URL as string | undefined) ||
+    `${location.protocol === "https:" ? "wss:" : "ws:"}//${location.host}/ws`;
+  ws = new WebSocket(wsUrl);
 
-    ws.onerror = () => {
-      ws = null;
-    };
+  ws.onopen = () => {
+    retryCount = 0;
+  };
 
-    ws.onclose = () => {
-      ws = null;
-    };
-  }
-  return ws;
+  ws.onmessage = (event) => {
+    try {
+      const data = JSON.parse(event.data as string);
+      const eventType = data.type as string;
+      const payload = data.payload;
+      wsListeners.get(eventType)?.forEach((h) => h(payload));
+    } catch {
+      // ignore malformed messages
+    }
+  };
+
+  ws.onerror = () => {
+    ws = null;
+  };
+
+  ws.onclose = () => {
+    ws = null;
+    if (retryCount < MAX_RETRIES) {
+      const delay = Math.min(1000 * 2 ** retryCount, 30000);
+      retryCount++;
+      setTimeout(ensureWs, delay);
+    }
+  };
 }
 
 export async function apiListen<T>(
@@ -45,11 +54,14 @@ export async function apiListen<T>(
     return listen(event, (e) => handler(e.payload as T));
   }
 
-  const ws = ensureWs();
-  if (ws.readyState === WebSocket.CONNECTING) {
+  ensureWs();
+
+  if (ws!.readyState === WebSocket.CONNECTING) {
     await new Promise<void>((resolve, reject) => {
-      ws.onopen = () => resolve();
-      ws.onerror = () => reject(new Error("WebSocket connection failed"));
+      ws!.addEventListener("open", () => resolve(), { once: true });
+      ws!.addEventListener("error", () => reject(new Error("WebSocket connection failed")), {
+        once: true,
+      });
     });
   }
 
