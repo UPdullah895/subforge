@@ -380,11 +380,11 @@ onMounted(() => {
                 </button>
               </div>
               <div class="flex items-center gap-2">
-                <span v-if="testStatus[provider.id] === 'success'" class="inline-flex items-center gap-1 text-xs text-green-500">
+                <span v-if="testStatus[provider.id] === 'success'" class="inline-flex items-center gap-1 text-xs text-success">
                   <CheckCircle2 class="w-3.5 h-3.5" />
                   {{ t("settings.testSuccess") }}
                 </span>
-                <span v-else-if="testStatus[provider.id] === 'error'" class="inline-flex items-center gap-1 text-xs text-red-500">
+                <span v-else-if="testStatus[provider.id] === 'error'" class="inline-flex items-center gap-1 text-xs text-error">
                   <XCircle class="w-3.5 h-3.5" />
                   {{ t("settings.testFailed") }}
                 </span>

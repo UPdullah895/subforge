@@ -54,6 +54,7 @@ pub fn run() {
             translate_cmds::detect_ollama,
             translate_cmds::detect_libretranslate,
             translate_cmds::translate_subtitles,
+            translate_cmds::run_translation_pipeline,
             rename_cmds::parse_filename,
             rename_cmds::search_series,
             rename_cmds::get_episodes,

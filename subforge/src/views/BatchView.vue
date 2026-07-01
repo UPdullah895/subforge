@@ -9,6 +9,7 @@ const { t } = useI18n();
 import BatchFileList from "../components/BatchFileList.vue";
 import JobMonitor from "../components/JobMonitor.vue";
 import RenameModal from "../components/RenameModal.vue";
+import AutoTranslateWizard from "../components/AutoTranslateWizard.vue";
 import {
   FolderOpen,
   Loader2,
@@ -17,6 +18,7 @@ import {
   Download,
   Info,
   Pencil,
+  Languages,
 } from "lucide-vue-next";
 
 const batchStore = useBatchStore();
@@ -35,6 +37,18 @@ function openRenameModal(files: string[]) {
 
 function openBatchRename() {
   openRenameModal(Array.from(batchStore.selectedFiles));
+}
+
+const translateModalOpen = ref(false);
+const translateFiles = ref<string[]>([]);
+
+function openTranslateModal(files: string[]) {
+  translateFiles.value = files;
+  translateModalOpen.value = true;
+}
+
+function openBatchTranslate() {
+  openTranslateModal(Array.from(batchStore.selectedFiles));
 }
 
 async function pickDirectory() {
@@ -145,6 +159,14 @@ onMounted(() => {
               <Pencil class="w-3.5 h-3.5" />
               {{ t("batch.rename") }}
             </button>
+            <button
+              :disabled="selectedCount === 0"
+              class="inline-flex items-center gap-1.5 px-3 py-2 rounded-md bg-bg-tertiary text-text-secondary text-xs font-medium hover:bg-bg-hover transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              @click="openBatchTranslate"
+            >
+              <Languages class="w-3.5 h-3.5" />
+              {{ t("batch.autoTranslate") }}
+            </button>
           </div>
         </div>
 
@@ -154,6 +176,7 @@ onMounted(() => {
           @toggle="toggleSelection"
           @toggle-all="toggleAll"
           @rename="(path) => openRenameModal([path])"
+          @auto-translate="(path) => openTranslateModal([path])"
         />
       </template>
 
@@ -188,6 +211,11 @@ onMounted(() => {
       :files="renameFiles"
       @close="renameModalOpen = false"
       @applied="batchStore.rescan"
+    />
+    <AutoTranslateWizard
+      :open="translateModalOpen"
+      :files="translateFiles"
+      @close="translateModalOpen = false"
     />
   </div>
 </template>

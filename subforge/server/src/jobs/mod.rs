@@ -85,6 +85,8 @@ pub struct JobEvent {
     pub status: Option<JobStatus>,
     pub progress: Option<f64>,
     pub message: Option<String>,
+    pub stage: Option<String>,
+    pub output_path: Option<String>,
 }
 
 pub type EventSender = broadcast::Sender<JobEvent>;

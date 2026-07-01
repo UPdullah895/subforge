@@ -69,6 +69,7 @@ function cmdToEndpoint(cmd: string): string {
     detect_ollama: "/api/translate/detect/ollama",
     detect_libretranslate: "/api/translate/detect/libretranslate",
     translate_subtitles: "/api/translate",
+    run_translation_pipeline: "/api/translate/pipeline",
     get_tool_registry: "/api/tools/registry",
     load_config: "/api/config",
     save_config: "/api/config",

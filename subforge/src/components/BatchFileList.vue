@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed } from "vue";
 import { useI18n } from "vue-i18n";
-import { FileVideo, ChevronDown, ChevronRight, Pencil } from "lucide-vue-next";
+import { FileVideo, ChevronDown, ChevronRight, Pencil, Languages } from "lucide-vue-next";
 import type { VideoFileInfo } from "../stores/batchStore";
 
 const { t } = useI18n();
@@ -15,6 +15,7 @@ const emit = defineEmits<{
   (e: "toggle", path: string): void;
   (e: "toggleAll"): void;
   (e: "rename", path: string): void;
+  (e: "autoTranslate", path: string): void;
 }>();
 
 const expanded = ref<Set<string>>(new Set());
@@ -101,13 +102,23 @@ function toggleAll() {
                       <span v-if="track.properties?.language">· {{ track.properties.language }}</span>
                     </span>
                   </div>
-                  <button
-                    class="inline-flex items-center gap-1.5 px-2 py-1 rounded bg-bg-tertiary text-text-secondary hover:bg-bg-hover transition-colors shrink-0"
-                    @click="emit('rename', file.path)"
-                  >
-                    <Pencil class="w-3 h-3" />
-                    {{ t("batch.rename") }}
-                  </button>
+                  <div class="flex items-center gap-2 shrink-0">
+                    <button
+                      class="inline-flex items-center gap-1.5 px-2 py-1 rounded bg-bg-tertiary text-text-secondary hover:bg-bg-hover transition-colors"
+                      @click="emit('rename', file.path)"
+                    >
+                      <Pencil class="w-3 h-3" />
+                      {{ t("batch.rename") }}
+                    </button>
+                    <button
+                      :disabled="file.subtitle_count === 0"
+                      class="inline-flex items-center gap-1.5 px-2 py-1 rounded bg-bg-tertiary text-text-secondary hover:bg-bg-hover transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                      @click="emit('autoTranslate', file.path)"
+                    >
+                      <Languages class="w-3 h-3" />
+                      {{ t("batch.autoTranslate") }}
+                    </button>
+                  </div>
                 </div>
               </div>
             </td>

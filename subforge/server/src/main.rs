@@ -102,6 +102,10 @@ fn api_routes() -> Router<AppState> {
             post(routes::translate::detect_libretranslate),
         )
         .route("/translate", post(routes::translate::translate_subtitles))
+        .route(
+            "/translate/pipeline",
+            post(routes::translate::run_translation_pipeline),
+        )
         // ── Rename (TMDB/TVmaze) ─────────────────────────────────────────────
         .route("/rename/parse", post(routes::rename::parse_filename))
         .route("/rename/search", post(routes::rename::search_series))

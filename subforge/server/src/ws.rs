@@ -25,6 +25,8 @@ async fn handle_socket(mut socket: WebSocket, state: AppState) {
                         "status": event.status,
                         "progress": event.progress,
                         "message": event.message,
+                        "stage": event.stage,
+                        "output_path": event.output_path,
                     }
                 });
                 if socket.send(axum::extract::ws::Message::Text(msg.to_string().into())).await.is_err() {

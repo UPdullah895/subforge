@@ -101,6 +101,8 @@ pub async fn transcribe_audio(
             status: None,
             progress: None,
             message: None,
+            stage: None,
+            output_path: None,
         },
     );
 
@@ -122,6 +124,8 @@ pub async fn transcribe_audio(
                         status: Some(jobs::JobStatus::Failed),
                         progress: Some(0.0),
                         message: Some("Python not found in PATH".to_string()),
+                        stage: None,
+                        output_path: None,
                     },
                 );
                 return;
@@ -148,6 +152,8 @@ pub async fn transcribe_audio(
                         status: Some(jobs::JobStatus::Failed),
                         progress: Some(0.0),
                         message: Some(e.to_string()),
+                        stage: None,
+                        output_path: None,
                     },
                 );
                 return;
@@ -183,6 +189,8 @@ pub async fn transcribe_audio(
                                 status: None,
                                 progress: Some(pct),
                                 message: msg,
+                                stage: None,
+                                output_path: None,
                             },
                         );
                     }
@@ -203,6 +211,8 @@ pub async fn transcribe_audio(
                         status: Some(jobs::JobStatus::Failed),
                         progress: Some(0.0),
                         message: Some("Transcription failed".to_string()),
+                        stage: None,
+                        output_path: None,
                     },
                 );
                 return;
@@ -222,6 +232,8 @@ pub async fn transcribe_audio(
                 status: Some(status),
                 progress: Some(100.0),
                 message: Some("Done".to_string()),
+                stage: None,
+                output_path: None,
             },
         );
     });
