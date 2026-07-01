@@ -2,6 +2,7 @@ pub mod audio;
 pub mod batch;
 pub mod config;
 pub mod health;
+pub mod rename;
 pub mod subtitle;
 pub mod tools;
 pub mod transcribe;

@@ -19,6 +19,15 @@ pub struct AppConfig {
     pub default_source_lang: Option<String>,
     pub default_target_lang: Option<String>,
     pub default_output_dir: Option<String>,
+    pub tmdb_api_key: Option<String>,
+    pub deepl_api_key: Option<String>,
+    #[serde(default)]
+    pub deepl_pro: bool,
+    pub openai_api_key: Option<String>,
+    pub openai_model: Option<String>,
+    pub google_translate_api_key: Option<String>,
+    pub ollama_base_url: Option<String>,
+    pub libretranslate_base_url: Option<String>,
 }
 
 impl Default for AppConfig {
@@ -34,6 +43,14 @@ impl Default for AppConfig {
             default_source_lang: Some("en".to_string()),
             default_target_lang: Some("ar".to_string()),
             default_output_dir: None,
+            tmdb_api_key: None,
+            deepl_api_key: None,
+            deepl_pro: false,
+            openai_api_key: None,
+            openai_model: None,
+            google_translate_api_key: None,
+            ollama_base_url: None,
+            libretranslate_base_url: None,
         }
     }
 }
