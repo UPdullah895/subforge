@@ -151,6 +151,13 @@
     "hearingImpaired": "Hearing-impaired (SDH)",
     "defaultAudio": "Default audio track",
     "defaultSubtitle": "Default subtitle track",
+    "defaultAudioForAll": "Default audio language (applies to all files)",
+    "defaultSubtitleForAll": "Default subtitle language (applies to all files)",
+    "pickLanguage": "Choose a language...",
+    "needsAttention": "{count} file(s) don't have a matching track for the selected default — review them below.",
+    "rowNeedsAttention": "This file doesn't match the collective default — needs manual review.",
+    "adjustManually": "Adjust manually",
+    "useCollective": "Use collective default",
     "newTrack": "new"
   },
   "extractLangPicker": {
@@ -166,7 +173,7 @@
     "targetLanguages": "Target Language(s)",
     "autoMerge": "Merge into video automatically when done",
     "setDefaultSubtitle": "Make this the default subtitle track",
-    "ambiguousTrack": "Some files have more than one matching subtitle track — pick the right one:",
+    "ambiguousTrack": "{count} file(s) have more than one matching subtitle track and need manual review — pick the right one below:",
     "forced": "Forced",
     "sdh": "SDH",
     "filesCount": "{count} file(s) will be translated",

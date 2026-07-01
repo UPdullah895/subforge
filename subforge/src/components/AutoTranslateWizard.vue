@@ -7,7 +7,7 @@ import { apiListen } from "../api/events";
 import { useBatchStore } from "../stores/batchStore";
 import { useAppStore } from "../stores/appStore";
 import { useTranslateStore, type EngineType, mapJobErrorMessage } from "../stores/translateStore";
-import { CheckCircle2, XCircle, Loader2 } from "lucide-vue-next";
+import { AlertTriangle, CheckCircle2, XCircle, Loader2 } from "lucide-vue-next";
 
 const { t } = useI18n();
 
@@ -357,13 +357,19 @@ function stageLabel(stage: FileStage): string {
           </div>
 
           <div v-if="ambiguousFiles.length > 0" class="mt-4 space-y-2">
-            <p class="text-xs font-medium text-text-secondary">{{ t("autoTranslate.ambiguousTrack") }}</p>
+            <div class="flex items-center gap-2 p-2.5 rounded-lg bg-warning/10 border border-warning/20 text-xs text-warning">
+              <AlertTriangle class="w-3.5 h-3.5 shrink-0" />
+              {{ t("autoTranslate.ambiguousTrack", { count: ambiguousFiles.length }) }}
+            </div>
             <div
               v-for="f in ambiguousFiles"
               :key="f.path"
               class="p-2.5 rounded-lg bg-bg-secondary border border-border"
             >
-              <p class="text-xs text-text-primary truncate mb-1">{{ f.name }}</p>
+              <p class="flex items-center gap-1.5 text-xs text-text-primary truncate mb-1">
+                <AlertTriangle class="w-3 h-3 text-warning shrink-0" />
+                {{ f.name }}
+              </p>
               <select
                 v-model="selectedTrackId[f.path]"
                 class="w-full px-3 py-1.5 rounded-md bg-bg-primary border border-border text-xs text-text-primary focus:outline-none focus:border-accent"
