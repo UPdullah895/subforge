@@ -33,6 +33,7 @@ export const useBatchStore = defineStore("batch", () => {
   const selectedFiles = ref<Set<string>>(new Set());
   const loading = ref(false);
   const error = ref<string | null>(null);
+  const lastScannedPath = ref<string | null>(null);
   const { jobs, addJob, clearAll } = useJobQueue();
 
   async function scanDirectory(path: string, recursive: boolean = true) {
@@ -48,11 +49,18 @@ export const useBatchStore = defineStore("batch", () => {
       });
       scannedFiles.value = result;
       selectedFiles.value = new Set(result.map((f) => f.path));
+      lastScannedPath.value = path;
     } catch (e) {
       error.value = String(e);
       scannedFiles.value = [];
     } finally {
       loading.value = false;
+    }
+  }
+
+  async function rescan() {
+    if (lastScannedPath.value) {
+      await scanDirectory(lastScannedPath.value);
     }
   }
 
@@ -99,7 +107,9 @@ export const useBatchStore = defineStore("batch", () => {
     loading,
     error,
     jobs,
+    lastScannedPath,
     scanDirectory,
+    rescan,
     batchExtract,
     toggleSelection,
     selectAll,

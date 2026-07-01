@@ -2,7 +2,17 @@ use crate::config::AppConfig;
 use axum::{http::StatusCode, Json};
 use serde::Deserialize;
 use subforge_metadata::{cache, matcher, parser, renamer, tmdb::TmdbClient, tvmaze::TvmazeClient};
-use subforge_metadata::{Episode, RenamePreviewRow, SeriesMatch};
+use subforge_metadata::{Episode, ParsedFilename, RenamePreviewRow, SeriesMatch};
+
+#[derive(Deserialize)]
+pub struct ParseFilenameRequest {
+    name: String,
+}
+
+pub async fn parse_filename(Json(req): Json<ParseFilenameRequest>) -> Json<ParsedFilename> {
+    let (stem, _ext) = split_stem_ext(&req.name);
+    Json(parser::parse_filename(&stem))
+}
 
 #[derive(Deserialize)]
 pub struct SearchRequest {

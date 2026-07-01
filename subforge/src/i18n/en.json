@@ -21,7 +21,8 @@
     "noFileSelected": "No file selected",
     "failedToReadFile": "Failed to read file",
     "extract": "Extract",
-    "scanFailed": "Scan failed"
+    "scanFailed": "Scan failed",
+    "cancel": "Cancel"
   },
   "trackType": {
     "video": "Video",
@@ -113,7 +114,24 @@
     "selected": "{count} / {total} selected",
     "extractSubs": "Extract Subs",
     "noFilesScanned": "No files scanned",
-    "noFilesScannedDesc": "Select a directory to recursively scan for video files and preview their tracks."
+    "noFilesScannedDesc": "Select a directory to recursively scan for video files and preview their tracks.",
+    "rename": "Rename"
+  },
+  "rename": {
+    "title": "Rename Files",
+    "mode": {
+      "manual": "Manual",
+      "tmdb": "Auto — TMDB",
+      "tvmaze": "Auto — TVmaze"
+    },
+    "searchPlaceholder": "Search for a series...",
+    "search": "Search",
+    "change": "Change",
+    "pattern": "Naming Pattern",
+    "preview": "Preview",
+    "unmatched": "Unmatched — pick an episode",
+    "pickEpisode": "Pick episode...",
+    "confirm": "Rename"
   },
   "transcribe": {
     "title": "Speech to Text",

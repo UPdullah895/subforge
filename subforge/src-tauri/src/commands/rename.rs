@@ -1,6 +1,12 @@
 use crate::config::AppConfig;
 use subforge_metadata::{cache, matcher, parser, renamer, tmdb::TmdbClient, tvmaze::TvmazeClient};
-use subforge_metadata::{Episode, RenamePreviewRow, SeriesMatch};
+use subforge_metadata::{Episode, ParsedFilename, RenamePreviewRow, SeriesMatch};
+
+#[tauri::command]
+pub fn parse_filename(name: String) -> ParsedFilename {
+    let (stem, _ext) = split_stem_ext(&name);
+    parser::parse_filename(&stem)
+}
 
 #[tauri::command]
 pub async fn search_series(provider: String, query: String) -> Result<Vec<SeriesMatch>, String> {

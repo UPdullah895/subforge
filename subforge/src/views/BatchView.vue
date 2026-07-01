@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted } from "vue";
+import { computed, onMounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useBatchStore } from "../stores/batchStore";
@@ -8,6 +8,7 @@ import { useAppStore } from "../stores/appStore";
 const { t } = useI18n();
 import BatchFileList from "../components/BatchFileList.vue";
 import JobMonitor from "../components/JobMonitor.vue";
+import RenameModal from "../components/RenameModal.vue";
 import {
   FolderOpen,
   Loader2,
@@ -15,6 +16,7 @@ import {
   FileVideo,
   Download,
   Info,
+  Pencil,
 } from "lucide-vue-next";
 
 const batchStore = useBatchStore();
@@ -22,6 +24,18 @@ const appStore = useAppStore();
 
 const selectedCount = computed(() => batchStore.selectedFiles.size);
 const totalCount = computed(() => batchStore.scannedFiles.length);
+
+const renameModalOpen = ref(false);
+const renameFiles = ref<string[]>([]);
+
+function openRenameModal(files: string[]) {
+  renameFiles.value = files;
+  renameModalOpen.value = true;
+}
+
+function openBatchRename() {
+  openRenameModal(Array.from(batchStore.selectedFiles));
+}
 
 async function pickDirectory() {
   const selected = await open({
@@ -123,6 +137,14 @@ onMounted(() => {
               <Download class="w-3.5 h-3.5" />
               {{ t("batch.extractSubs") }}
             </button>
+            <button
+              :disabled="selectedCount === 0"
+              class="inline-flex items-center gap-1.5 px-3 py-2 rounded-md bg-bg-tertiary text-text-secondary text-xs font-medium hover:bg-bg-hover transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              @click="openBatchRename"
+            >
+              <Pencil class="w-3.5 h-3.5" />
+              {{ t("batch.rename") }}
+            </button>
           </div>
         </div>
 
@@ -131,6 +153,7 @@ onMounted(() => {
           :selected="batchStore.selectedFiles"
           @toggle="toggleSelection"
           @toggle-all="toggleAll"
+          @rename="(path) => openRenameModal([path])"
         />
       </template>
 
@@ -159,5 +182,12 @@ onMounted(() => {
 
       <JobMonitor />
     </div>
+
+    <RenameModal
+      :open="renameModalOpen"
+      :files="renameFiles"
+      @close="renameModalOpen = false"
+      @applied="batchStore.rescan"
+    />
   </div>
 </template>

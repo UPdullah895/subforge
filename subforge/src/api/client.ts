@@ -72,6 +72,7 @@ function cmdToEndpoint(cmd: string): string {
     get_tool_registry: "/api/tools/registry",
     load_config: "/api/config",
     save_config: "/api/config",
+    parse_filename: "/api/rename/parse",
     search_series: "/api/rename/search",
     get_episodes: "/api/rename/episodes",
     preview_rename: "/api/rename/preview",

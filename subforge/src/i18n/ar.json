@@ -21,7 +21,8 @@
     "noFileSelected": "لم يتم تحديد أي ملف",
     "failedToReadFile": "فشل قراءة الملف",
     "extract": "استخراج",
-    "scanFailed": "فشل المسح"
+    "scanFailed": "فشل المسح",
+    "cancel": "إلغاء"
   },
   "trackType": {
     "video": "فيديو",
@@ -113,7 +114,24 @@
     "selected": "{count} / {total} محدد",
     "extractSubs": "استخراج الترجمات",
     "noFilesScanned": "لم يتم مسح أي ملفات",
-    "noFilesScannedDesc": "حدد دليلاً للمسح بشكل متكرر عن ملفات الفيديو ومعاينة مساراتها."
+    "noFilesScannedDesc": "حدد دليلاً للمسح بشكل متكرر عن ملفات الفيديو ومعاينة مساراتها.",
+    "rename": "إعادة تسمية"
+  },
+  "rename": {
+    "title": "إعادة تسمية الملفات",
+    "mode": {
+      "manual": "يدوي",
+      "tmdb": "تلقائي — TMDB",
+      "tvmaze": "تلقائي — TVmaze"
+    },
+    "searchPlaceholder": "ابحث عن مسلسل...",
+    "search": "بحث",
+    "change": "تغيير",
+    "pattern": "نمط التسمية",
+    "preview": "معاينة",
+    "unmatched": "غير مطابق — اختر حلقة",
+    "pickEpisode": "اختر حلقة...",
+    "confirm": "إعادة تسمية"
   },
   "transcribe": {
     "title": "تحويل الكلام إلى نص",

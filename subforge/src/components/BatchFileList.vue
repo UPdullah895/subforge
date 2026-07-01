@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed } from "vue";
 import { useI18n } from "vue-i18n";
-import { FileVideo, ChevronDown, ChevronRight } from "lucide-vue-next";
+import { FileVideo, ChevronDown, ChevronRight, Pencil } from "lucide-vue-next";
 import type { VideoFileInfo } from "../stores/batchStore";
 
 const { t } = useI18n();
@@ -14,6 +14,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   (e: "toggle", path: string): void;
   (e: "toggleAll"): void;
+  (e: "rename", path: string): void;
 }>();
 
 const expanded = ref<Set<string>>(new Set());
@@ -89,15 +90,24 @@ function toggleAll() {
             <td colspan="6" class="px-4 py-3">
               <div class="text-xs text-text-secondary space-y-1">
                 <p class="font-mono text-text-muted">{{ file.path }}</p>
-                <div class="flex flex-wrap gap-2 mt-2">
-                  <span
-                    v-for="track in file.tracks"
-                    :key="track.id"
-                    class="px-2 py-0.5 rounded bg-bg-tertiary text-text-secondary"
+                <div class="flex items-center justify-between mt-2">
+                  <div class="flex flex-wrap gap-2">
+                    <span
+                      v-for="track in file.tracks"
+                      :key="track.id"
+                      class="px-2 py-0.5 rounded bg-bg-tertiary text-text-secondary"
+                    >
+                      #{{ track.id }} {{ track.track_type }} · {{ track.codec }}
+                      <span v-if="track.properties?.language">· {{ track.properties.language }}</span>
+                    </span>
+                  </div>
+                  <button
+                    class="inline-flex items-center gap-1.5 px-2 py-1 rounded bg-bg-tertiary text-text-secondary hover:bg-bg-hover transition-colors shrink-0"
+                    @click="emit('rename', file.path)"
                   >
-                    #{{ track.id }} {{ track.track_type }} · {{ track.codec }}
-                    <span v-if="track.properties?.language">· {{ track.properties.language }}</span>
-                  </span>
+                    <Pencil class="w-3 h-3" />
+                    {{ t("batch.rename") }}
+                  </button>
                 </div>
               </div>
             </td>
@@ -105,7 +115,7 @@ function toggleAll() {
         </template>
         <tr v-if="props.files.length === 0">
           <td colspan="6" class="px-4 py-8 text-center text-text-muted">
-            No files found. Scan a directory to get started.
+            {{ t("batchFileList.empty") }}
           </td>
         </tr>
       </tbody>
