@@ -3,6 +3,7 @@ import { apiInvoke } from "../api/client";
 import { apiListen } from "../api/events";
 import { ref } from "vue";
 import { useJobQueue } from "../composables/useJobQueue";
+import { mapJobErrorMessage } from "./translateStore";
 
 interface Track {
   id: number;
@@ -90,7 +91,7 @@ export const useBatchStore = defineStore("batch", () => {
         if (payload.status === "completed") {
           upsertExternalSub(mapping.path, mapping.lang, "ok");
         } else {
-          upsertExternalSub(mapping.path, mapping.lang, "error", payload.message);
+          upsertExternalSub(mapping.path, mapping.lang, "error", mapJobErrorMessage(payload.message));
         }
         pipelineJobs.delete(payload.job_id);
       }
@@ -131,13 +132,13 @@ export const useBatchStore = defineStore("batch", () => {
     }
   }
 
-  async function batchExtract(outputDir: string) {
+  async function batchExtract(outputDir: string, languages: string[] = []) {
     const files = Array.from(selectedFiles.value);
     if (files.length === 0) return;
 
     try {
       const jobIds = await apiInvoke<string[]>("batch_extract_subtitles", {
-        options: { files, output_dir: outputDir },
+        options: { files, output_dir: outputDir, languages },
       });
 
       jobIds.forEach((id, i) => {
@@ -183,5 +184,6 @@ export const useBatchStore = defineStore("batch", () => {
     deselectAll,
     clearJobs,
     registerPipelineJob,
+    upsertExternalSub,
   };
 });

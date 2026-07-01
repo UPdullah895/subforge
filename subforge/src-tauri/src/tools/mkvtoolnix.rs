@@ -1,8 +1,10 @@
 use super::{which, ToolInfo};
 use crate::config::AppConfig;
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 use std::process::Command;
+use subforge_metadata::filenaming;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -186,23 +188,88 @@ pub fn extract_all_subtitles(
     file_path: &str,
     output_dir: &str,
 ) -> Result<Vec<String>, MkvError> {
+    extract_subtitles_filtered(file_path, output_dir, None)
+}
+
+/// Like `extract_all_subtitles`, but only extracts tracks whose language
+/// (case-insensitive) is in `languages` — used by the batch language picker
+/// so users can extract e.g. just English instead of every track.
+pub fn extract_subtitles_by_language(
+    file_path: &str,
+    output_dir: &str,
+    languages: &[String],
+) -> Result<Vec<String>, MkvError> {
+    extract_subtitles_filtered(file_path, output_dir, Some(languages))
+}
+
+fn extract_subtitles_filtered(
+    file_path: &str,
+    output_dir: &str,
+    languages: Option<&[String]>,
+) -> Result<Vec<String>, MkvError> {
     let info = enumerate_tracks(file_path)?;
+    let video_stem = Path::new(file_path)
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("subtitle")
+        .to_string();
+
+    let subtitle_tracks: Vec<&Track> = info
+        .tracks
+        .iter()
+        .filter(|t| {
+            if t.track_type != "subtitles" {
+                return false;
+            }
+            match languages {
+                None => true,
+                Some(langs) => {
+                    let lang = t
+                        .properties
+                        .as_ref()
+                        .and_then(|p| p.language.clone())
+                        .unwrap_or_else(|| "und".to_string());
+                    langs.iter().any(|l| l.eq_ignore_ascii_case(&lang))
+                }
+            }
+        })
+        .collect();
+
+    // Only append a disambiguator when a video has more than one subtitle
+    // track sharing the same language — not by default.
+    let mut lang_counts: HashMap<String, usize> = HashMap::new();
+    for track in &subtitle_tracks {
+        let lang = track
+            .properties
+            .as_ref()
+            .and_then(|p| p.language.clone())
+            .unwrap_or_else(|| "und".to_string());
+        *lang_counts.entry(lang).or_insert(0) += 1;
+    }
+
+    let mut seen: HashMap<String, u32> = HashMap::new();
     let mut extracted = Vec::new();
 
-    for track in &info.tracks {
-        if track.track_type == "subtitles" {
-            let lang = track
-                .properties
-                .as_ref()
-                .and_then(|p| p.language.clone())
-                .unwrap_or_else(|| "und".to_string());
-            let out = std::path::PathBuf::from(output_dir)
-                .join(format!("{}_{}.srt", track.id, lang))
-                .to_string_lossy()
-                .to_string();
-            extract_subtitle_track(file_path, track.id, &out)?;
-            extracted.push(out);
-        }
+    for track in &subtitle_tracks {
+        let lang = track
+            .properties
+            .as_ref()
+            .and_then(|p| p.language.clone())
+            .unwrap_or_else(|| "und".to_string());
+        let disambiguator = if lang_counts.get(&lang).copied().unwrap_or(0) > 1 {
+            let n = seen.entry(lang.clone()).or_insert(0);
+            *n += 1;
+            Some(*n)
+        } else {
+            None
+        };
+        let filename = filenaming::external_sub_filename(&video_stem, &lang, "srt", disambiguator);
+        let out = PathBuf::from(output_dir)
+            .join(filename)
+            .to_string_lossy()
+            .to_string();
+        extract_subtitle_track(file_path, track.id, &out)?;
+        extracted.push(out);
     }
 
     Ok(extracted)

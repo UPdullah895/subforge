@@ -62,6 +62,7 @@ function cmdToEndpoint(cmd: string): string {
     remove_audio_tracks: "/api/audio/remove",
     scan_directory: "/api/batch/scan",
     batch_extract_subtitles: "/api/batch/extract",
+    merge_external_subs: "/api/batch/merge-subs",
     get_whisper_info: "/api/transcribe/info",
     list_whisper_models: "/api/transcribe/models",
     download_whisper_model: "/api/transcribe/download",

@@ -3,15 +3,15 @@ use crate::tools::mkvtoolnix::{self, ExternalSub, VideoFileInfo};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::path::Path;
+use subforge_metadata::filenaming;
 use tauri::{AppHandle, Emitter, State};
 use walkdir::WalkDir;
 
-const KNOWN_LANG_CODES: &[&str] = &[
-    "en", "ar", "es", "fr", "de", "ja", "ko", "zh", "ru", "pt", "it", "tr", "hi", "fa", "ur",
-];
-
-/// Finds sibling subtitle files matching `{video_stem}.{lang}.{srt,ass}` next
-/// to a video file — e.g. `Show - S01E01.ar.srt` alongside `Show - S01E01.mkv`.
+/// Finds sibling subtitle files matching the shared `{video_stem}.{lang}.{ext}`
+/// convention (see `subforge_metadata::filenaming`) next to a video file —
+/// e.g. `Show - S01E01.ar.srt` alongside `Show - S01E01.mkv`. This is the same
+/// convention `extract_all_subtitles` writes to, so subtitles this app
+/// extracts are picked back up as external subs on a later scan.
 fn detect_external_subs(video_path: &Path) -> Vec<ExternalSub> {
     let stem = match video_path.file_stem().and_then(|s| s.to_str()) {
         Some(s) => s,
@@ -27,7 +27,6 @@ fn detect_external_subs(video_path: &Path) -> Vec<ExternalSub> {
         Err(_) => return vec![],
     };
 
-    let prefix = format!("{}.", stem);
     let mut subs = Vec::new();
 
     for entry in entries.flatten() {
@@ -39,17 +38,7 @@ fn detect_external_subs(video_path: &Path) -> Vec<ExternalSub> {
             Some(n) => n,
             None => continue,
         };
-        if !name.starts_with(&prefix) {
-            continue;
-        }
-        let rest = &name[prefix.len()..];
-        let parts: Vec<&str> = rest.rsplitn(2, '.').collect();
-        if parts.len() != 2 {
-            continue;
-        }
-        let ext = parts[0].to_lowercase();
-        let lang = parts[1].to_lowercase();
-        if (ext == "srt" || ext == "ass") && KNOWN_LANG_CODES.contains(&lang.as_str()) {
+        if let Some((lang, _ext)) = filenaming::parse_external_sub_filename(stem, name) {
             subs.push(ExternalSub {
                 lang,
                 status: "ok".to_string(),
@@ -137,6 +126,8 @@ pub fn scan_directory(options: ScanOptions) -> Result<Vec<VideoFileInfo>, String
 pub struct BatchExtractOptions {
     pub files: Vec<String>,
     pub output_dir: String,
+    #[serde(default)]
+    pub languages: Vec<String>,
 }
 
 #[tauri::command]
@@ -150,6 +141,7 @@ pub async fn batch_extract_subtitles(
     for file in &options.files {
         let job_id = format!("batch-extract-{}", uuid::Uuid::new_v4());
         let output_dir = options.output_dir.clone();
+        let languages = options.languages.clone();
         let file = file.clone();
 
         {
@@ -171,7 +163,11 @@ pub async fn batch_extract_subtitles(
         let queue_clone = queue.inner().clone();
 
         tokio::spawn(async move {
-            let result = mkvtoolnix::extract_all_subtitles(&file, &output_dir);
+            let result = if languages.is_empty() {
+                mkvtoolnix::extract_all_subtitles(&file, &output_dir)
+            } else {
+                mkvtoolnix::extract_subtitles_by_language(&file, &output_dir, &languages)
+            };
 
             let mut q = queue_clone.lock().unwrap();
             if let Ok(extracted) = result {
@@ -191,6 +187,61 @@ pub async fn batch_extract_subtitles(
     }
 
     Ok(job_ids)
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SubToMerge {
+    pub path: String,
+    pub lang: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MergeSubsRequest {
+    pub video_path: String,
+    pub subs: Vec<SubToMerge>,
+    #[serde(default)]
+    pub delete_originals: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MergeSubsResult {
+    pub output_path: String,
+}
+
+/// Muxes existing external subtitle files (already detected by the batch
+/// scan) into their video via mkvmerge, reusing the same
+/// `mkvtoolnix::merge_subtitles` call the single-file Subtitles page uses.
+/// Writes to a new `{video_stem}.merged.mkv` rather than overwriting the
+/// source, matching the auto-translate pipeline's convention of not
+/// clobbering the original file.
+#[tauri::command]
+pub fn merge_external_subs(request: MergeSubsRequest) -> Result<MergeSubsResult, String> {
+    let video_path = Path::new(&request.video_path);
+    let stem = video_path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("video");
+    let dir = video_path.parent().unwrap_or_else(|| Path::new("."));
+    let output_path = dir
+        .join(format!("{stem}.merged.mkv"))
+        .to_string_lossy()
+        .to_string();
+
+    let subs: Vec<(String, Option<String>)> = request
+        .subs
+        .iter()
+        .map(|s| (s.path.clone(), Some(s.lang.clone())))
+        .collect();
+
+    mkvtoolnix::merge_subtitles(&request.video_path, &subs, &output_path).map_err(|e| e.to_string())?;
+
+    if request.delete_originals {
+        for sub in &request.subs {
+            let _ = std::fs::remove_file(&sub.path);
+        }
+    }
+
+    Ok(MergeSubsResult { output_path })
 }
 
 #[cfg(test)]

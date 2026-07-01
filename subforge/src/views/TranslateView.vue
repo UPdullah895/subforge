@@ -4,7 +4,7 @@ import { useI18n } from "vue-i18n";
 import { open } from "@tauri-apps/plugin-dialog";
 import { apiListen } from "../api/events";
 import type { UnlistenFn } from "@tauri-apps/api/event";
-import { useTranslateStore, type EngineType } from "../stores/translateStore";
+import { useTranslateStore, type EngineType, mapJobErrorMessage } from "../stores/translateStore";
 
 const { t } = useI18n();
 import { JOB_STATUS, type JobStatus } from "../constants/jobStatus";
@@ -192,7 +192,7 @@ onMounted(async () => {
   unlistenCompleted = await apiListen<{ job_id: string; status: string; message?: string }>(
     "job-completed",
     ({ job_id, status, message }) => {
-      translateStore.completeJob(job_id, status as JobStatus, message);
+      translateStore.completeJob(job_id, status as JobStatus, mapJobErrorMessage(message));
     }
   );
 });

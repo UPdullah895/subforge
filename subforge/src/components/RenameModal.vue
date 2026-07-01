@@ -21,6 +21,7 @@ const renameStore = useRenameStore();
 const applying = ref(false);
 
 const tokens = ["{title}", "{s}", "{e}", "{episodeTitle}", "{quality}"];
+const manualTokens = ["{name}", "{s}", "{e}"];
 
 function fileName(path: string): string {
   return path.split(/[/\\]/).pop() || path;
@@ -84,6 +85,14 @@ function insertToken(token: string) {
   renameStore.pattern += token;
 }
 
+function insertManualToken(token: string) {
+  renameStore.manualPattern += token;
+}
+
+async function applyManualPattern() {
+  await renameStore.applyManualPattern(props.files);
+}
+
 function onEpisodeOverride(oldPath: string, event: Event) {
   const value = (event.target as HTMLSelectElement).value;
   const [season, episode] = value.split("x").map(Number);
@@ -130,7 +139,39 @@ async function confirmRename() {
       </div>
 
       <!-- Manual mode -->
-      <div v-if="renameStore.mode === 'manual'" class="space-y-2">
+      <div v-if="renameStore.mode === 'manual'" class="space-y-3">
+        <div class="p-3 rounded-lg bg-bg-secondary border border-border space-y-2">
+          <label class="block text-xs font-medium text-text-secondary">{{ t("rename.manualName") }}</label>
+          <input
+            v-model="renameStore.manualPatternName"
+            type="text"
+            :placeholder="t('rename.manualNamePlaceholder')"
+            class="w-full px-3 py-2 rounded-lg bg-bg-primary border border-border text-sm text-text-primary focus:outline-none focus:border-accent"
+          />
+          <label class="block text-xs font-medium text-text-secondary">{{ t("rename.pattern") }}</label>
+          <input
+            v-model="renameStore.manualPattern"
+            type="text"
+            class="w-full px-3 py-2 rounded-lg bg-bg-primary border border-border text-sm text-text-primary focus:outline-none focus:border-accent"
+          />
+          <div class="flex flex-wrap items-center gap-1.5">
+            <button
+              v-for="tok in manualTokens"
+              :key="tok"
+              class="px-2 py-1 rounded bg-bg-tertiary text-text-secondary text-xs hover:bg-bg-hover transition-colors"
+              @click="insertManualToken(tok)"
+            >
+              {{ tok }}
+            </button>
+            <button
+              class="ml-auto px-3 py-1.5 rounded-md bg-accent text-white text-xs font-medium hover:bg-accent-hover transition-colors"
+              @click="applyManualPattern"
+            >
+              {{ t("rename.applyToAll") }}
+            </button>
+          </div>
+        </div>
+
         <div v-for="f in files" :key="f" class="flex items-center gap-2">
           <span class="text-xs text-text-muted truncate w-1/3" :title="f">{{ fileName(f) }}</span>
           <input

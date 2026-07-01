@@ -22,6 +22,20 @@ export interface LibreInfo {
 
 export type EngineType = "ollama" | "libretranslate" | "deepl" | "openai" | "google";
 
+/**
+ * Maps stable, locale-agnostic error codes emitted by the Rust backend (e.g.
+ * "connect_failed") to a friendly, localized message. Used everywhere a job's
+ * raw error message is surfaced to the user, not just the Settings/Detect
+ * probes — a real translation job failing to reach Ollama mid-batch must show
+ * the same friendly message as the Test Connection button.
+ */
+export function mapJobErrorMessage(message?: string): string | undefined {
+  if (message === "connect_failed") {
+    return i18n.global.t("translate.errorOllamaUnreachable");
+  }
+  return message;
+}
+
 export const useTranslateStore = defineStore("translate", () => {
   const appStore = useAppStore();
 
@@ -95,7 +109,7 @@ export const useTranslateStore = defineStore("translate", () => {
       const msg = e instanceof Error ? e.message : String(e);
       error.value =
         msg === "connect_failed"
-          ? i18n.global.t("translate.errorOllamaUnreachable")
+          ? mapJobErrorMessage(msg)!
           : `Cannot reach Ollama at ${ollamaHost.value}: ${msg}`;
       return false;
     }

@@ -112,6 +112,7 @@
     "title": "Batch Operations",
     "tooltip": "Scan directories for video files and run batch subtitle extraction across multiple files at once.",
     "scanDirectory": "Scan Directory",
+    "refresh": "Refresh (rescan current folder)",
     "scanning": "Scanning files...",
     "files": "Files",
     "selected": "{count} / {total} selected",
@@ -119,7 +120,8 @@
     "noFilesScanned": "No files scanned",
     "noFilesScannedDesc": "Select a directory to recursively scan for video files and preview their tracks.",
     "rename": "Rename",
-    "autoTranslate": "Auto-Translate"
+    "autoTranslate": "Auto-Translate",
+    "mergeSubs": "Merge Subs"
   },
   "rename": {
     "title": "Rename Files",
@@ -135,7 +137,24 @@
     "preview": "Preview",
     "unmatched": "Unmatched — pick an episode",
     "pickEpisode": "Pick episode...",
-    "confirm": "Rename"
+    "confirm": "Rename",
+    "manualName": "Name",
+    "manualNamePlaceholder": "e.g. Among Us",
+    "applyToAll": "Apply to all"
+  },
+  "mergeSubs": {
+    "title": "Merge External Subtitles",
+    "noneAvailable": "None of the selected files have a detected external subtitle ready to merge.",
+    "mergeAllDetected": "Merge all detected",
+    "deleteOriginals": "Delete original external file after merge",
+    "confirm": "Merge Selected"
+  },
+  "extractLangPicker": {
+    "title": "Choose Languages to Extract",
+    "description": "Pick which subtitle language(s) to extract across the selected files.",
+    "noTracks": "No subtitle tracks found in the selected files.",
+    "fileCoverage": "{count}/{total} files have this track",
+    "confirm": "Extract Selected"
   },
   "autoTranslate": {
     "title": "Auto-Translate",

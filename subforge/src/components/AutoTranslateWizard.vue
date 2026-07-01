@@ -5,7 +5,7 @@ import Modal from "./Modal.vue";
 import { apiInvoke } from "../api/client";
 import { apiListen } from "../api/events";
 import { useBatchStore } from "../stores/batchStore";
-import { useTranslateStore, type EngineType } from "../stores/translateStore";
+import { useTranslateStore, type EngineType, mapJobErrorMessage } from "../stores/translateStore";
 import { CheckCircle2, XCircle, Loader2 } from "lucide-vue-next";
 
 const { t } = useI18n();
@@ -131,7 +131,8 @@ async function startPipeline() {
     if (job) {
       job.stage = status === "completed" ? "done" : "error";
       job.progress = 100;
-      if (message) job.message = message;
+      const mapped = mapJobErrorMessage(message);
+      if (mapped) job.message = mapped;
     }
   });
 
@@ -166,7 +167,7 @@ async function startPipeline() {
       await batchStore.registerPipelineJob(jobId, job.path, targetLang.value);
     } catch (e) {
       job.stage = "error";
-      job.message = e instanceof Error ? e.message : String(e);
+      job.message = mapJobErrorMessage(e instanceof Error ? e.message : String(e));
     }
   }
 }

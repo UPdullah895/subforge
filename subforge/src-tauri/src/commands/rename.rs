@@ -2,13 +2,18 @@ use crate::config::AppConfig;
 use subforge_metadata::{cache, matcher, parser, renamer, tmdb::TmdbClient, tvmaze::TvmazeClient};
 use subforge_metadata::{Episode, ParsedFilename, RenamePreviewRow, SeriesMatch};
 
-#[tauri::command]
+// These commands take multi-word snake_case parameters that must match the
+// Axum server's request struct field names exactly (no camelCase rename
+// there). `rename_all = "snake_case"` keeps the Tauri IPC argument names
+// consistent with that instead of Tauri's default camelCase conversion,
+// so the same frontend call sites work unmodified on both backends.
+#[tauri::command(rename_all = "snake_case")]
 pub fn parse_filename(name: String) -> ParsedFilename {
     let (stem, _ext) = split_stem_ext(&name);
     parser::parse_filename(&stem)
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case")]
 pub async fn search_series(provider: String, query: String) -> Result<Vec<SeriesMatch>, String> {
     let results = match provider.as_str() {
         "tmdb" => {
@@ -31,7 +36,7 @@ pub async fn search_series(provider: String, query: String) -> Result<Vec<Series
     Ok(matcher::rank_matches(&query, &results))
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case")]
 pub async fn get_episodes(provider: String, series_id: String) -> Result<Vec<Episode>, String> {
     if let Some(cached) = cache::load(&provider, &series_id) {
         return Ok(cached);
@@ -60,7 +65,7 @@ pub async fn get_episodes(provider: String, series_id: String) -> Result<Vec<Epi
     Ok(episodes)
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case")]
 pub fn preview_rename(
     files: Vec<String>,
     episodes: Vec<Episode>,
@@ -122,7 +127,7 @@ pub struct RenameMapping {
     pub new_path: String,
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case")]
 pub fn apply_rename(mapping: Vec<RenameMapping>) -> Result<usize, String> {
     let mut renamed = 0;
     for m in &mapping {

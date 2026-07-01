@@ -10,6 +10,8 @@ import BatchFileList from "../components/BatchFileList.vue";
 import JobMonitor from "../components/JobMonitor.vue";
 import RenameModal from "../components/RenameModal.vue";
 import AutoTranslateWizard from "../components/AutoTranslateWizard.vue";
+import LanguagePickerModal from "../components/LanguagePickerModal.vue";
+import MergeSubsModal from "../components/MergeSubsModal.vue";
 import {
   FolderOpen,
   Loader2,
@@ -19,6 +21,8 @@ import {
   Info,
   Pencil,
   Languages,
+  RefreshCw,
+  Combine,
 } from "lucide-vue-next";
 
 const batchStore = useBatchStore();
@@ -61,15 +65,38 @@ async function pickDirectory() {
   }
 }
 
-async function runBatchExtract() {
+const langPickerOpen = ref(false);
+
+function runBatchExtract() {
+  langPickerOpen.value = true;
+}
+
+async function confirmExtractLanguages(languages: string[]) {
+  langPickerOpen.value = false;
   const outputDir = await open({
     multiple: false,
     directory: true,
     title: "Select output directory for extracted subtitles",
   });
   if (outputDir && typeof outputDir === "string") {
-    await batchStore.batchExtract(outputDir);
+    await batchStore.batchExtract(outputDir, languages);
   }
+}
+
+const selectedFileInfos = computed(() =>
+  batchStore.scannedFiles.filter((f) => batchStore.selectedFiles.has(f.path))
+);
+
+const mergeSubsModalOpen = ref(false);
+const mergeSubsFiles = ref<string[]>([]);
+
+function openMergeSubs(files: string[]) {
+  mergeSubsFiles.value = files;
+  mergeSubsModalOpen.value = true;
+}
+
+function openBatchMergeSubs() {
+  openMergeSubs(Array.from(batchStore.selectedFiles));
 }
 
 function toggleSelection(path: string) {
@@ -102,13 +129,24 @@ onMounted(() => {
           <Info class="w-4 h-4" />
         </span>
       </div>
-      <button
-        class="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg bg-accent text-white text-sm font-medium hover:bg-accent-hover active:bg-accent-active transition-colors"
-        @click="pickDirectory"
-      >
-        <FolderOpen class="w-4 h-4" />
-        {{ t("batch.scanDirectory") }}
-      </button>
+      <div class="flex items-center gap-2">
+        <button
+          v-if="batchStore.lastScannedPath"
+          :disabled="batchStore.loading"
+          class="inline-flex items-center gap-1.5 px-3 py-2.5 rounded-lg bg-bg-tertiary text-text-secondary text-xs font-medium hover:bg-bg-hover transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          :title="t('batch.refresh')"
+          @click="batchStore.rescan"
+        >
+          <RefreshCw class="w-4 h-4" :class="{ 'animate-spin': batchStore.loading }" />
+        </button>
+        <button
+          class="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg bg-accent text-white text-sm font-medium hover:bg-accent-hover active:bg-accent-active transition-colors"
+          @click="pickDirectory"
+        >
+          <FolderOpen class="w-4 h-4" />
+          {{ t("batch.scanDirectory") }}
+        </button>
+      </div>
     </div>
 
     <!-- Content -->
@@ -167,6 +205,14 @@ onMounted(() => {
               <Languages class="w-3.5 h-3.5" />
               {{ t("batch.autoTranslate") }}
             </button>
+            <button
+              :disabled="selectedCount === 0"
+              class="inline-flex items-center gap-1.5 px-3 py-2 rounded-md bg-bg-tertiary text-text-secondary text-xs font-medium hover:bg-bg-hover transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              @click="openBatchMergeSubs"
+            >
+              <Combine class="w-3.5 h-3.5" />
+              {{ t("batch.mergeSubs") }}
+            </button>
           </div>
         </div>
 
@@ -177,6 +223,7 @@ onMounted(() => {
           @toggle-all="toggleAll"
           @rename="(path) => openRenameModal([path])"
           @auto-translate="(path) => openTranslateModal([path])"
+          @merge-subs="(path) => openMergeSubs([path])"
         />
       </template>
 
@@ -216,6 +263,17 @@ onMounted(() => {
       :open="translateModalOpen"
       :files="translateFiles"
       @close="translateModalOpen = false"
+    />
+    <LanguagePickerModal
+      :open="langPickerOpen"
+      :files="selectedFileInfos"
+      @close="langPickerOpen = false"
+      @confirm="confirmExtractLanguages"
+    />
+    <MergeSubsModal
+      :open="mergeSubsModalOpen"
+      :files="mergeSubsFiles"
+      @close="mergeSubsModalOpen = false"
     />
   </div>
 </template>

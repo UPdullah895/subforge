@@ -82,6 +82,7 @@ fn api_routes() -> Router<AppState> {
         // ── Batch operations ─────────────────────────────────────────────────
         .route("/batch/scan", post(routes::batch::scan_directory))
         .route("/batch/extract", post(routes::batch::batch_extract_subtitles))
+        .route("/batch/merge-subs", post(routes::batch::merge_external_subs))
         // ── Transcription (Whisper) ──────────────────────────────────────────
         // GET for browser direct access; POST for apiInvoke() from frontend
         .route(

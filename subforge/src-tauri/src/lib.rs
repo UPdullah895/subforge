@@ -47,6 +47,7 @@ pub fn run() {
             audio_cmds::remove_audio_tracks,
             batch_cmds::scan_directory,
             batch_cmds::batch_extract_subtitles,
+            batch_cmds::merge_external_subs,
             transcribe_cmds::get_whisper_info,
             transcribe_cmds::list_whisper_models,
             transcribe_cmds::download_whisper_model,

@@ -54,6 +54,8 @@ export const useRenameStore = defineStore("rename", () => {
   const pattern = ref("{title} - S{s}E{e} - {episodeTitle}");
   const previewRows = ref<RenamePreviewRow[]>([]);
   const manualNames = ref<Record<string, string>>({});
+  const manualPattern = ref("{name} - S{s}E{e}");
+  const manualPatternName = ref("");
   const loading = ref(false);
   const error = ref<string | null>(null);
 
@@ -65,7 +67,33 @@ export const useRenameStore = defineStore("rename", () => {
     episodes.value = [];
     previewRows.value = [];
     manualNames.value = {};
+    manualPatternName.value = "";
     error.value = null;
+  }
+
+  function fileNameOnly(path: string): string {
+    return path.split(/[/\\]/).pop() || path;
+  }
+
+  /**
+   * Fills manualNames for every file from one pattern + free-text name, using
+   * the same season/episode parsing as parser.rs (no title-lookup API
+   * involved). Rows stay individually editable afterward — this only sets
+   * the initial values, it doesn't lock them.
+   */
+  async function applyManualPattern(files: string[]) {
+    for (const f of files) {
+      try {
+        const parsed = await apiInvoke<ParsedFilename>("parse_filename", { name: fileNameOnly(f) });
+        if (parsed.season == null || parsed.episode == null) continue;
+        manualNames.value[f] = manualPattern.value
+          .replace("{name}", manualPatternName.value)
+          .replace("{s}", String(parsed.season).padStart(2, "0"))
+          .replace("{e}", String(parsed.episode).padStart(2, "0"));
+      } catch {
+        // Skip files that fail to parse — leave their manual name untouched.
+      }
+    }
   }
 
   async function guessQueryFrom(firstFile: string) {
@@ -179,6 +207,8 @@ export const useRenameStore = defineStore("rename", () => {
     pattern,
     previewRows,
     manualNames,
+    manualPattern,
+    manualPatternName,
     loading,
     error,
     reset,
@@ -187,6 +217,7 @@ export const useRenameStore = defineStore("rename", () => {
     selectSeries,
     buildPreview,
     setRowOverride,
+    applyManualPattern,
     apply,
   };
 });

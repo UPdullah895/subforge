@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed } from "vue";
 import { useI18n } from "vue-i18n";
-import { FileVideo, ChevronDown, ChevronRight, Pencil, Languages } from "lucide-vue-next";
+import { FileVideo, ChevronDown, ChevronRight, Pencil, Languages, Combine } from "lucide-vue-next";
 import type { ExternalSub, VideoFileInfo } from "../stores/batchStore";
 
 const { t } = useI18n();
@@ -16,6 +16,7 @@ const emit = defineEmits<{
   (e: "toggleAll"): void;
   (e: "rename", path: string): void;
   (e: "autoTranslate", path: string): void;
+  (e: "mergeSubs", path: string): void;
 }>();
 
 const expanded = ref<Set<string>>(new Set());
@@ -151,6 +152,14 @@ function badgeClass(status: ExternalSub["status"]): string {
                     >
                       <Languages class="w-3 h-3" />
                       {{ t("batch.autoTranslate") }}
+                    </button>
+                    <button
+                      :disabled="!file.external_subs.some((s) => s.status === 'ok')"
+                      class="inline-flex items-center gap-1.5 px-2 py-1 rounded bg-bg-tertiary text-text-secondary hover:bg-bg-hover transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                      @click="emit('mergeSubs', file.path)"
+                    >
+                      <Combine class="w-3 h-3" />
+                      {{ t("batch.mergeSubs") }}
                     </button>
                   </div>
                 </div>
