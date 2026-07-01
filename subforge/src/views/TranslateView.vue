@@ -50,6 +50,13 @@ const engines: { id: EngineType; icon: typeof Brain }[] = [
   { id: "openai", icon: Key },
 ];
 
+const engineKeyPrefix: Record<EngineType, string> = {
+  ollama: "ollama",
+  libretranslate: "libre",
+  deepl: "deepl",
+  openai: "openai",
+};
+
 const languageOptions = [
   { code: "auto", label: "Auto-detect" },
   { code: "en", label: "English" },
@@ -82,10 +89,12 @@ function buildOutputPath(inputPath: string, targetLang: string): string {
   const dir = inputPath.substring(0, lastSlash + 1);
   const name = inputPath.substring(lastSlash + 1);
 
-  // Strip existing language code if present
-  const base = name.replace(langPattern, "");
   const extMatch = name.match(/\.(srt|ass|ssa|vtt)$/i);
   const ext = extMatch ? extMatch[1] : "srt";
+
+  // Strip the real extension first, then strip an existing language code if present
+  const withoutExt = name.replace(/\.[^.]+$/, "");
+  const base = withoutExt.replace(new RegExp(`\\.(${knownLangCodes.join("|")})$`, "i"), "");
 
   return `${dir}${base}.${targetLang}.${ext}`;
 }
@@ -321,15 +330,15 @@ onUnmounted(() => {
           </div>
           <p class="text-xs text-text-secondary">
             <strong class="text-text-primary">{{ t("translate.what") }}:</strong>
-            {{ t(`translate.${showEngineHelp}Desc`) }}
+            {{ t(`translate.${engineKeyPrefix[showEngineHelp]}Desc`) }}
           </p>
           <p class="text-xs text-text-secondary">
             <strong class="text-text-primary">{{ t("translate.setup") }}:</strong>
-            {{ t(`translate.${showEngineHelp}Setup`) }}
+            {{ t(`translate.${engineKeyPrefix[showEngineHelp]}Setup`) }}
           </p>
           <p class="text-xs text-text-secondary">
             <strong class="text-text-primary">{{ t("translate.security") }}:</strong>
-            {{ t(`translate.${showEngineHelp}Security`) }}
+            {{ t(`translate.${engineKeyPrefix[showEngineHelp]}Security`) }}
           </p>
         </div>
       </div>

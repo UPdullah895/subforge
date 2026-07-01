@@ -213,6 +213,7 @@
     "sameAsInputFile": "Same as input file",
     "toolPaths": "Tool Paths",
     "toolPathsDesc": "Leave blank to use auto-detected paths. Only change these if SubForge cannot find your tools.",
+    "autoDetect": "Auto-detect",
     "mkvmerge": "MKVMerge",
     "mkvmergePlaceholder": "Path to mkvmerge",
     "mkvextract": "MKVExtract",

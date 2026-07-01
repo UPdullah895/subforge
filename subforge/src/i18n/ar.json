@@ -213,6 +213,7 @@
     "sameAsInputFile": "نفس الملف المدخل",
     "toolPaths": "مسارات الأدوات",
     "toolPathsDesc": "اترك المسافات الفارغة لاستخدام المسارات المكتشفة تلقائياً. قم بتغيير هذا فقط إذا لم تستطع SubForge العثور على أدواتك.",
+    "autoDetect": "الكشف التلقائي",
     "mkvmerge": "MKVMerge",
     "mkvmergePlaceholder": "مسار إلى mkvmerge",
     "mkvextract": "MKVExtract",

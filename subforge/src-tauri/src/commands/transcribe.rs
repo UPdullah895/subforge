@@ -89,7 +89,7 @@ pub async fn transcribe_audio(
                 q.update_progress(&job_id_clone, 0.0, Some(e.to_string()));
                 let _ = app_clone.emit("job-completed", serde_json::json!({
                     "job_id": job_id_clone,
-                    "status": "Failed",
+                    "status": "failed",
                     "message": e.to_string(),
                 }));
                 return;
@@ -148,7 +148,7 @@ pub async fn transcribe_audio(
                 }
                 let _ = app_clone.emit("job-completed", serde_json::json!({
                     "job_id": job_id_clone,
-                    "status": "Failed",
+                    "status": "failed",
                     "message": stderr_msg,
                 }));
                 return;

@@ -1,7 +1,8 @@
 import { listen } from "@tauri-apps/api/event";
 
-const isTauri =
-  typeof window !== "undefined" && !!(window as unknown as Record<string, unknown>).__TAURI__;
+function isTauri(): boolean {
+  return typeof window !== "undefined" && !!(window as unknown as Record<string, unknown>).__TAURI__;
+}
 
 let ws: WebSocket | null = null;
 let retryCount = 0;
@@ -49,7 +50,7 @@ export async function apiListen<T>(
   event: string,
   handler: (payload: T) => void
 ): Promise<() => void> {
-  if (isTauri) {
+  if (isTauri()) {
     return listen(event, (e) => handler(e.payload as T));
   }
 

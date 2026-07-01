@@ -1,11 +1,12 @@
 import { invoke } from "@tauri-apps/api/core";
 import { commandSchemas } from "./schemas";
 
-const isTauri =
-  typeof window !== "undefined" && !!(window as unknown as Record<string, unknown>).__TAURI__;
+function isTauri(): boolean {
+  return typeof window !== "undefined" && !!(window as unknown as Record<string, unknown>).__TAURI__;
+}
 
 export async function apiInvoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
-  if (isTauri) {
+  if (isTauri()) {
     return invoke<T>(cmd, args);
   }
 
@@ -28,7 +29,7 @@ export async function apiInvoke<T>(cmd: string, args?: Record<string, unknown>):
 }
 
 export async function apiGet<T>(cmd: string, params?: Record<string, string>): Promise<T> {
-  if (isTauri) {
+  if (isTauri()) {
     return invoke<T>(cmd, params);
   }
 

@@ -3,6 +3,7 @@ use std::sync::{Arc, Mutex};
 use tokio::sync::broadcast;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "lowercase")]
 pub enum JobStatus {
     Pending,
     Running,

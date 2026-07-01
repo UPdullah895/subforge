@@ -10,6 +10,7 @@ import {
   Info,
   Save,
   RotateCcw,
+  Search,
 } from "lucide-vue-next";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 
@@ -53,6 +54,24 @@ async function pickOutputDir() {
   });
   if (selected && typeof selected === "string") {
     appStore.config!.default_output_dir = selected;
+  }
+}
+
+async function autoDetectTools() {
+  await appStore.discoverTools();
+  const registry = appStore.toolRegistry;
+  if (!registry || !appStore.config) return;
+  if (!appStore.config.mkvmerge_path && registry.mkvmerge.available && registry.mkvmerge.path) {
+    appStore.config.mkvmerge_path = registry.mkvmerge.path;
+  }
+  if (!appStore.config.mkvextract_path && registry.mkvextract.available && registry.mkvextract.path) {
+    appStore.config.mkvextract_path = registry.mkvextract.path;
+  }
+  if (!appStore.config.ffmpeg_path && registry.ffmpeg.available && registry.ffmpeg.path) {
+    appStore.config.ffmpeg_path = registry.ffmpeg.path;
+  }
+  if (!appStore.config.ffprobe_path && registry.ffprobe.available && registry.ffprobe.path) {
+    appStore.config.ffprobe_path = registry.ffprobe.path;
   }
 }
 
@@ -218,9 +237,18 @@ onMounted(() => {
           <h2 class="text-sm font-semibold text-text-primary uppercase tracking-wide">{{ t("settings.toolPaths") }}</h2>
         </div>
         <div class="p-4 rounded-lg bg-bg-secondary border border-border space-y-3">
-          <p class="text-xs text-text-muted">
-            {{ t("settings.toolPathsDesc") }}
-          </p>
+          <div class="flex items-center justify-between gap-3">
+            <p class="text-xs text-text-muted">
+              {{ t("settings.toolPathsDesc") }}
+            </p>
+            <button
+              class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-bg-tertiary text-text-secondary text-xs font-medium hover:bg-bg-hover transition-colors shrink-0"
+              @click="autoDetectTools"
+            >
+              <Search class="w-3.5 h-3.5" />
+              {{ t("settings.autoDetect") }}
+            </button>
+          </div>
           <div>
             <label class="block text-xs font-medium text-text-secondary mb-1.5">{{ t("settings.mkvmerge") }}</label>
             <input

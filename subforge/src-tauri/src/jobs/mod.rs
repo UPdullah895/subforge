@@ -4,6 +4,7 @@ use tauri::{AppHandle, Emitter};
 use tokio::process::Command;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "lowercase")]
 pub enum JobStatus {
     Pending,
     Running,
