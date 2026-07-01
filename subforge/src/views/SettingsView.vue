@@ -1,7 +1,10 @@
 <script setup lang="ts">
-import { onMounted, ref } from "vue";
+import { onMounted, reactive, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import { useAppStore } from "../stores/appStore";
+import { useTranslateStore } from "../stores/translateStore";
+import { apiInvoke } from "../api/client";
+import SetupInstructions from "../components/SetupInstructions.vue";
 import {
   Palette,
   Languages,
@@ -11,12 +14,61 @@ import {
   Save,
   RotateCcw,
   Search,
+  KeyRound,
+  Eye,
+  EyeOff,
+  CheckCircle2,
+  XCircle,
+  Loader2,
+  HelpCircle,
 } from "lucide-vue-next";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 
 const { t } = useI18n();
 
 const appStore = useAppStore();
+const translateStore = useTranslateStore();
+
+type ProviderId = "tmdb" | "tvmaze" | "deepl" | "openai" | "google" | "ollama";
+
+const providers: { id: ProviderId; label: string; hasKey: boolean }[] = [
+  { id: "tmdb", label: "TMDB", hasKey: true },
+  { id: "tvmaze", label: "TVmaze", hasKey: false },
+  { id: "deepl", label: "DeepL", hasKey: true },
+  { id: "openai", label: "OpenAI", hasKey: true },
+  { id: "google", label: "Google Translate", hasKey: true },
+  { id: "ollama", label: "Ollama", hasKey: false },
+];
+
+const showKey = reactive<Record<ProviderId, boolean>>({
+  tmdb: false,
+  tvmaze: false,
+  deepl: false,
+  openai: false,
+  google: false,
+  ollama: false,
+});
+
+const testStatus = reactive<Record<ProviderId, "idle" | "testing" | "success" | "error">>({
+  tmdb: "idle",
+  tvmaze: "idle",
+  deepl: "idle",
+  openai: "idle",
+  google: "idle",
+  ollama: "idle",
+});
+
+const showSetupFor = ref<ProviderId | null>(null);
+
+async function testProvider(provider: ProviderId) {
+  testStatus[provider] = "testing";
+  try {
+    await apiInvoke("test_provider_config", { provider });
+    testStatus[provider] = "success";
+  } catch {
+    testStatus[provider] = "error";
+  }
+}
 
 const engines = [
   { id: "ollama", label: "Ollama" },
@@ -93,6 +145,21 @@ function resetDefaults() {
     mkvextract_path: undefined,
     ffmpeg_path: undefined,
     ffprobe_path: undefined,
+  };
+}
+
+function setupContentFor(id: ProviderId) {
+  if (id === "tmdb" || id === "tvmaze") {
+    return {
+      what: t(`settings.${id}Desc`),
+      setup: t(`settings.${id}Setup`),
+      security: t(`settings.${id}Security`),
+    };
+  }
+  return {
+    what: t(`translate.${id}Desc`),
+    setup: t(`translate.${id}Setup`),
+    security: t(`translate.${id}Security`),
   };
 }
 
@@ -283,6 +350,171 @@ onMounted(() => {
               type="text"
               :placeholder="t('settings.ffprobePlaceholder')"
               class="w-full px-4 py-2.5 rounded-lg bg-bg-primary border border-border text-sm text-text-primary placeholder-text-muted focus:outline-none focus:border-accent"
+            />
+          </div>
+        </div>
+      </section>
+
+      <!-- API & Providers -->
+      <section class="space-y-3">
+        <div class="flex items-center gap-2">
+          <KeyRound class="w-4 h-4 text-accent" />
+          <h2 class="text-sm font-semibold text-text-primary uppercase tracking-wide">{{ t("settings.apiProviders") }}</h2>
+        </div>
+        <p class="text-xs text-text-muted -mt-1">{{ t("settings.apiProvidersDesc") }}</p>
+        <div class="space-y-3">
+          <div
+            v-for="provider in providers"
+            :key="provider.id"
+            class="p-4 rounded-lg bg-bg-secondary border border-border space-y-3"
+          >
+            <div class="flex items-center justify-between">
+              <div class="flex items-center gap-2">
+                <p class="text-sm font-medium text-text-primary">{{ provider.label }}</p>
+                <button
+                  class="text-text-muted hover:text-text-secondary transition-colors"
+                  :title="t('settings.setupInstructions')"
+                  @click="showSetupFor = showSetupFor === provider.id ? null : provider.id"
+                >
+                  <HelpCircle class="w-3.5 h-3.5" />
+                </button>
+              </div>
+              <div class="flex items-center gap-2">
+                <span v-if="testStatus[provider.id] === 'success'" class="inline-flex items-center gap-1 text-xs text-green-500">
+                  <CheckCircle2 class="w-3.5 h-3.5" />
+                  {{ t("settings.testSuccess") }}
+                </span>
+                <span v-else-if="testStatus[provider.id] === 'error'" class="inline-flex items-center gap-1 text-xs text-red-500">
+                  <XCircle class="w-3.5 h-3.5" />
+                  {{ t("settings.testFailed") }}
+                </span>
+                <button
+                  class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-bg-tertiary text-text-secondary text-xs font-medium hover:bg-bg-hover transition-colors disabled:opacity-50"
+                  :disabled="testStatus[provider.id] === 'testing'"
+                  @click="testProvider(provider.id)"
+                >
+                  <Loader2 v-if="testStatus[provider.id] === 'testing'" class="w-3.5 h-3.5 animate-spin" />
+                  {{ testStatus[provider.id] === "testing" ? t("settings.testing") : t("settings.testConnection") }}
+                </button>
+              </div>
+            </div>
+
+            <!-- TMDB -->
+            <div v-if="provider.id === 'tmdb' && appStore.config">
+              <label class="block text-xs font-medium text-text-secondary mb-1.5">{{ t("settings.tmdbApiKey") }}</label>
+              <div class="relative">
+                <input
+                  v-model="appStore.config.tmdb_api_key"
+                  :type="showKey.tmdb ? 'text' : 'password'"
+                  :placeholder="t('settings.tmdbPlaceholder')"
+                  class="w-full px-4 py-2.5 pr-10 rounded-lg bg-bg-primary border border-border text-sm text-text-primary placeholder-text-muted focus:outline-none focus:border-accent"
+                />
+                <button
+                  class="absolute right-3 top-1/2 -translate-y-1/2 text-text-muted hover:text-text-secondary"
+                  @click="showKey.tmdb = !showKey.tmdb"
+                >
+                  <EyeOff v-if="showKey.tmdb" class="w-4 h-4" />
+                  <Eye v-else class="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+
+            <!-- TVmaze -->
+            <p v-else-if="provider.id === 'tvmaze'" class="text-xs text-text-muted">
+              {{ t("settings.tvmazeNoKey") }}
+            </p>
+
+            <!-- DeepL -->
+            <div v-else-if="provider.id === 'deepl'" class="space-y-3">
+              <div>
+                <label class="block text-xs font-medium text-text-secondary mb-1.5">{{ t("translate.apiKey") }}</label>
+                <div class="relative">
+                  <input
+                    v-model="translateStore.deeplKey"
+                    :type="showKey.deepl ? 'text' : 'password'"
+                    :placeholder="t('translate.deeplPlaceholder')"
+                    class="w-full px-4 py-2.5 pr-10 rounded-lg bg-bg-primary border border-border text-sm text-text-primary placeholder-text-muted focus:outline-none focus:border-accent"
+                  />
+                  <button
+                    class="absolute right-3 top-1/2 -translate-y-1/2 text-text-muted hover:text-text-secondary"
+                    @click="showKey.deepl = !showKey.deepl"
+                  >
+                    <EyeOff v-if="showKey.deepl" class="w-4 h-4" />
+                    <Eye v-else class="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+              <label class="flex items-center gap-2 text-xs text-text-secondary">
+                <input v-model="translateStore.deeplPro" type="checkbox" class="accent-accent" />
+                {{ t("translate.proAccount") }}
+              </label>
+            </div>
+
+            <!-- OpenAI -->
+            <div v-else-if="provider.id === 'openai'" class="space-y-3">
+              <div>
+                <label class="block text-xs font-medium text-text-secondary mb-1.5">{{ t("translate.apiKey") }}</label>
+                <div class="relative">
+                  <input
+                    v-model="translateStore.openaiKey"
+                    :type="showKey.openai ? 'text' : 'password'"
+                    :placeholder="t('translate.openaiPlaceholder')"
+                    class="w-full px-4 py-2.5 pr-10 rounded-lg bg-bg-primary border border-border text-sm text-text-primary placeholder-text-muted focus:outline-none focus:border-accent"
+                  />
+                  <button
+                    class="absolute right-3 top-1/2 -translate-y-1/2 text-text-muted hover:text-text-secondary"
+                    @click="showKey.openai = !showKey.openai"
+                  >
+                    <EyeOff v-if="showKey.openai" class="w-4 h-4" />
+                    <Eye v-else class="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+              <div>
+                <label class="block text-xs font-medium text-text-secondary mb-1.5">{{ t("translate.modelName") }}</label>
+                <input
+                  v-model="translateStore.openaiModel"
+                  type="text"
+                  class="w-full px-4 py-2.5 rounded-lg bg-bg-primary border border-border text-sm text-text-primary focus:outline-none focus:border-accent"
+                />
+              </div>
+            </div>
+
+            <!-- Google Translate -->
+            <div v-else-if="provider.id === 'google'">
+              <label class="block text-xs font-medium text-text-secondary mb-1.5">{{ t("translate.apiKey") }}</label>
+              <div class="relative">
+                <input
+                  v-model="translateStore.googleApiKey"
+                  :type="showKey.google ? 'text' : 'password'"
+                  :placeholder="t('translate.googlePlaceholder')"
+                  class="w-full px-4 py-2.5 pr-10 rounded-lg bg-bg-primary border border-border text-sm text-text-primary placeholder-text-muted focus:outline-none focus:border-accent"
+                />
+                <button
+                  class="absolute right-3 top-1/2 -translate-y-1/2 text-text-muted hover:text-text-secondary"
+                  @click="showKey.google = !showKey.google"
+                >
+                  <EyeOff v-if="showKey.google" class="w-4 h-4" />
+                  <Eye v-else class="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+
+            <!-- Ollama -->
+            <div v-else-if="provider.id === 'ollama'">
+              <label class="block text-xs font-medium text-text-secondary mb-1.5">{{ t("translate.hostUrl") }}</label>
+              <input
+                v-model="translateStore.ollamaHost"
+                type="text"
+                class="w-full px-4 py-2.5 rounded-lg bg-bg-primary border border-border text-sm text-text-primary focus:outline-none focus:border-accent"
+              />
+            </div>
+
+            <SetupInstructions
+              v-if="showSetupFor === provider.id"
+              :title="t('translate.about', { engine: provider.label })"
+              v-bind="setupContentFor(provider.id)"
+              @close="showSetupFor = null"
             />
           </div>
         </div>

@@ -4,8 +4,8 @@ pub mod jobs;
 pub mod tools;
 
 use commands::{
-    audio as audio_cmds, batch as batch_cmds, rename as rename_cmds, subtitle as subtitle_cmds,
-    transcribe as transcribe_cmds, translate as translate_cmds,
+    audio as audio_cmds, batch as batch_cmds, providers as providers_cmds, rename as rename_cmds,
+    subtitle as subtitle_cmds, transcribe as transcribe_cmds, translate as translate_cmds,
 };
 use jobs::SharedJobQueue;
 use std::sync::{Arc, Mutex};
@@ -59,6 +59,7 @@ pub fn run() {
             rename_cmds::get_episodes,
             rename_cmds::preview_rename,
             rename_cmds::apply_rename,
+            providers_cmds::test_provider_config,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

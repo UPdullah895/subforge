@@ -1,7 +1,9 @@
 import { defineStore } from "pinia";
 import { apiInvoke } from "../api/client";
-import { ref } from "vue";
+import { ref, watch } from "vue";
 import { useJobQueue } from "../composables/useJobQueue";
+import { useAppStore } from "./appStore";
+import { i18n } from "../i18n";
 
 export interface OllamaInfo {
   available: boolean;
@@ -18,9 +20,11 @@ export interface LibreInfo {
   languages: LibreLanguage[];
 }
 
-export type EngineType = "ollama" | "libretranslate" | "deepl" | "openai";
+export type EngineType = "ollama" | "libretranslate" | "deepl" | "openai" | "google";
 
 export const useTranslateStore = defineStore("translate", () => {
+  const appStore = useAppStore();
+
   const selectedEngine = ref<EngineType>("ollama");
   const ollamaHost = ref(import.meta.env.VITE_OLLAMA_HOST ?? "http://localhost:11434");
   const ollamaModels = ref<string[]>([]);
@@ -29,16 +33,51 @@ export const useTranslateStore = defineStore("translate", () => {
   const libreLanguages = ref<LibreLanguage[]>([]);
   const sourceLang = ref("en");
   const targetLang = ref("es");
-  // Session-only credentials — never include in saveConfig().
-  // In server mode, these must be handled backend-side only.
+  // Persisted via appStore.config (see hydrate/persist watchers below), not
+  // held only for the session anymore — previously these reset every restart.
   const deeplKey = ref("");
   const deeplPro = ref(false);
   const openaiKey = ref("");
   const openaiModel = ref("gpt-4o-mini");
+  const googleApiKey = ref("");
   const { jobs, addJob, updateJobProgress, completeJob, clearCompleted } = useJobQueue();
   const error = ref<string | null>(null);
   const previewOriginal = ref<string[]>([]);
   const previewTranslated = ref<string[]>([]);
+
+  let hydrating = false;
+
+  watch(
+    () => appStore.config,
+    (cfg) => {
+      if (!cfg) return;
+      hydrating = true;
+      if (cfg.ollama_base_url) ollamaHost.value = cfg.ollama_base_url;
+      if (cfg.libretranslate_base_url) libreHost.value = cfg.libretranslate_base_url;
+      if (cfg.deepl_api_key) deeplKey.value = cfg.deepl_api_key;
+      deeplPro.value = cfg.deepl_pro ?? false;
+      if (cfg.openai_api_key) openaiKey.value = cfg.openai_api_key;
+      if (cfg.openai_model) openaiModel.value = cfg.openai_model;
+      if (cfg.google_translate_api_key) googleApiKey.value = cfg.google_translate_api_key;
+      hydrating = false;
+    },
+    { immediate: true }
+  );
+
+  watch(
+    [ollamaHost, libreHost, deeplKey, deeplPro, openaiKey, openaiModel, googleApiKey],
+    async () => {
+      if (hydrating || !appStore.config) return;
+      appStore.config.ollama_base_url = ollamaHost.value;
+      appStore.config.libretranslate_base_url = libreHost.value;
+      appStore.config.deepl_api_key = deeplKey.value;
+      appStore.config.deepl_pro = deeplPro.value;
+      appStore.config.openai_api_key = openaiKey.value;
+      appStore.config.openai_model = openaiModel.value;
+      appStore.config.google_translate_api_key = googleApiKey.value;
+      await appStore.saveConfig();
+    }
+  );
 
   async function detectOllama() {
     error.value = null;
@@ -53,7 +92,11 @@ export const useTranslateStore = defineStore("translate", () => {
       return info.available;
     } catch (e) {
       ollamaModels.value = [];
-      error.value = `Cannot reach Ollama at ${ollamaHost.value}: ${e instanceof Error ? e.message : String(e)}`;
+      const msg = e instanceof Error ? e.message : String(e);
+      error.value =
+        msg === "connect_failed"
+          ? i18n.global.t("translate.errorOllamaUnreachable")
+          : `Cannot reach Ollama at ${ollamaHost.value}: ${msg}`;
       return false;
     }
   }
@@ -92,6 +135,8 @@ export const useTranslateStore = defineStore("translate", () => {
     } else if (selectedEngine.value === "openai") {
       options.api_key = openaiKey.value;
       options.model = openaiModel.value;
+    } else if (selectedEngine.value === "google") {
+      options.api_key = googleApiKey.value;
     }
 
     error.value = null;
@@ -125,6 +170,7 @@ export const useTranslateStore = defineStore("translate", () => {
     deeplPro,
     openaiKey,
     openaiModel,
+    googleApiKey,
     error,
     jobs,
     previewOriginal,

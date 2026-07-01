@@ -16,6 +16,14 @@ export interface AppConfig {
   default_source_lang?: string;
   default_target_lang?: string;
   default_output_dir?: string;
+  tmdb_api_key?: string;
+  deepl_api_key?: string;
+  deepl_pro?: boolean;
+  openai_api_key?: string;
+  openai_model?: string;
+  google_translate_api_key?: string;
+  ollama_base_url?: string;
+  libretranslate_base_url?: string;
 }
 
 export interface ToolInfo {

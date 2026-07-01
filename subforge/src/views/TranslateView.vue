@@ -10,6 +10,7 @@ const { t } = useI18n();
 import { JOB_STATUS, type JobStatus } from "../constants/jobStatus";
 import { useAppStore } from "../stores/appStore";
 import ErrorBanner from "../components/ErrorBanner.vue";
+import SetupInstructions from "../components/SetupInstructions.vue";
 import {
   FolderOpen,
   Languages,
@@ -21,6 +22,7 @@ import {
   RefreshCw,
   Brain,
   Globe,
+  Globe2,
   Key,
   Zap,
   Info,
@@ -48,6 +50,7 @@ const engines: { id: EngineType; icon: typeof Brain }[] = [
   { id: "libretranslate", icon: Globe },
   { id: "deepl", icon: Zap },
   { id: "openai", icon: Key },
+  { id: "google", icon: Globe2 },
 ];
 
 const engineKeyPrefix: Record<EngineType, string> = {
@@ -55,6 +58,7 @@ const engineKeyPrefix: Record<EngineType, string> = {
   libretranslate: "libre",
   deepl: "deepl",
   openai: "openai",
+  google: "google",
 };
 
 const languageOptions = [
@@ -313,34 +317,14 @@ onUnmounted(() => {
         </div>
 
         <!-- Engine Help Panel -->
-        <div
+        <SetupInstructions
           v-if="showEngineHelp"
-          class="p-4 rounded-lg bg-bg-secondary border border-border space-y-2"
-        >
-          <div class="flex items-center justify-between">
-            <h3 class="text-sm font-semibold text-text-primary">
-              {{ t(`translate.${showEngineHelp}`) }}
-            </h3>
-            <button
-              class="text-text-muted hover:text-text-secondary transition-colors"
-              @click="showEngineHelp = null"
-            >
-              <X class="w-4 h-4" />
-            </button>
-          </div>
-          <p class="text-xs text-text-secondary">
-            <strong class="text-text-primary">{{ t("translate.what") }}:</strong>
-            {{ t(`translate.${engineKeyPrefix[showEngineHelp]}Desc`) }}
-          </p>
-          <p class="text-xs text-text-secondary">
-            <strong class="text-text-primary">{{ t("translate.setup") }}:</strong>
-            {{ t(`translate.${engineKeyPrefix[showEngineHelp]}Setup`) }}
-          </p>
-          <p class="text-xs text-text-secondary">
-            <strong class="text-text-primary">{{ t("translate.security") }}:</strong>
-            {{ t(`translate.${engineKeyPrefix[showEngineHelp]}Security`) }}
-          </p>
-        </div>
+          :title="t(`translate.${showEngineHelp}`)"
+          :what="t(`translate.${engineKeyPrefix[showEngineHelp]}Desc`)"
+          :setup="t(`translate.${engineKeyPrefix[showEngineHelp]}Setup`)"
+          :security="t(`translate.${engineKeyPrefix[showEngineHelp]}Security`)"
+          @close="showEngineHelp = null"
+        />
       </div>
 
       <!-- Engine Settings -->
@@ -441,6 +425,20 @@ onUnmounted(() => {
               v-model="translateStore.openaiModel"
               type="text"
               class="w-full px-4 py-2.5 rounded-lg bg-bg-secondary border border-border text-sm text-text-primary focus:outline-none focus:border-accent"
+            />
+          </div>
+        </div>
+
+        <!-- Google Translate Settings -->
+        <div v-else-if="translateStore.selectedEngine === 'google'" class="space-y-3">
+          <h2 class="text-sm font-semibold text-text-primary uppercase tracking-wide">{{ t("translate.googleSection") }}</h2>
+          <div>
+            <label class="block text-xs font-medium text-text-secondary mb-1.5">{{ t("translate.apiKey") }}</label>
+            <input
+              v-model="translateStore.googleApiKey"
+              type="password"
+              :placeholder="t('translate.googlePlaceholder')"
+              class="w-full px-4 py-2.5 rounded-lg bg-bg-secondary border border-border text-sm text-text-primary placeholder-text-muted focus:outline-none focus:border-accent"
             />
           </div>
         </div>

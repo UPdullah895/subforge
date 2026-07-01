@@ -213,6 +213,10 @@ pub async fn translate_subtitles(
                     translate::translate_openai(&key, &model, chunk, &req_source, &req_target)
                         .await
                 }
+                "google" => {
+                    let key = req_key.clone().unwrap_or_default();
+                    translate::translate_google(&key, chunk, &req_source, &req_target).await
+                }
                 _ => {
                     let mut q = queue_clone.lock().unwrap();
                     q.update_status(&job_id_clone, jobs::JobStatus::Failed);

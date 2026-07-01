@@ -157,6 +157,10 @@ pub async fn translate_subtitles(
                     let model = req.model.clone().unwrap_or_else(|| "gpt-4o-mini".to_string());
                     translate::translate_openai(&key, &model, chunk, &req.source_lang, &req.target_lang).await
                 }
+                "google" => {
+                    let key = req.api_key.clone().unwrap_or_default();
+                    translate::translate_google(&key, chunk, &req.source_lang, &req.target_lang).await
+                }
                 _ => {
                     let mut q = queue_clone.lock().unwrap();
                     q.update_status(&job_id_clone, JobStatus::Failed);

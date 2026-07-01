@@ -77,6 +77,7 @@ function cmdToEndpoint(cmd: string): string {
     get_episodes: "/api/rename/episodes",
     preview_rename: "/api/rename/preview",
     apply_rename: "/api/rename/apply",
+    test_provider_config: "/api/providers/test",
   };
   return map[cmd] || `/api/${cmd.replace(/_/g, "/")}`;
 }

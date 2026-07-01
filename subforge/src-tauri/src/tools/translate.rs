@@ -17,6 +17,23 @@ pub enum TranslateError {
     Json(#[from] serde_json::Error),
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
+    /// Stable, locale-agnostic error code for a refused/unreachable connection
+    /// (e.g. the target service isn't running). The frontend maps this exact
+    /// string to a friendly, localized message rather than showing the raw
+    /// reqwest error.
+    #[error("connect_failed")]
+    ConnectFailed,
+}
+
+/// Send a request, distinguishing a connection-refused/unreachable-host
+/// failure from other HTTP errors so callers can surface a friendly message
+/// instead of a raw reqwest error string.
+async fn send_checked(request: reqwest::RequestBuilder) -> Result<reqwest::Response, TranslateError> {
+    match request.send().await {
+        Ok(resp) => Ok(resp),
+        Err(e) if e.is_connect() => Err(TranslateError::ConnectFailed),
+        Err(e) => Err(TranslateError::Http(e)),
+    }
 }
 
 fn get_python() -> Result<PathBuf, TranslateError> {
@@ -82,7 +99,7 @@ pub async fn detect_ollama(host: &str) -> Result<OllamaTagResponse, TranslateErr
         .build()
         .unwrap_or_default();
     let url = format!("{}/api/tags", host.trim_end_matches('/'));
-    let resp = client.get(&url).send().await?;
+    let resp = send_checked(client.get(&url)).await?;
     if !resp.status().is_success() {
         return Err(TranslateError::Api(format!("Ollama returned {}", resp.status())));
     }
@@ -120,7 +137,7 @@ Do not add explanations or markdown formatting.\n\nLines:\n{}\n\nReturn format: 
         "temperature": 0.3,
     });
 
-    let resp = client.post(&url).json(&body).send().await?;
+    let resp = send_checked(client.post(&url).json(&body)).await?;
     if !resp.status().is_success() {
         let text = resp.text().await.unwrap_or_default();
         return Err(TranslateError::Api(format!("Ollama API error: {}", text)));
@@ -336,4 +353,101 @@ No markdown, no explanations.\n\n{}\n\nReturn: [\"...\", \"...\"]",
 
     let translations: Vec<String> = serde_json::from_str(cleaned)?;
     Ok(translations)
+}
+
+// ─── Google Translate ───
+
+pub async fn translate_google(
+    api_key: &str,
+    lines: &[SubtitleLine],
+    source: &str,
+    target: &str,
+) -> Result<Vec<String>, TranslateError> {
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(30))
+        .build()
+        .unwrap_or_default();
+    let url = format!("https://translation.googleapis.com/language/translate/v2?key={api_key}");
+
+    let texts: Vec<String> = lines.iter().map(|l| l.text.clone()).collect();
+    let body = serde_json::json!({
+        "q": texts,
+        "source": source,
+        "target": target,
+        "format": "text",
+    });
+
+    let resp = client.post(&url).json(&body).send().await?;
+    if !resp.status().is_success() {
+        let text = resp.text().await.unwrap_or_default();
+        return Err(TranslateError::Api(format!("Google Translate error: {}", text)));
+    }
+
+    let json_resp: serde_json::Value = resp.json().await?;
+    let translations: Vec<String> = json_resp["data"]["translations"]
+        .as_array()
+        .ok_or_else(|| TranslateError::Api("Missing translations array".to_string()))?
+        .iter()
+        .filter_map(|t| t["translatedText"].as_str().map(|s| s.to_string()))
+        .collect();
+
+    Ok(translations)
+}
+
+// ─── Settings "Test" button validation calls (lightest official endpoint per provider) ───
+
+pub async fn test_deepl_key(api_key: &str) -> Result<(), TranslateError> {
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .build()
+        .unwrap_or_default();
+    let is_free = api_key.ends_with(":fx");
+    let url = if is_free {
+        "https://api-free.deepl.com/v2/usage"
+    } else {
+        "https://api.deepl.com/v2/usage"
+    };
+    let resp = send_checked(
+        client.get(url).header("Authorization", format!("DeepL-Auth-Key {api_key}")),
+    )
+    .await?;
+    if resp.status().is_success() {
+        Ok(())
+    } else {
+        Err(TranslateError::Api(format!("DeepL returned {}", resp.status())))
+    }
+}
+
+pub async fn test_openai_key(api_key: &str) -> Result<(), TranslateError> {
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .build()
+        .unwrap_or_default();
+    let resp = send_checked(
+        client
+            .get("https://api.openai.com/v1/models")
+            .header("Authorization", format!("Bearer {api_key}")),
+    )
+    .await?;
+    if resp.status().is_success() {
+        Ok(())
+    } else {
+        Err(TranslateError::Api(format!("OpenAI returned {}", resp.status())))
+    }
+}
+
+pub async fn test_google_key(api_key: &str) -> Result<(), TranslateError> {
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .build()
+        .unwrap_or_default();
+    let url = format!(
+        "https://translation.googleapis.com/language/translate/v2/languages?key={api_key}"
+    );
+    let resp = send_checked(client.get(&url)).await?;
+    if resp.status().is_success() {
+        Ok(())
+    } else {
+        Err(TranslateError::Api(format!("Google Translate returned {}", resp.status())))
+    }
 }
