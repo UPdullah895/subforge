@@ -36,7 +36,12 @@ pub struct TrackProperties {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Track {
     pub id: u64,
-    #[serde(rename = "type")]
+    // mkvmerge's `-J` output names this field "type"; `rename` alone would
+    // apply to serialization too, which would send "type" back to the
+    // frontend instead of "track_type" that every consumer (batch table,
+    // language picker, auto-translate track lookup) expects. Scoping the
+    // rename to `deserialize` only keeps both directions correct.
+    #[serde(rename(deserialize = "type"))]
     pub track_type: String,
     pub codec: String,
     #[serde(default)]
@@ -376,4 +381,30 @@ pub fn remove_all_audio(video_path: &str, output_path: &str) -> Result<(), MkvEr
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod track_serde_tests {
+    use super::*;
+
+    #[test]
+    fn deserializes_mkvmerge_type_field_into_track_type() {
+        let raw = r#"{"id":3,"type":"subtitles","codec":"SubRip/SRT","properties":{"language":"ita","forced_track":true}}"#;
+        let track: Track = serde_json::from_str(raw).unwrap();
+        assert_eq!(track.track_type, "subtitles");
+        assert_eq!(track.properties.unwrap().language.as_deref(), Some("ita"));
+    }
+
+    #[test]
+    fn serializes_track_type_as_track_type_not_type() {
+        let track = Track {
+            id: 3,
+            track_type: "subtitles".to_string(),
+            codec: "SubRip/SRT".to_string(),
+            properties: None,
+        };
+        let json = serde_json::to_value(&track).unwrap();
+        assert_eq!(json.get("track_type").and_then(|v| v.as_str()), Some("subtitles"));
+        assert!(json.get("type").is_none());
+    }
 }
