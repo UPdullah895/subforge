@@ -38,12 +38,13 @@ fn detect_external_subs(video_path: &Path) -> Vec<ExternalSub> {
             Some(n) => n,
             None => continue,
         };
-        if let Some((lang, _ext)) = filenaming::parse_external_sub_filename(stem, name) {
+        if let Some(parsed) = filenaming::parse_external_sub_filename(stem, name) {
             subs.push(ExternalSub {
-                lang,
+                lang: parsed.lang,
                 status: "ok".to_string(),
                 error_message: None,
                 path: path.to_string_lossy().to_string(),
+                flavor: parsed.flavor,
             });
         }
     }
@@ -193,6 +194,12 @@ pub async fn batch_extract_subtitles(
 pub struct SubToMerge {
     pub path: String,
     pub lang: String,
+    #[serde(default)]
+    pub track_name: Option<String>,
+    #[serde(default)]
+    pub hearing_impaired: bool,
+    #[serde(default)]
+    pub make_default: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -227,10 +234,16 @@ pub fn merge_external_subs(request: MergeSubsRequest) -> Result<MergeSubsResult,
         .to_string_lossy()
         .to_string();
 
-    let subs: Vec<(String, Option<String>)> = request
+    let subs: Vec<mkvtoolnix::SubtitleMergeSpec> = request
         .subs
         .iter()
-        .map(|s| (s.path.clone(), Some(s.lang.clone())))
+        .map(|s| mkvtoolnix::SubtitleMergeSpec {
+            path: s.path.clone(),
+            language: Some(s.lang.clone()),
+            track_name: s.track_name.clone(),
+            hearing_impaired: s.hearing_impaired,
+            make_default: s.make_default,
+        })
         .collect();
 
     mkvtoolnix::merge_subtitles(&request.video_path, &subs, &output_path).map_err(|e| e.to_string())?;

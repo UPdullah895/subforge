@@ -271,6 +271,12 @@ pub struct PipelineRequest {
     pub model: Option<String>,
     pub api_key: Option<String>,
     pub auto_merge: bool,
+    #[serde(default)]
+    pub track_name: Option<String>,
+    #[serde(default)]
+    pub hearing_impaired: bool,
+    #[serde(default)]
+    pub set_default_subtitle: bool,
 }
 
 fn emit_stage(app: &AppHandle, job_id: &str, stage: &str, progress: i32, message: &str) {
@@ -464,11 +470,14 @@ pub async fn run_translation_pipeline(
                 .join(format!("{}.{}.mkv", video_stem, req.target_lang))
                 .to_string_lossy()
                 .to_string();
-            if let Err(e) = mkvtoolnix::merge_subtitles(
-                &req.video_path,
-                &[(translated_srt.clone(), Some(req.target_lang.clone()))],
-                &merged_path,
-            ) {
+            let sub_spec = mkvtoolnix::SubtitleMergeSpec {
+                path: translated_srt.clone(),
+                language: Some(req.target_lang.clone()),
+                track_name: req.track_name.clone(),
+                hearing_impaired: req.hearing_impaired,
+                make_default: req.set_default_subtitle,
+            };
+            if let Err(e) = mkvtoolnix::merge_subtitles(&req.video_path, &[sub_spec], &merged_path) {
                 fail!(e.to_string());
             }
             merged_path

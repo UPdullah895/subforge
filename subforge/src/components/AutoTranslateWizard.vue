@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { computed, ref, watch } from "vue";
+import { computed, reactive, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import Modal from "./Modal.vue";
 import { apiInvoke } from "../api/client";
 import { apiListen } from "../api/events";
 import { useBatchStore } from "../stores/batchStore";
+import { useAppStore } from "../stores/appStore";
 import { useTranslateStore, type EngineType, mapJobErrorMessage } from "../stores/translateStore";
 import { CheckCircle2, XCircle, Loader2 } from "lucide-vue-next";
 
@@ -21,6 +22,7 @@ const emit = defineEmits<{
 
 const batchStore = useBatchStore();
 const translateStore = useTranslateStore();
+const appStore = useAppStore();
 
 const languageOptions = [
   { code: "en", label: "English" },
@@ -63,18 +65,24 @@ const LANG_ALIASES: Record<string, string[]> = {
 };
 
 const sourceLang = ref("en");
-const targetLang = ref("es");
+const targetLangs = ref<string[]>(["ar"]);
 const autoMerge = ref(true);
+const setDefaultSubtitle = ref(false);
 const provider = ref<EngineType>("ollama");
 const starting = ref(false);
 const ollamaAvailable = ref(false);
 const libreAvailable = ref(false);
 const probed = ref(false);
 
+// path -> chosen track id, only used when a file has more than one subtitle
+// track matching the chosen source language (see `ambiguousFiles`).
+const selectedTrackId = reactive<Record<string, number>>({});
+
 type FileStage = "queued" | "extracting" | "translating" | "merging" | "done" | "error";
 
 interface FileJob {
   path: string;
+  lang: string;
   name: string;
   jobId?: string;
   stage: FileStage;
@@ -98,12 +106,67 @@ const providerOptions = computed(() => {
 
 const running = computed(() => fileJobs.value.length > 0);
 
+interface TrackCandidate {
+  id: number;
+  label: string;
+}
+
+function trackLabel(tr: {
+  id: number;
+  properties?: { track_name?: string; forced_track?: boolean; hearing_impaired?: boolean };
+}): string {
+  const parts: string[] = [`#${tr.id}`];
+  if (tr.properties?.track_name) parts.push(tr.properties.track_name);
+  if (tr.properties?.forced_track) parts.push(t("autoTranslate.forced"));
+  if (tr.properties?.hearing_impaired) parts.push(t("autoTranslate.sdh"));
+  return parts.join(" — ");
+}
+
+// Files where more than one subtitle track matches the chosen source
+// language (e.g. a regular track and an SDH track) — the pipeline needs a
+// single specific track, so these need an explicit pick instead of silently
+// defaulting to the first match.
+const ambiguousFiles = computed(() => {
+  const result: { path: string; name: string; candidates: TrackCandidate[] }[] = [];
+  const aliases = LANG_ALIASES[sourceLang.value] ?? [sourceLang.value];
+  for (const path of props.files) {
+    const file = batchStore.scannedFiles.find((f) => f.path === path);
+    if (!file) continue;
+    const matches = file.tracks.filter(
+      (tr) => tr.track_type === "subtitles" && aliases.includes((tr.properties?.language || "").toLowerCase())
+    );
+    if (matches.length > 1) {
+      result.push({ path, name: file.name, candidates: matches.map((tr) => ({ id: tr.id, label: trackLabel(tr) })) });
+    }
+  }
+  return result;
+});
+
+watch(ambiguousFiles, (files) => {
+  for (const f of files) {
+    if (selectedTrackId[f.path] == null) {
+      selectedTrackId[f.path] = f.candidates[0].id;
+    }
+  }
+});
+
+const showSetDefaultSubtitle = computed(() =>
+  props.files.some((path) => (batchStore.scannedFiles.find((f) => f.path === path)?.subtitle_count ?? 0) > 0)
+);
+
 watch(
   () => props.open,
   async (isOpen) => {
     if (!isOpen) return;
     fileJobs.value = [];
     probed.value = false;
+    for (const key of Object.keys(selectedTrackId)) delete selectedTrackId[key];
+
+    sourceLang.value = appStore.config?.default_source_lang || "en";
+    targetLangs.value = appStore.config?.default_target_langs?.length
+      ? [...appStore.config.default_target_langs]
+      : ["ar"];
+
     const [ollama, libre] = await Promise.all([
       translateStore.detectOllama(),
       translateStore.detectLibreTranslate(),
@@ -111,14 +174,25 @@ watch(
     ollamaAvailable.value = ollama;
     libreAvailable.value = libre;
     probed.value = true;
-    if (providerOptions.value.length > 0) {
+
+    const preferred = appStore.config?.default_engine as EngineType | undefined;
+    if (preferred && providerOptions.value.some((p) => p.id === preferred)) {
+      provider.value = preferred;
+    } else if (providerOptions.value.length > 0) {
       provider.value = providerOptions.value[0].id;
     }
   },
   { immediate: true }
 );
 
+function toggleTargetLang(code: string) {
+  const idx = targetLangs.value.indexOf(code);
+  if (idx >= 0) targetLangs.value.splice(idx, 1);
+  else targetLangs.value.push(code);
+}
+
 function findSubtitleTrack(path: string): number | null {
+  if (selectedTrackId[path] != null) return selectedTrackId[path];
   const file = batchStore.scannedFiles.find((f) => f.path === path);
   if (!file) return null;
   const subs = file.tracks.filter((tr) => tr.track_type === "subtitles");
@@ -128,12 +202,31 @@ function findSubtitleTrack(path: string): number | null {
   return (matching ?? subs[0]).id;
 }
 
+async function persistDefaults() {
+  if (!appStore.config) return;
+  appStore.config.default_engine = provider.value;
+  appStore.config.default_source_lang = sourceLang.value;
+  appStore.config.default_target_langs = [...targetLangs.value];
+  await appStore.saveConfig();
+}
+
 async function startPipeline() {
   starting.value = true;
-  fileJobs.value = props.files.map((path) => {
+  await persistDefaults();
+
+  fileJobs.value = [];
+  for (const path of props.files) {
     const file = batchStore.scannedFiles.find((f) => f.path === path);
-    return { path, name: file?.name ?? path, stage: "queued" as FileStage, progress: 0 };
-  });
+    for (const lang of targetLangs.value) {
+      fileJobs.value.push({
+        path,
+        lang,
+        name: `${file?.name ?? path} → ${lang.toUpperCase()}`,
+        stage: "queued",
+        progress: 0,
+      });
+    }
+  }
 
   unlistenProgress = await apiListen<{
     job_id: string;
@@ -177,8 +270,9 @@ async function startPipeline() {
       track_id: trackId,
       engine: provider.value,
       source_lang: sourceLang.value,
-      target_lang: targetLang.value,
+      target_lang: job.lang,
       auto_merge: autoMerge.value,
+      set_default_subtitle: autoMerge.value && setDefaultSubtitle.value,
     };
     if (provider.value === "ollama") request.host = translateStore.ollamaHost;
     else if (provider.value === "libretranslate") request.host = translateStore.libreHost;
@@ -192,7 +286,7 @@ async function startPipeline() {
       const jobId = await apiInvoke<string>("run_translation_pipeline", { request });
       job.jobId = jobId;
       job.stage = "extracting";
-      await batchStore.registerPipelineJob(jobId, job.path, targetLang.value);
+      await batchStore.registerPipelineJob(jobId, job.path, job.lang);
     } catch (e) {
       job.stage = "error";
       job.message = mapJobErrorMessage(e instanceof Error ? e.message : String(e));
@@ -233,23 +327,48 @@ function stageLabel(stage: FileStage): string {
             </select>
           </div>
 
-          <div class="grid grid-cols-2 gap-3 mt-4">
-            <div>
-              <label class="block text-xs font-medium text-text-secondary mb-1.5">{{ t("translate.source") }}</label>
-              <select
-                v-model="sourceLang"
-                class="w-full px-4 py-2.5 rounded-lg bg-bg-primary border border-border text-sm text-text-primary focus:outline-none focus:border-accent"
+          <div class="mt-4">
+            <label class="block text-xs font-medium text-text-secondary mb-1.5">{{ t("translate.source") }}</label>
+            <select
+              v-model="sourceLang"
+              class="w-full px-4 py-2.5 rounded-lg bg-bg-primary border border-border text-sm text-text-primary focus:outline-none focus:border-accent"
+            >
+              <option v-for="lang in languageOptions" :key="lang.code" :value="lang.code">{{ lang.label }}</option>
+            </select>
+          </div>
+
+          <div class="mt-4">
+            <label class="block text-xs font-medium text-text-secondary mb-1.5">{{ t("autoTranslate.targetLanguages") }}</label>
+            <div class="grid grid-cols-3 gap-1.5">
+              <label
+                v-for="lang in languageOptions"
+                :key="lang.code"
+                class="flex items-center gap-1.5 px-2 py-1.5 rounded-md bg-bg-primary border border-border text-xs text-text-secondary cursor-pointer"
               >
-                <option v-for="lang in languageOptions" :key="lang.code" :value="lang.code">{{ lang.label }}</option>
-              </select>
+                <input
+                  type="checkbox"
+                  class="accent-accent"
+                  :checked="targetLangs.includes(lang.code)"
+                  @change="toggleTargetLang(lang.code)"
+                />
+                {{ lang.label }}
+              </label>
             </div>
-            <div>
-              <label class="block text-xs font-medium text-text-secondary mb-1.5">{{ t("translate.target") }}</label>
+          </div>
+
+          <div v-if="ambiguousFiles.length > 0" class="mt-4 space-y-2">
+            <p class="text-xs font-medium text-text-secondary">{{ t("autoTranslate.ambiguousTrack") }}</p>
+            <div
+              v-for="f in ambiguousFiles"
+              :key="f.path"
+              class="p-2.5 rounded-lg bg-bg-secondary border border-border"
+            >
+              <p class="text-xs text-text-primary truncate mb-1">{{ f.name }}</p>
               <select
-                v-model="targetLang"
-                class="w-full px-4 py-2.5 rounded-lg bg-bg-primary border border-border text-sm text-text-primary focus:outline-none focus:border-accent"
+                v-model="selectedTrackId[f.path]"
+                class="w-full px-3 py-1.5 rounded-md bg-bg-primary border border-border text-xs text-text-primary focus:outline-none focus:border-accent"
               >
-                <option v-for="lang in languageOptions" :key="lang.code" :value="lang.code">{{ lang.label }}</option>
+                <option v-for="c in f.candidates" :key="c.id" :value="c.id">{{ c.label }}</option>
               </select>
             </div>
           </div>
@@ -258,9 +377,13 @@ function stageLabel(stage: FileStage): string {
             <input v-model="autoMerge" type="checkbox" class="accent-accent" />
             {{ t("autoTranslate.autoMerge") }}
           </label>
+          <label v-if="autoMerge && showSetDefaultSubtitle" class="flex items-center gap-2 text-xs text-text-secondary mt-2">
+            <input v-model="setDefaultSubtitle" type="checkbox" class="accent-accent" />
+            {{ t("autoTranslate.setDefaultSubtitle") }}
+          </label>
 
           <p class="text-xs text-text-muted mt-3">
-            {{ t("autoTranslate.filesCount", { count: files.length }) }}
+            {{ t("autoTranslate.filesCount", { count: files.length * targetLangs.length }) }}
           </p>
         </template>
       </div>
@@ -268,7 +391,7 @@ function stageLabel(stage: FileStage): string {
       <div v-else class="space-y-2">
         <div
           v-for="job in fileJobs"
-          :key="job.path"
+          :key="`${job.path}::${job.lang}`"
           class="p-3 rounded-lg bg-bg-secondary border border-border"
         >
           <div class="flex items-center justify-between gap-2">
@@ -303,7 +426,7 @@ function stageLabel(stage: FileStage): string {
       </button>
       <button
         v-if="!running"
-        :disabled="starting || providerOptions.length === 0 || files.length === 0"
+        :disabled="starting || providerOptions.length === 0 || files.length === 0 || targetLangs.length === 0"
         class="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-accent text-white text-xs font-medium hover:bg-accent-hover active:bg-accent-active transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
         @click="startPipeline"
       >

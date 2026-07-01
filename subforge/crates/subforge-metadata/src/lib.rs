@@ -1,5 +1,6 @@
 pub mod cache;
 pub mod filenaming;
+pub mod languages;
 pub mod matcher;
 pub mod parser;
 pub mod renamer;

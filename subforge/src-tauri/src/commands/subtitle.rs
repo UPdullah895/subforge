@@ -81,7 +81,7 @@ pub fn merge_subtitle_into_video(
     output_path: String,
     language: Option<String>,
 ) -> Result<(), String> {
-    let subs = vec![(subtitle_path, language)];
+    let subs = vec![mkvtoolnix::SubtitleMergeSpec::new(subtitle_path, language)];
     mkvtoolnix::merge_subtitles(&video_path, &subs, &output_path)
         .map_err(|e| e.to_string())
 }
@@ -123,24 +123,24 @@ pub struct SetTrackMetaRequest {
 }
 
 #[tauri::command]
-pub async fn set_track_metadata(req: SetTrackMetaRequest) -> Result<(), String> {
+pub async fn set_track_metadata(request: SetTrackMetaRequest) -> Result<(), String> {
     let mkvpropedit = crate::tools::which("mkvpropedit")
         .ok_or_else(|| "mkvpropedit not found in PATH".to_string())?;
 
-    let mut args: Vec<String> = vec![req.file_path.clone()];
+    let mut args: Vec<String> = vec![request.file_path.clone()];
     args.push("--edit".to_string());
     // mkvpropedit uses 1-indexed @N notation for track selection
-    args.push(format!("track:@{}", req.track_id + 1));
+    args.push(format!("track:@{}", request.track_id + 1));
 
-    if let Some(name) = &req.track_name {
+    if let Some(name) = &request.track_name {
         args.push("--set".to_string());
         args.push(format!("name={}", name));
     }
-    if let Some(default) = req.default_flag {
+    if let Some(default) = request.default_flag {
         args.push("--set".to_string());
         args.push(format!("flag-default={}", if default { 1 } else { 0 }));
     }
-    if let Some(forced) = req.forced_flag {
+    if let Some(forced) = request.forced_flag {
         args.push("--set".to_string());
         args.push(format!("flag-forced={}", if forced { 1 } else { 0 }));
     }

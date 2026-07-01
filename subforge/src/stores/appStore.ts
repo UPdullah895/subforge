@@ -15,6 +15,7 @@ export interface AppConfig {
   default_engine?: string;
   default_source_lang?: string;
   default_target_lang?: string;
+  default_target_langs?: string[];
   default_output_dir?: string;
   tmdb_api_key?: string;
   deepl_api_key?: string;

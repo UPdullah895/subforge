@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use subforge_metadata::filenaming;
+use subforge_metadata::{filenaming, languages};
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -31,6 +31,10 @@ pub struct TrackProperties {
     pub default_track: Option<bool>,
     #[serde(default)]
     pub forced_track: Option<bool>,
+    // mkvmerge's `-J` output calls this "hearing_impaired_flag"; expose it as
+    // the plainer `hearing_impaired` name the frontend/track-naming logic use.
+    #[serde(rename(deserialize = "hearing_impaired_flag"), default)]
+    pub hearing_impaired: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -69,6 +73,12 @@ pub struct ExternalSub {
     #[serde(default)]
     pub error_message: Option<String>,
     pub path: String,
+    // "forced"/"sdh" when the filename carries a flavor tag (see
+    // `subforge_metadata::filenaming`) — lets the UI tell apart e.g. two
+    // external subs in the same language that are actually a regular track
+    // and an SDH track.
+    #[serde(default)]
+    pub flavor: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -240,19 +250,21 @@ fn extract_subtitles_filtered(
         })
         .collect();
 
-    // Only append a disambiguator when a video has more than one subtitle
-    // track sharing the same language — not by default.
-    let mut lang_counts: HashMap<String, usize> = HashMap::new();
+    // Group by (language, flavor) — a flavor tag (forced/sdh) already makes a
+    // track distinguishable in the filename, so only tracks that share both
+    // language AND flavor (e.g. two plain "ar" tracks) fall back to a
+    // trailing running number.
+    let mut group_counts: HashMap<(String, Option<&'static str>), usize> = HashMap::new();
     for track in &subtitle_tracks {
         let lang = track
             .properties
             .as_ref()
             .and_then(|p| p.language.clone())
             .unwrap_or_else(|| "und".to_string());
-        *lang_counts.entry(lang).or_insert(0) += 1;
+        *group_counts.entry((lang, flavor_suffix(track))).or_insert(0) += 1;
     }
 
-    let mut seen: HashMap<String, u32> = HashMap::new();
+    let mut seen: HashMap<(String, Option<&'static str>), u32> = HashMap::new();
     let mut extracted = Vec::new();
 
     for track in &subtitle_tracks {
@@ -261,14 +273,17 @@ fn extract_subtitles_filtered(
             .as_ref()
             .and_then(|p| p.language.clone())
             .unwrap_or_else(|| "und".to_string());
-        let disambiguator = if lang_counts.get(&lang).copied().unwrap_or(0) > 1 {
-            let n = seen.entry(lang.clone()).or_insert(0);
+        let flavor = flavor_suffix(track);
+        let key = (lang.clone(), flavor);
+        let disambiguator = if group_counts.get(&key).copied().unwrap_or(0) > 1 {
+            let n = seen.entry(key).or_insert(0);
             *n += 1;
             Some(*n)
         } else {
             None
         };
-        let filename = filenaming::external_sub_filename(&video_stem, &lang, "srt", disambiguator);
+        let filename =
+            filenaming::external_sub_filename_flavored(&video_stem, &lang, flavor, "srt", disambiguator);
         let out = PathBuf::from(output_dir)
             .join(filename)
             .to_string_lossy()
@@ -280,18 +295,69 @@ fn extract_subtitles_filtered(
     Ok(extracted)
 }
 
+/// Returns "sdh" or "forced" when a track's properties mark it as such, so
+/// extracted filenames and auto-generated track names can carry that flavor
+/// instead of a meaningless running number.
+fn flavor_suffix(track: &Track) -> Option<&'static str> {
+    let props = track.properties.as_ref()?;
+    if props.hearing_impaired.unwrap_or(false) {
+        Some("sdh")
+    } else if props.forced_track.unwrap_or(false) {
+        Some("forced")
+    } else {
+        None
+    }
+}
+
+/// One subtitle file to mux into a video via `merge_subtitles`. `track_name`
+/// defaults to an auto-generated "English - English"-style name (via
+/// `subforge_metadata::languages`) when not given explicitly, so merged
+/// tracks are self-describing without the user having to type one in.
+#[derive(Debug, Clone)]
+pub struct SubtitleMergeSpec {
+    pub path: String,
+    pub language: Option<String>,
+    pub track_name: Option<String>,
+    pub hearing_impaired: bool,
+    pub make_default: bool,
+}
+
+impl SubtitleMergeSpec {
+    pub fn new(path: String, language: Option<String>) -> Self {
+        Self {
+            path,
+            language,
+            track_name: None,
+            hearing_impaired: false,
+            make_default: false,
+        }
+    }
+}
+
 pub fn merge_subtitles(
     video_path: &str,
-    subtitle_paths: &[(String, Option<String>)], // (path, optional_language)
+    subtitles: &[SubtitleMergeSpec],
     output_path: &str,
 ) -> Result<(), MkvError> {
     let mkvmerge = get_mkvmerge_path()?;
     let mut args = vec!["-o".to_string(), output_path.to_string(), video_path.to_string()];
 
-    for (sub_path, lang) in subtitle_paths {
+    for sub in subtitles {
+        let lang = sub.language.as_deref().unwrap_or("und");
         args.push("--language".to_string());
-        args.push(format!("0:{}", lang.as_deref().unwrap_or("und")));
-        args.push(sub_path.clone());
+        args.push(format!("0:{lang}"));
+
+        let track_name = sub
+            .track_name
+            .clone()
+            .unwrap_or_else(|| languages::track_display_name(lang, sub.hearing_impaired));
+        args.push("--track-name".to_string());
+        args.push(format!("0:{track_name}"));
+
+        args.push("--default-track-flag".to_string());
+        args.push(format!("0:{}", if sub.make_default { "yes" } else { "no" }));
+
+        args.push(sub.path.clone());
     }
 
     let output = Command::new(&mkvmerge).args(&args).output()?;

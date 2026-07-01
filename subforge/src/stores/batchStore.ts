@@ -12,6 +12,9 @@ interface Track {
   properties?: {
     language?: string;
     track_name?: string;
+    default_track?: boolean;
+    forced_track?: boolean;
+    hearing_impaired?: boolean;
   };
 }
 
@@ -20,6 +23,7 @@ export interface ExternalSub {
   status: "ok" | "pending" | "error";
   error_message?: string;
   path: string;
+  flavor?: "forced" | "sdh";
 }
 
 export interface VideoFileInfo {

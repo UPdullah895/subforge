@@ -5,6 +5,10 @@ fn default_language() -> String {
     "en".to_string()
 }
 
+fn default_target_langs() -> Vec<String> {
+    vec!["ar".to_string()]
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppConfig {
     pub theme: String,
@@ -18,6 +22,11 @@ pub struct AppConfig {
     pub default_engine: Option<String>,
     pub default_source_lang: Option<String>,
     pub default_target_lang: Option<String>,
+    // Remembers the last set of target languages used in the Auto-Translate
+    // wizard's multi-language batch mode, separately from the single
+    // `default_target_lang` used by the plain Translate page.
+    #[serde(default = "default_target_langs")]
+    pub default_target_langs: Vec<String>,
     pub default_output_dir: Option<String>,
     pub tmdb_api_key: Option<String>,
     pub deepl_api_key: Option<String>,
@@ -42,6 +51,7 @@ impl Default for AppConfig {
             default_engine: Some("ollama".to_string()),
             default_source_lang: Some("en".to_string()),
             default_target_lang: Some("ar".to_string()),
+            default_target_langs: default_target_langs(),
             default_output_dir: None,
             tmdb_api_key: None,
             deepl_api_key: None,

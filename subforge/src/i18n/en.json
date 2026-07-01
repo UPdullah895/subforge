@@ -147,7 +147,11 @@
     "noneAvailable": "None of the selected files have a detected external subtitle ready to merge.",
     "mergeAllDetected": "Merge all detected",
     "deleteOriginals": "Delete original external file after merge",
-    "confirm": "Merge Selected"
+    "confirm": "Merge Selected",
+    "hearingImpaired": "Hearing-impaired (SDH)",
+    "defaultAudio": "Default audio track",
+    "defaultSubtitle": "Default subtitle track",
+    "newTrack": "new"
   },
   "extractLangPicker": {
     "title": "Choose Languages to Extract",
@@ -159,7 +163,12 @@
   "autoTranslate": {
     "title": "Auto-Translate",
     "provider": "Provider",
+    "targetLanguages": "Target Language(s)",
     "autoMerge": "Merge into video automatically when done",
+    "setDefaultSubtitle": "Make this the default subtitle track",
+    "ambiguousTrack": "Some files have more than one matching subtitle track — pick the right one:",
+    "forced": "Forced",
+    "sdh": "SDH",
     "filesCount": "{count} file(s) will be translated",
     "start": "Start",
     "noProviders": "No translation providers are configured. Open Settings > API & Providers to add one.",

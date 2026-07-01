@@ -65,7 +65,7 @@ pub struct MergeRequest {
 }
 
 pub async fn merge_subtitle(Json(req): Json<MergeRequest>) -> Result<StatusCode, StatusCode> {
-    let subs = vec![(req.subtitle_path, req.language)];
+    let subs = vec![mkvtoolnix::SubtitleMergeSpec::new(req.subtitle_path, req.language)];
     mkvtoolnix::merge_subtitles(&req.video_path, &subs, &req.output_path)
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok(StatusCode::OK)
