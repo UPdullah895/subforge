@@ -19,28 +19,8 @@ pub enum TranslateError {
     Io(#[from] std::io::Error),
 }
 
-fn find_python() -> Option<PathBuf> {
-    for cmd in ["python3", "python"] {
-        if let Ok(paths) = std::env::var("PATH") {
-            for dir in paths.split(':') {
-                let full = PathBuf::from(dir).join(cmd);
-                if full.is_file() {
-                    return Some(full);
-                }
-            }
-        }
-    }
-    None
-}
-
 fn get_python() -> Result<PathBuf, TranslateError> {
-    find_python().ok_or(TranslateError::PythonNotFound)
-}
-
-fn script_path() -> String {
-    std::env::current_dir()
-        .map(|cwd| cwd.join("scripts").join("subtitle_lines.py").to_string_lossy().to_string())
-        .unwrap_or_else(|_| "scripts/subtitle_lines.py".to_string())
+    super::find_python().ok_or(TranslateError::PythonNotFound)
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -53,7 +33,7 @@ pub struct SubtitleLine {
 
 pub fn extract_lines(input_path: &str) -> Result<Vec<SubtitleLine>, TranslateError> {
     let python = get_python()?;
-    let script = script_path();
+    let script = super::script_path("subtitle_lines.py");
 
     let output = Command::new(&python)
         .args([&script, "extract", input_path])
@@ -70,7 +50,7 @@ pub fn rebuild_lines(
     output_path: &str,
 ) -> Result<(), TranslateError> {
     let python = get_python()?;
-    let script = script_path();
+    let script = super::script_path("subtitle_lines.py");
 
     let output = Command::new(&python)
         .args([&script, "rebuild", original_path, translations_json, output_path])

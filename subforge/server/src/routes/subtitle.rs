@@ -108,3 +108,62 @@ pub async fn shift_timing(Json(req): Json<ShiftRequest>) -> Result<StatusCode, S
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok(StatusCode::OK)
 }
+
+#[derive(Deserialize)]
+pub struct ExtractAllRequest {
+    file_path: String,
+    output_dir: String,
+}
+
+pub async fn extract_all_subtitles(
+    Json(req): Json<ExtractAllRequest>,
+) -> Result<Json<Vec<String>>, StatusCode> {
+    let paths = mkvtoolnix::extract_all_subtitles(&req.file_path, &req.output_dir)
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    Ok(Json(paths))
+}
+
+#[derive(Deserialize)]
+pub struct SetTrackMetaRequest {
+    file_path: String,
+    track_id: u64,
+    track_name: Option<String>,
+    default_flag: Option<bool>,
+    forced_flag: Option<bool>,
+}
+
+pub async fn set_track_metadata(
+    Json(req): Json<SetTrackMetaRequest>,
+) -> Result<StatusCode, StatusCode> {
+    let mkvpropedit = crate::tools::which("mkvpropedit")
+        .ok_or(StatusCode::SERVICE_UNAVAILABLE)?;
+
+    let mut args: Vec<String> = vec![req.file_path.clone()];
+    args.push("--edit".to_string());
+    // mkvpropedit uses 1-indexed @N notation for tracks
+    args.push(format!("track:@{}", req.track_id + 1));
+
+    if let Some(name) = &req.track_name {
+        args.push("--set".to_string());
+        args.push(format!("name={}", name));
+    }
+    if let Some(default) = req.default_flag {
+        args.push("--set".to_string());
+        args.push(format!("flag-default={}", if default { 1 } else { 0 }));
+    }
+    if let Some(forced) = req.forced_flag {
+        args.push("--set".to_string());
+        args.push(format!("flag-forced={}", if forced { 1 } else { 0 }));
+    }
+
+    let output = std::process::Command::new(&mkvpropedit)
+        .args(&args)
+        .output()
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    if !output.status.success() {
+        return Err(StatusCode::INTERNAL_SERVER_ERROR);
+    }
+
+    Ok(StatusCode::OK)
+}

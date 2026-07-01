@@ -23,15 +23,52 @@ pub trait Tool {
 }
 
 pub fn which(cmd: &str) -> Option<PathBuf> {
-    if let Ok(paths) = std::env::var("PATH") {
-        for dir in paths.split(':') {
-            let full = PathBuf::from(dir).join(cmd);
-            if full.is_file() {
-                return Some(full);
+    let path_var = std::env::var_os("PATH")?;
+    for dir in std::env::split_paths(&path_var) {
+        let full = dir.join(cmd);
+        if full.is_file() {
+            return Some(full);
+        }
+        #[cfg(windows)]
+        {
+            let exe = dir.join(format!("{}.exe", cmd));
+            if exe.is_file() {
+                return Some(exe);
             }
         }
     }
     None
+}
+
+pub fn find_python() -> Option<PathBuf> {
+    #[cfg(windows)]
+    let candidates: &[&str] = &["python", "python3", "py"];
+    #[cfg(not(windows))]
+    let candidates: &[&str] = &["python3", "python"];
+    candidates.iter().find_map(|cmd| which(cmd))
+}
+
+pub fn script_path(name: &str) -> String {
+    // 1. Next to the binary — Linux/Windows packaged builds
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(dir) = exe.parent() {
+            let p = dir.join("scripts").join(name);
+            if p.exists() {
+                return p.to_string_lossy().to_string();
+            }
+            // 2. macOS .app bundle: exe is in Contents/MacOS, resources in Contents/Resources
+            if let Some(resources) = dir.parent().map(|d| d.join("Resources")) {
+                let p2 = resources.join("scripts").join(name);
+                if p2.exists() {
+                    return p2.to_string_lossy().to_string();
+                }
+            }
+        }
+    }
+    // 3. CWD fallback for dev mode (cargo tauri dev from project root)
+    std::env::current_dir()
+        .map(|d| d.join("scripts").join(name).to_string_lossy().to_string())
+        .unwrap_or_else(|_| format!("scripts/{}", name))
 }
 
 #[derive(Debug, Clone, Serialize)]

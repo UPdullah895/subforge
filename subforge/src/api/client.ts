@@ -2,13 +2,9 @@ import { invoke } from "@tauri-apps/api/core";
 import { commandSchemas } from "./schemas";
 
 const isTauri =
-  typeof window !== "undefined" &&
-  !!(window as unknown as Record<string, unknown>).__TAURI__;
+  typeof window !== "undefined" && !!(window as unknown as Record<string, unknown>).__TAURI__;
 
-export async function apiInvoke<T>(
-  cmd: string,
-  args?: Record<string, unknown>
-): Promise<T> {
+export async function apiInvoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
   if (isTauri) {
     return invoke<T>(cmd, args);
   }
@@ -53,6 +49,8 @@ function cmdToEndpoint(cmd: string): string {
   const map: Record<string, string> = {
     enumerate_tracks: "/api/subtitle/enumerate",
     extract_subtitle: "/api/subtitle/extract",
+    extract_all_subtitles: "/api/subtitle/extract-all",
+    set_track_metadata: "/api/subtitle/meta",
     merge_subtitle_into_video: "/api/subtitle/merge",
     remove_subtitle_tracks: "/api/subtitle/remove",
     convert_subtitle_format: "/api/subtitle/convert",
@@ -62,6 +60,7 @@ function cmdToEndpoint(cmd: string): string {
     merge_audio_track: "/api/audio/merge",
     remove_audio_tracks: "/api/audio/remove",
     scan_directory: "/api/batch/scan",
+    batch_extract_subtitles: "/api/batch/extract",
     get_whisper_info: "/api/transcribe/info",
     list_whisper_models: "/api/transcribe/models",
     download_whisper_model: "/api/transcribe/download",
@@ -69,9 +68,9 @@ function cmdToEndpoint(cmd: string): string {
     detect_ollama: "/api/translate/detect/ollama",
     detect_libretranslate: "/api/translate/detect/libretranslate",
     translate_subtitles: "/api/translate",
-    get_tool_registry: "/api/health",
-    load_config: "/api/health",
-    save_config: "/api/health",
+    get_tool_registry: "/api/tools/registry",
+    load_config: "/api/config",
+    save_config: "/api/config",
   };
   return map[cmd] || `/api/${cmd.replace(/_/g, "/")}`;
 }

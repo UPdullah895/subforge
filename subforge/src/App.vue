@@ -7,9 +7,12 @@ import AudioView from "./views/AudioView.vue";
 import BatchView from "./views/BatchView.vue";
 import TranscribeView from "./views/TranscribeView.vue";
 import TranslateView from "./views/TranslateView.vue";
+import SettingsView from "./views/SettingsView.vue";
 
 const appStore = useAppStore();
-const currentView = ref<"subtitle" | "audio" | "batch" | "transcribe" | "translate">("subtitle");
+const currentView = ref<"subtitle" | "audio" | "batch" | "transcribe" | "translate" | "settings">(
+  "subtitle"
+);
 
 onMounted(() => {
   appStore.loadConfig();
@@ -25,11 +28,11 @@ onMounted(() => {
       <BatchView v-else-if="currentView === 'batch'" />
       <TranscribeView v-else-if="currentView === 'transcribe'" />
       <TranslateView v-else-if="currentView === 'translate'" />
-      <div
-        v-else
-        class="flex flex-col items-center justify-center h-full text-center"
-      >
-        <div class="w-16 h-16 rounded-2xl bg-bg-secondary border border-border flex items-center justify-center mb-4">
+      <SettingsView v-else-if="currentView === 'settings'" />
+      <div v-else class="flex flex-col items-center justify-center h-full text-center">
+        <div
+          class="w-16 h-16 rounded-2xl bg-bg-secondary border border-border flex items-center justify-center mb-4"
+        >
           <span class="text-2xl">🚧</span>
         </div>
         <h2 class="text-lg font-medium text-text-primary">Coming Soon</h2>

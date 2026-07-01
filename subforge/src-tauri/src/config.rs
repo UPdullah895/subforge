@@ -8,6 +8,10 @@ pub struct AppConfig {
     pub mkvextract_path: Option<String>,
     pub ffmpeg_path: Option<String>,
     pub ffprobe_path: Option<String>,
+    pub default_engine: Option<String>,
+    pub default_source_lang: Option<String>,
+    pub default_target_lang: Option<String>,
+    pub default_output_dir: Option<String>,
 }
 
 impl Default for AppConfig {
@@ -18,6 +22,10 @@ impl Default for AppConfig {
             mkvextract_path: None,
             ffmpeg_path: None,
             ffprobe_path: None,
+            default_engine: Some("ollama".to_string()),
+            default_source_lang: Some("en".to_string()),
+            default_target_lang: Some("ar".to_string()),
+            default_output_dir: None,
         }
     }
 }

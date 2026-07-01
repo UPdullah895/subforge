@@ -1,4 +1,5 @@
 use super::{which, ToolInfo};
+use crate::config::AppConfig;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::process::Command;
@@ -111,10 +112,24 @@ pub fn discover_mkvextract() -> ToolInfo {
 }
 
 pub fn get_mkvmerge_path() -> Result<PathBuf, MkvError> {
+    let config = AppConfig::load();
+    if let Some(p) = config.mkvmerge_path {
+        let path = PathBuf::from(&p);
+        if path.is_file() {
+            return Ok(path);
+        }
+    }
     which("mkvmerge").ok_or(MkvError::MkvmergeNotFound)
 }
 
 pub fn get_mkvextract_path() -> Result<PathBuf, MkvError> {
+    let config = AppConfig::load();
+    if let Some(p) = config.mkvextract_path {
+        let path = PathBuf::from(&p);
+        if path.is_file() {
+            return Ok(path);
+        }
+    }
     which("mkvextract").ok_or(MkvError::MkvextractNotFound)
 }
 
@@ -170,7 +185,10 @@ pub fn extract_all_subtitles(
                 .as_ref()
                 .and_then(|p| p.language.clone())
                 .unwrap_or_else(|| "und".to_string());
-            let out = format!("{}/{}_{}.srt", output_dir, track.id, lang);
+            let out = std::path::PathBuf::from(output_dir)
+                .join(format!("{}_{}.srt", track.id, lang))
+                .to_string_lossy()
+                .to_string();
             extract_subtitle_track(file_path, track.id, &out)?;
             extracted.push(out);
         }
@@ -209,16 +227,41 @@ pub fn remove_tracks(
     output_path: &str,
 ) -> Result<(), MkvError> {
     let mkvmerge = get_mkvmerge_path()?;
-    let mut args = vec!["-o".to_string(), output_path.to_string(), video_path.to_string()];
+    let info = enumerate_tracks(video_path)?;
+    let remove_set: std::collections::HashSet<u64> = track_ids.iter().copied().collect();
+    let mut args = vec!["-o".to_string(), output_path.to_string()];
 
-    for id in track_ids {
-        args.push("-y".to_string());
-        args.push(format!("--track-tags {}:{}", id, id));
-        args.push(format!("-T{}", id));
+    let has_sub_removal = info.tracks.iter()
+        .any(|t| t.track_type == "subtitles" && remove_set.contains(&t.id));
+    if has_sub_removal {
+        let keep: Vec<String> = info.tracks.iter()
+            .filter(|t| t.track_type == "subtitles" && !remove_set.contains(&t.id))
+            .map(|t| t.id.to_string())
+            .collect();
+        if keep.is_empty() {
+            args.push("--no-subtitles".to_string());
+        } else {
+            args.push("--subtitle-tracks".to_string());
+            args.push(keep.join(","));
+        }
     }
 
-    // Simpler approach: use --no-subtitles or --no-audio for bulk removal
-    // For specific tracks, we build a track selection string
+    let has_audio_removal = info.tracks.iter()
+        .any(|t| t.track_type == "audio" && remove_set.contains(&t.id));
+    if has_audio_removal {
+        let keep: Vec<String> = info.tracks.iter()
+            .filter(|t| t.track_type == "audio" && !remove_set.contains(&t.id))
+            .map(|t| t.id.to_string())
+            .collect();
+        if keep.is_empty() {
+            args.push("--no-audio".to_string());
+        } else {
+            args.push("--audio-tracks".to_string());
+            args.push(keep.join(","));
+        }
+    }
+
+    args.push(video_path.to_string());
     let output = Command::new(&mkvmerge).args(&args).output()?;
 
     if !output.status.success() {

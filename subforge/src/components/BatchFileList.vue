@@ -73,7 +73,10 @@ function toggleAll() {
             <td class="px-4 py-3 text-center text-text-muted">{{ file.audio_count }}</td>
             <td class="px-4 py-3 text-center text-text-muted">{{ file.subtitle_count }}</td>
             <td class="px-4 py-3">
-              <button class="text-text-muted hover:text-text-primary" @click="toggleExpand(file.path)">
+              <button
+                class="text-text-muted hover:text-text-primary"
+                @click="toggleExpand(file.path)"
+              >
                 <ChevronDown v-if="expanded.has(file.path)" class="w-4 h-4" />
                 <ChevronRight v-else class="w-4 h-4" />
               </button>

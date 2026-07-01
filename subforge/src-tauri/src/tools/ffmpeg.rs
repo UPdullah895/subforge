@@ -1,4 +1,5 @@
 use super::{which, ToolInfo};
+use crate::config::AppConfig;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::process::Command;
@@ -122,10 +123,24 @@ pub fn discover_ffprobe() -> ToolInfo {
 }
 
 pub fn get_ffmpeg_path() -> Result<PathBuf, FfmpegError> {
+    let config = AppConfig::load();
+    if let Some(p) = config.ffmpeg_path {
+        let path = PathBuf::from(&p);
+        if path.is_file() {
+            return Ok(path);
+        }
+    }
     which("ffmpeg").ok_or(FfmpegError::FfmpegNotFound)
 }
 
 pub fn get_ffprobe_path() -> Result<PathBuf, FfmpegError> {
+    let config = AppConfig::load();
+    if let Some(p) = config.ffprobe_path {
+        let path = PathBuf::from(&p);
+        if path.is_file() {
+            return Ok(path);
+        }
+    }
     which("ffprobe").ok_or(FfmpegError::FfprobeNotFound)
 }
 
@@ -172,7 +187,10 @@ pub fn extract_audio(
 
     if let Some(fmt) = format {
         match fmt.to_lowercase().as_str() {
-            "aac" => args.push("-c:a".to_string()),
+            "aac" => {
+                args.push("-c:a".to_string());
+                args.push("copy".to_string());
+            }
             "mp3" => {
                 args.push("-c:a".to_string());
                 args.push("libmp3lame".to_string());
@@ -189,7 +207,10 @@ pub fn extract_audio(
                 args.push("-c:a".to_string());
                 args.push("flac".to_string());
             }
-            _ => args.push("-c:a".to_string()),
+            _ => {
+                args.push("-c:a".to_string());
+                args.push("copy".to_string());
+            }
         }
     }
 

@@ -44,5 +44,9 @@ export function useJobQueue() {
     jobs.value = [];
   }
 
-  return { jobs, addJob, updateJobProgress, completeJob, clearCompleted, clearAll };
+  function removeJob(id: string): void {
+    jobs.value = jobs.value.filter((j) => j.id !== id);
+  }
+
+  return { jobs, addJob, updateJobProgress, completeJob, clearCompleted, clearAll, removeJob };
 }

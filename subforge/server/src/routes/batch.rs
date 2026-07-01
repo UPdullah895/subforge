@@ -51,3 +51,22 @@ pub async fn scan_directory(Json(req): Json<ScanRequest>) -> Result<Json<Vec<Vid
 
     Ok(Json(files))
 }
+
+#[derive(Deserialize)]
+pub struct BatchExtractRequest {
+    pub files: Vec<String>,
+    pub output_dir: String,
+}
+
+pub async fn batch_extract_subtitles(
+    Json(req): Json<BatchExtractRequest>,
+) -> Result<Json<Vec<String>>, StatusCode> {
+    let mut all_paths: Vec<String> = Vec::new();
+    for file in &req.files {
+        match mkvtoolnix::extract_all_subtitles(file, &req.output_dir) {
+            Ok(paths) => all_paths.extend(paths),
+            Err(_) => return Err(StatusCode::INTERNAL_SERVER_ERROR),
+        }
+    }
+    Ok(Json(all_paths))
+}

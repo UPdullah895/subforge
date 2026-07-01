@@ -19,28 +19,8 @@ pub enum TranslateError {
     Io(#[from] std::io::Error),
 }
 
-fn find_python() -> Option<PathBuf> {
-    for cmd in ["python3", "python"] {
-        if let Ok(paths) = std::env::var("PATH") {
-            for dir in paths.split(':') {
-                let full = PathBuf::from(dir).join(cmd);
-                if full.is_file() {
-                    return Some(full);
-                }
-            }
-        }
-    }
-    None
-}
-
 fn get_python() -> Result<PathBuf, TranslateError> {
-    find_python().ok_or(TranslateError::PythonNotFound)
-}
-
-fn script_path() -> String {
-    std::env::current_dir()
-        .map(|cwd| cwd.join("scripts").join("subtitle_lines.py").to_string_lossy().to_string())
-        .unwrap_or_else(|_| "scripts/subtitle_lines.py".to_string())
+    super::find_python().ok_or(TranslateError::PythonNotFound)
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -53,7 +33,7 @@ pub struct SubtitleLine {
 
 pub fn extract_lines(input_path: &str) -> Result<Vec<SubtitleLine>, TranslateError> {
     let python = get_python()?;
-    let script = script_path();
+    let script = super::script_path("subtitle_lines.py");
 
     let output = Command::new(&python)
         .args([&script, "extract", input_path])
@@ -70,7 +50,7 @@ pub fn rebuild_lines(
     output_path: &str,
 ) -> Result<(), TranslateError> {
     let python = get_python()?;
-    let script = script_path();
+    let script = super::script_path("subtitle_lines.py");
 
     let output = Command::new(&python)
         .args([&script, "rebuild", original_path, translations_json, output_path])
@@ -97,7 +77,10 @@ pub struct OllamaTagResponse {
 }
 
 pub async fn detect_ollama(host: &str) -> Result<OllamaTagResponse, TranslateError> {
-    let client = reqwest::Client::new();
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .build()
+        .unwrap_or_default();
     let url = format!("{}/api/tags", host.trim_end_matches('/'));
     let resp = client.get(&url).send().await?;
     if !resp.status().is_success() {
@@ -111,18 +94,22 @@ pub async fn translate_ollama(
     host: &str,
     model: &str,
     lines: &[SubtitleLine],
-    _source: &str,
+    source: &str,
     target: &str,
 ) -> Result<Vec<String>, TranslateError> {
-    let client = reqwest::Client::new();
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(30))
+        .build()
+        .unwrap_or_default();
     let url = format!("{}/v1/chat/completions", host.trim_end_matches('/'));
 
     let texts: Vec<String> = lines.iter().map(|l| l.text.clone()).collect();
     let prompt = format!(
-        "Translate the following subtitle lines to {}. \
+        "Translate the following subtitle lines from {} to {}. \
 Preserve the meaning, tone, and approximate length. \
 Return ONLY a JSON array of translated strings, one per line, in the same order. \
 Do not add explanations or markdown formatting.\n\nLines:\n{}\n\nReturn format: [\"translation1\", \"translation2\", ...]",
+        source,
         target,
         texts.join("\n")
     );
@@ -165,14 +152,23 @@ pub struct LibreLanguage {
 }
 
 pub async fn detect_libretranslate(host: &str) -> Result<Vec<LibreLanguage>, TranslateError> {
-    let client = reqwest::Client::new();
-    let url = format!("{}/languages", host.trim_end_matches('/'));
-    let resp = client.get(&url).send().await?;
-    if !resp.status().is_success() {
-        return Err(TranslateError::Api(format!("LibreTranslate returned {}", resp.status())));
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .build()
+        .unwrap_or_default();
+    let base = host.trim_end_matches('/');
+    for path in &["/languages", "/api/languages"] {
+        if let Ok(resp) = client.get(&format!("{}{}", base, path)).send().await {
+            if resp.status().is_success() {
+                if let Ok(data) = resp.json::<Vec<LibreLanguage>>().await {
+                    return Ok(data);
+                }
+            }
+        }
     }
-    let data: Vec<LibreLanguage> = resp.json().await?;
-    Ok(data)
+    Err(TranslateError::Api(
+        "LibreTranslate not reachable on /languages or /api/languages".to_string()
+    ))
 }
 
 pub async fn translate_libretranslate(
@@ -181,29 +177,50 @@ pub async fn translate_libretranslate(
     source: &str,
     target: &str,
 ) -> Result<Vec<String>, TranslateError> {
-    let client = reqwest::Client::new();
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(120))
+        .build()
+        .unwrap_or_default();
     let url = format!("{}/translate", host.trim_end_matches('/'));
 
-    let mut results = Vec::new();
-    for line in lines {
-        let body = serde_json::json!({
-            "q": line.text,
-            "source": source,
-            "target": target,
-            "format": "text",
-        });
+    // Send all lines in one request using numbered markers to preserve line identity
+    let joined = lines
+        .iter()
+        .enumerate()
+        .map(|(i, l)| format!("[{}]{}", i, l.text))
+        .collect::<Vec<_>>()
+        .join("\n");
 
-        let resp = client.post(&url).json(&body).send().await?;
-        if !resp.status().is_success() {
-            let text = resp.text().await.unwrap_or_default();
-            return Err(TranslateError::Api(format!("LibreTranslate error: {}", text)));
+    let body = serde_json::json!({
+        "q": joined,
+        "source": source,
+        "target": target,
+        "format": "text",
+    });
+
+    let resp = client.post(&url).json(&body).send().await?;
+    if !resp.status().is_success() {
+        let text = resp.text().await.unwrap_or_default();
+        return Err(TranslateError::Api(format!("LibreTranslate error: {}", text)));
+    }
+
+    let json_resp: serde_json::Value = resp.json().await?;
+    let block = json_resp["translatedText"]
+        .as_str()
+        .ok_or_else(|| TranslateError::Api("Missing translatedText".to_string()))?;
+
+    let mut results = Vec::with_capacity(lines.len());
+    for i in 0..lines.len() {
+        let marker = format!("[{}]", i);
+        let next_marker = format!("[{}]", i + 1);
+        if let Some(start) = block.find(&marker) {
+            let from = start + marker.len();
+            let to = block[from..].find(&next_marker).map(|e| from + e).unwrap_or(block.len());
+            results.push(block[from..to].trim().to_string());
+        } else {
+            // Fallback: keep original text if marker not found
+            results.push(lines[i].text.clone());
         }
-
-        let json_resp: serde_json::Value = resp.json().await?;
-        let translated = json_resp["translatedText"]
-            .as_str()
-            .ok_or_else(|| TranslateError::Api("Missing translatedText".to_string()))?;
-        results.push(translated.to_string());
     }
 
     Ok(results)
@@ -217,7 +234,10 @@ pub async fn translate_deepl(
     source: &str,
     target: &str,
 ) -> Result<Vec<String>, TranslateError> {
-    let client = reqwest::Client::new();
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(30))
+        .build()
+        .unwrap_or_default();
     let is_free = api_key.ends_with(":fx");
     let url = if is_free {
         "https://api-free.deepl.com/v2/translate"
@@ -263,18 +283,22 @@ pub async fn translate_openai(
     api_key: &str,
     model: &str,
     lines: &[SubtitleLine],
-    _source: &str,
+    source: &str,
     target: &str,
 ) -> Result<Vec<String>, TranslateError> {
-    let client = reqwest::Client::new();
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(30))
+        .build()
+        .unwrap_or_default();
     let url = "https://api.openai.com/v1/chat/completions";
 
     let texts: Vec<String> = lines.iter().map(|l| l.text.clone()).collect();
     let prompt = format!(
-        "Translate the following subtitle lines to {}. \
+        "Translate the following subtitle lines from {} to {}. \
 Preserve meaning, tone, and approximate length. \
 Return ONLY a JSON array of translated strings in the same order. \
 No markdown, no explanations.\n\n{}\n\nReturn: [\"...\", \"...\"]",
+        source,
         target,
         texts.join("\n")
     );

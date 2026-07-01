@@ -69,7 +69,7 @@ pub async fn transcribe_audio(
     let _ = app.emit("job-started", &job_id);
 
     let args = whisper::build_transcribe_args(&options);
-    let python = whisper::find_python().ok_or("Python not found")?;
+    let python = crate::tools::find_python().ok_or("Python not found")?;
 
     let app_clone = app.clone();
     let queue_clone = queue.inner().clone();

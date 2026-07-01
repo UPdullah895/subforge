@@ -159,6 +159,17 @@ async function startTranslation() {
 let unlistenProgress: UnlistenFn | null = null;
 let unlistenCompleted: UnlistenFn | null = null;
 
+async function probeSelectedEngine() {
+  if (translateStore.selectedEngine === "ollama") {
+    await translateStore.detectOllama();
+  } else if (translateStore.selectedEngine === "libretranslate") {
+    await translateStore.detectLibreTranslate();
+  }
+  // deepl and openai need no detection probe
+}
+
+watch(() => translateStore.selectedEngine, () => probeSelectedEngine());
+
 onMounted(async () => {
   appStore.discoverTools();
   await appStore.loadConfig();
@@ -176,8 +187,7 @@ onMounted(async () => {
     }
   }
 
-  await translateStore.detectOllama();
-  await translateStore.detectLibreTranslate();
+  await probeSelectedEngine();
 
   unlistenProgress = await apiListen<{ job_id: string; progress: number; message?: string }>(
     "job-progress",

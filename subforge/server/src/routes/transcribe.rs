@@ -1,8 +1,7 @@
 use crate::tools::whisper;
 use crate::{jobs, AppState};
-use axum::{extract::Json, extract::Query, extract::State, http::StatusCode};
+use axum::{extract::Json, extract::State, http::StatusCode};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
 
@@ -22,11 +21,16 @@ pub async fn get_whisper_info() -> Result<Json<WhisperInfoResp>, StatusCode> {
     }))
 }
 
+#[derive(Deserialize)]
+pub struct ListModelsRequest {
+    pub cache_dir: Option<String>,
+}
+
 pub async fn list_whisper_models(
-    Query(params): Query<HashMap<String, String>>,
+    Json(req): Json<ListModelsRequest>,
 ) -> Result<Json<Vec<String>>, StatusCode> {
-    let cache_dir = params.get("cache_dir").cloned();
-    let models = whisper::list_models(cache_dir).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let models =
+        whisper::list_models(req.cache_dir).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok(Json(models))
 }
 
@@ -36,8 +40,11 @@ pub struct DownloadRequest {
     cache_dir: Option<String>,
 }
 
-pub async fn download_whisper_model(Json(req): Json<DownloadRequest>) -> Result<StatusCode, StatusCode> {
-    whisper::download_model(&req.model, req.cache_dir).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+pub async fn download_whisper_model(
+    Json(req): Json<DownloadRequest>,
+) -> Result<StatusCode, StatusCode> {
+    whisper::download_model(&req.model, req.cache_dir)
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok(StatusCode::OK)
 }
 
@@ -57,7 +64,7 @@ pub struct TranscribeRequest {
 pub async fn transcribe_audio(
     State(state): State<AppState>,
     Json(req): Json<TranscribeRequest>,
-) -> Result<Json<serde_json::Value>, StatusCode> {
+) -> Result<Json<String>, StatusCode> {
     let job_id = format!("transcribe-{}", uuid::Uuid::new_v4());
 
     let options = whisper::TranscribeOptions {
@@ -79,27 +86,49 @@ pub async fn transcribe_audio(
             job_type: jobs::JobType::Transcribe,
             status: jobs::JobStatus::Pending,
             input_file: req.input,
-            output_file: Some(req.output.clone()),
+            output_file: Some(req.output),
             progress: 0.0,
             message: Some("Queued".to_string()),
         });
     }
 
     let sender = state.event_sender.clone();
-    jobs::emit_event(&sender, jobs::JobEvent {
-        event_type: "job-started".to_string(),
-        job_id: job_id.clone(),
-        status: None,
-        progress: None,
-        message: None,
-    });
+    jobs::emit_event(
+        &sender,
+        jobs::JobEvent {
+            event_type: "job-started".to_string(),
+            job_id: job_id.clone(),
+            status: None,
+            progress: None,
+            message: None,
+        },
+    );
 
     let queue_clone = state.job_queue.clone();
     let job_id_clone = job_id.clone();
 
     tokio::spawn(async move {
+        // Gracefully handle missing Python instead of panicking
+        let python = match crate::tools::find_python() {
+            Some(p) => p,
+            None => {
+                let mut q = queue_clone.lock().unwrap();
+                q.update_status(&job_id_clone, jobs::JobStatus::Failed);
+                jobs::emit_event(
+                    &sender,
+                    jobs::JobEvent {
+                        event_type: "job-completed".to_string(),
+                        job_id: job_id_clone,
+                        status: Some(jobs::JobStatus::Failed),
+                        progress: Some(0.0),
+                        message: Some("Python not found in PATH".to_string()),
+                    },
+                );
+                return;
+            }
+        };
+
         let args = whisper::build_transcribe_args(&options);
-        let python = whisper::find_python().unwrap();
 
         let mut child = match Command::new(&python)
             .args(&args)
@@ -111,13 +140,16 @@ pub async fn transcribe_audio(
             Err(e) => {
                 let mut q = queue_clone.lock().unwrap();
                 q.update_status(&job_id_clone, jobs::JobStatus::Failed);
-                jobs::emit_event(&sender, jobs::JobEvent {
-                    event_type: "job-completed".to_string(),
-                    job_id: job_id_clone,
-                    status: Some(jobs::JobStatus::Failed),
-                    progress: Some(0.0),
-                    message: Some(e.to_string()),
-                });
+                jobs::emit_event(
+                    &sender,
+                    jobs::JobEvent {
+                        event_type: "job-completed".to_string(),
+                        job_id: job_id_clone,
+                        status: Some(jobs::JobStatus::Failed),
+                        progress: Some(0.0),
+                        message: Some(e.to_string()),
+                    },
+                );
                 return;
             }
         };
@@ -133,19 +165,26 @@ pub async fn transcribe_audio(
             while let Ok(Some(line)) = lines.next_line().await {
                 if let Ok(progress) = serde_json::from_str::<serde_json::Value>(&line) {
                     if progress.get("type").and_then(|v| v.as_str()) == Some("progress") {
-                        let pct = progress.get("percent").and_then(|v| v.as_f64()).unwrap_or(0.0);
-                        let msg = progress.get("message").and_then(|v| v.as_str()).map(|s| s.to_string());
+                        let pct =
+                            progress.get("percent").and_then(|v| v.as_f64()).unwrap_or(0.0);
+                        let msg = progress
+                            .get("message")
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.to_string());
                         {
                             let mut q = queue_clone.lock().unwrap();
                             q.update_progress(&job_id_clone, pct, msg.clone());
                         }
-                        jobs::emit_event(&sender, jobs::JobEvent {
-                            event_type: "job-progress".to_string(),
-                            job_id: job_id_clone.clone(),
-                            status: None,
-                            progress: Some(pct),
-                            message: msg,
-                        });
+                        jobs::emit_event(
+                            &sender,
+                            jobs::JobEvent {
+                                event_type: "job-progress".to_string(),
+                                job_id: job_id_clone.clone(),
+                                status: None,
+                                progress: Some(pct),
+                                message: msg,
+                            },
+                        );
                     }
                 }
             }
@@ -156,13 +195,16 @@ pub async fn transcribe_audio(
             _ => {
                 let mut q = queue_clone.lock().unwrap();
                 q.update_status(&job_id_clone, jobs::JobStatus::Failed);
-                jobs::emit_event(&sender, jobs::JobEvent {
-                    event_type: "job-completed".to_string(),
-                    job_id: job_id_clone.clone(),
-                    status: Some(jobs::JobStatus::Failed),
-                    progress: Some(0.0),
-                    message: Some("Transcription failed".to_string()),
-                });
+                jobs::emit_event(
+                    &sender,
+                    jobs::JobEvent {
+                        event_type: "job-completed".to_string(),
+                        job_id: job_id_clone.clone(),
+                        status: Some(jobs::JobStatus::Failed),
+                        progress: Some(0.0),
+                        message: Some("Transcription failed".to_string()),
+                    },
+                );
                 return;
             }
         };
@@ -172,14 +214,17 @@ pub async fn transcribe_audio(
             q.update_status(&job_id_clone, status.clone());
             q.update_progress(&job_id_clone, 100.0, Some("Done".to_string()));
         }
-        jobs::emit_event(&sender, jobs::JobEvent {
-            event_type: "job-completed".to_string(),
-            job_id: job_id_clone,
-            status: Some(status),
-            progress: Some(100.0),
-            message: Some("Done".to_string()),
-        });
+        jobs::emit_event(
+            &sender,
+            jobs::JobEvent {
+                event_type: "job-completed".to_string(),
+                job_id: job_id_clone,
+                status: Some(status),
+                progress: Some(100.0),
+                message: Some("Done".to_string()),
+            },
+        );
     });
 
-    Ok(Json(serde_json::json!({ "job_id": job_id })))
+    Ok(Json(job_id))
 }

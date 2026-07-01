@@ -1,7 +1,9 @@
 pub mod audio;
 pub mod batch;
+pub mod config;
 pub mod health;
 pub mod subtitle;
+pub mod tools;
 pub mod transcribe;
 pub mod translate;
 pub mod upload;

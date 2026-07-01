@@ -112,3 +112,47 @@ pub fn shift_subtitle_timing(
 ) -> Result<(), String> {
     pysubs2::shift_subtitles(&input, &output, milliseconds).map_err(|e| e.to_string())
 }
+
+#[derive(serde::Deserialize)]
+pub struct SetTrackMetaRequest {
+    pub file_path: String,
+    pub track_id: u64,
+    pub track_name: Option<String>,
+    pub default_flag: Option<bool>,
+    pub forced_flag: Option<bool>,
+}
+
+#[tauri::command]
+pub async fn set_track_metadata(req: SetTrackMetaRequest) -> Result<(), String> {
+    let mkvpropedit = crate::tools::which("mkvpropedit")
+        .ok_or_else(|| "mkvpropedit not found in PATH".to_string())?;
+
+    let mut args: Vec<String> = vec![req.file_path.clone()];
+    args.push("--edit".to_string());
+    // mkvpropedit uses 1-indexed @N notation for track selection
+    args.push(format!("track:@{}", req.track_id + 1));
+
+    if let Some(name) = &req.track_name {
+        args.push("--set".to_string());
+        args.push(format!("name={}", name));
+    }
+    if let Some(default) = req.default_flag {
+        args.push("--set".to_string());
+        args.push(format!("flag-default={}", if default { 1 } else { 0 }));
+    }
+    if let Some(forced) = req.forced_flag {
+        args.push("--set".to_string());
+        args.push(format!("flag-forced={}", if forced { 1 } else { 0 }));
+    }
+
+    let output = std::process::Command::new(&mkvpropedit)
+        .args(&args)
+        .output()
+        .map_err(|e| e.to_string())?;
+
+    if !output.status.success() {
+        return Err(String::from_utf8_lossy(&output.stderr).to_string());
+    }
+
+    Ok(())
+}

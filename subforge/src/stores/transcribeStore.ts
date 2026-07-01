@@ -15,7 +15,7 @@ export const useTranscribeStore = defineStore("transcribe", () => {
   const loadingInfo = ref(false);
   const downloadingModel = ref<string | null>(null);
   const error = ref<string | null>(null);
-  const { jobs, addJob, updateJobProgress, completeJob, clearCompleted } = useJobQueue();
+  const { jobs, addJob, updateJobProgress, completeJob, clearCompleted, removeJob } = useJobQueue();
 
   const allModels = [
     "tiny",
@@ -116,5 +116,6 @@ export const useTranscribeStore = defineStore("transcribe", () => {
     updateJobProgress,
     completeJob,
     clearCompleted,
+    removeJob,
   };
 });

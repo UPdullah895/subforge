@@ -198,7 +198,9 @@ pub async fn translate_subtitles(
         }
 
         // Write translations to temp JSON
-        let temp_json = format!("/tmp/subforge_translate_{}.json", job_id_clone);
+        let temp_json = std::env::temp_dir()
+            .join(format!("subforge_translate_{}.json", &job_id_clone));
+        let temp_json_str = temp_json.to_string_lossy().to_string();
         if let Err(e) = fs::write(&temp_json, serde_json::to_string(&translated).unwrap()) {
             let mut q = queue_clone.lock().unwrap();
             q.update_status(&job_id_clone, JobStatus::Failed);
@@ -222,7 +224,7 @@ pub async fn translate_subtitles(
             "message": "Rebuilding subtitle file...",
         }));
 
-        if let Err(e) = translate::rebuild_lines(&req.input, &temp_json, &req.output) {
+        if let Err(e) = translate::rebuild_lines(&req.input, &temp_json_str, &req.output) {
             let _ = fs::remove_file(&temp_json);
             let mut q = queue_clone.lock().unwrap();
             q.update_status(&job_id_clone, JobStatus::Failed);

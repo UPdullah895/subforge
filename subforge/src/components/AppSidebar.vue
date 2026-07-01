@@ -16,7 +16,10 @@ const props = defineProps<{
 }>();
 
 const emit = defineEmits<{
-  (e: "navigate", view: "subtitle" | "audio" | "batch" | "transcribe" | "translate" | "settings"): void;
+  (
+    e: "navigate",
+    view: "subtitle" | "audio" | "batch" | "transcribe" | "translate" | "settings"
+  ): void;
 }>();
 
 const app = useAppStore();
@@ -28,8 +31,6 @@ const navItems = [
   { id: "transcribe" as const, label: "Speech to Text", icon: Mic, active: true },
   { id: "translate" as const, label: "Translate", icon: Languages, active: true },
 ];
-
-
 </script>
 
 <template>

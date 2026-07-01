@@ -57,10 +57,7 @@ function clearCompleted() {
           v-if="job.status === JOB_STATUS.COMPLETED"
           class="w-4 h-4 text-success shrink-0"
         />
-        <XCircle
-          v-else-if="job.status === JOB_STATUS.FAILED"
-          class="w-4 h-4 text-error shrink-0"
-        />
+        <XCircle v-else-if="job.status === JOB_STATUS.FAILED" class="w-4 h-4 text-error shrink-0" />
         <Loader2 v-else class="w-4 h-4 text-accent animate-spin shrink-0" />
         <div class="flex-1 min-w-0">
           <p class="text-xs text-text-muted font-mono truncate">{{ id.slice(0, 24) }}…</p>

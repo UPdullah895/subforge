@@ -1,9 +1,13 @@
 use crate::tools::translate;
 use crate::{jobs, AppState};
-use axum::{extract::Json, extract::Query, extract::State, http::StatusCode};
+use axum::{extract::Json, extract::State, http::StatusCode};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 use std::fs;
+
+#[derive(Deserialize)]
+pub struct DetectRequest {
+    pub host: Option<String>,
+}
 
 #[derive(Serialize)]
 pub struct OllamaInfoResp {
@@ -12,15 +16,18 @@ pub struct OllamaInfoResp {
 }
 
 pub async fn detect_ollama(
-    Query(params): Query<HashMap<String, String>>,
+    Json(req): Json<DetectRequest>,
 ) -> Result<Json<OllamaInfoResp>, StatusCode> {
-    let host = params.get("host").cloned().unwrap_or_else(|| "http://localhost:11434".to_string());
+    let host = req.host.unwrap_or_else(|| "http://localhost:11434".to_string());
     match translate::detect_ollama(&host).await {
         Ok(resp) => Ok(Json(OllamaInfoResp {
             available: true,
             models: resp.models.into_iter().map(|m| m.name).collect(),
         })),
-        Err(_) => Ok(Json(OllamaInfoResp { available: false, models: vec![] })),
+        Err(_) => Ok(Json(OllamaInfoResp {
+            available: false,
+            models: vec![],
+        })),
     }
 }
 
@@ -31,15 +38,18 @@ pub struct LibreInfoResp {
 }
 
 pub async fn detect_libretranslate(
-    Query(params): Query<HashMap<String, String>>,
+    Json(req): Json<DetectRequest>,
 ) -> Result<Json<LibreInfoResp>, StatusCode> {
-    let host = params.get("host").cloned().unwrap_or_else(|| "http://localhost:5000".to_string());
+    let host = req.host.unwrap_or_else(|| "http://localhost:5000".to_string());
     match translate::detect_libretranslate(&host).await {
         Ok(langs) => Ok(Json(LibreInfoResp {
             available: true,
             languages: langs,
         })),
-        Err(_) => Ok(Json(LibreInfoResp { available: false, languages: vec![] })),
+        Err(_) => Ok(Json(LibreInfoResp {
+            available: false,
+            languages: vec![],
+        })),
     }
 }
 
@@ -58,7 +68,7 @@ pub struct TranslateRequest {
 pub async fn translate_subtitles(
     State(state): State<AppState>,
     Json(req): Json<TranslateRequest>,
-) -> Result<Json<serde_json::Value>, StatusCode> {
+) -> Result<Json<String>, StatusCode> {
     let job_id = format!("translate-{}", uuid::Uuid::new_v4());
 
     {
@@ -75,13 +85,16 @@ pub async fn translate_subtitles(
     }
 
     let sender = state.event_sender.clone();
-    jobs::emit_event(&sender, jobs::JobEvent {
-        event_type: "job-started".to_string(),
-        job_id: job_id.clone(),
-        status: None,
-        progress: None,
-        message: None,
-    });
+    jobs::emit_event(
+        &sender,
+        jobs::JobEvent {
+            event_type: "job-started".to_string(),
+            job_id: job_id.clone(),
+            status: None,
+            progress: None,
+            message: None,
+        },
+    );
 
     let queue_clone = state.job_queue.clone();
     let job_id_clone = job_id.clone();
@@ -101,26 +114,32 @@ pub async fn translate_subtitles(
             q.update_status(&job_id_clone, jobs::JobStatus::Running);
             q.update_progress(&job_id_clone, 5.0, Some("Extracting lines...".to_string()));
         }
-        jobs::emit_event(&sender, jobs::JobEvent {
-            event_type: "job-progress".to_string(),
-            job_id: job_id_clone.clone(),
-            status: None,
-            progress: Some(5.0),
-            message: Some("Extracting lines...".to_string()),
-        });
+        jobs::emit_event(
+            &sender,
+            jobs::JobEvent {
+                event_type: "job-progress".to_string(),
+                job_id: job_id_clone.clone(),
+                status: None,
+                progress: Some(5.0),
+                message: Some("Extracting lines...".to_string()),
+            },
+        );
 
         let lines = match translate::extract_lines(&req_input) {
             Ok(l) => l,
             Err(e) => {
                 let mut q = queue_clone.lock().unwrap();
                 q.update_status(&job_id_clone, jobs::JobStatus::Failed);
-                jobs::emit_event(&sender, jobs::JobEvent {
-                    event_type: "job-completed".to_string(),
-                    job_id: job_id_clone,
-                    status: Some(jobs::JobStatus::Failed),
-                    progress: Some(0.0),
-                    message: Some(e.to_string()),
-                });
+                jobs::emit_event(
+                    &sender,
+                    jobs::JobEvent {
+                        event_type: "job-completed".to_string(),
+                        job_id: job_id_clone,
+                        status: Some(jobs::JobStatus::Failed),
+                        progress: Some(0.0),
+                        message: Some(e.to_string()),
+                    },
+                );
                 return;
             }
         };
@@ -139,25 +158,48 @@ pub async fn translate_subtitles(
 
             {
                 let mut q = queue_clone.lock().unwrap();
-                q.update_progress(&job_id_clone, pct as f64, Some(format!("Translating lines {}-{}/{}", batch_start + 1, batch_end, total)));
+                q.update_progress(
+                    &job_id_clone,
+                    pct as f64,
+                    Some(format!(
+                        "Translating lines {}-{}/{}",
+                        batch_start + 1,
+                        batch_end,
+                        total
+                    )),
+                );
             }
-            jobs::emit_event(&sender, jobs::JobEvent {
-                event_type: "job-progress".to_string(),
-                job_id: job_id_clone.clone(),
-                status: None,
-                progress: Some(pct as f64),
-                message: Some(format!("Translating lines {}-{}/{}", batch_start + 1, batch_end, total)),
-            });
+            jobs::emit_event(
+                &sender,
+                jobs::JobEvent {
+                    event_type: "job-progress".to_string(),
+                    job_id: job_id_clone.clone(),
+                    status: None,
+                    progress: Some(pct as f64),
+                    message: Some(format!(
+                        "Translating lines {}-{}/{}",
+                        batch_start + 1,
+                        batch_end,
+                        total
+                    )),
+                },
+            );
 
             let result = match req_engine.as_str() {
                 "ollama" => {
-                    let host = req_host.clone().unwrap_or_else(|| "http://localhost:11434".to_string());
+                    let host = req_host
+                        .clone()
+                        .unwrap_or_else(|| "http://localhost:11434".to_string());
                     let model = req_model.clone().unwrap_or_else(|| "llama3".to_string());
-                    translate::translate_ollama(&host, &model, chunk, &req_source, &req_target).await
+                    translate::translate_ollama(&host, &model, chunk, &req_source, &req_target)
+                        .await
                 }
                 "libretranslate" => {
-                    let host = req_host.clone().unwrap_or_else(|| "http://localhost:5000".to_string());
-                    translate::translate_libretranslate(&host, chunk, &req_source, &req_target).await
+                    let host = req_host
+                        .clone()
+                        .unwrap_or_else(|| "http://localhost:5000".to_string());
+                    translate::translate_libretranslate(&host, chunk, &req_source, &req_target)
+                        .await
                 }
                 "deepl" => {
                     let key = req_key.clone().unwrap_or_default();
@@ -165,19 +207,25 @@ pub async fn translate_subtitles(
                 }
                 "openai" => {
                     let key = req_key.clone().unwrap_or_default();
-                    let model = req_model.clone().unwrap_or_else(|| "gpt-4o-mini".to_string());
-                    translate::translate_openai(&key, &model, chunk, &req_source, &req_target).await
+                    let model = req_model
+                        .clone()
+                        .unwrap_or_else(|| "gpt-4o-mini".to_string());
+                    translate::translate_openai(&key, &model, chunk, &req_source, &req_target)
+                        .await
                 }
                 _ => {
                     let mut q = queue_clone.lock().unwrap();
                     q.update_status(&job_id_clone, jobs::JobStatus::Failed);
-                    jobs::emit_event(&sender, jobs::JobEvent {
-                        event_type: "job-completed".to_string(),
-                        job_id: job_id_clone,
-                        status: Some(jobs::JobStatus::Failed),
-                        progress: Some(0.0),
-                        message: Some("Unknown engine".to_string()),
-                    });
+                    jobs::emit_event(
+                        &sender,
+                        jobs::JobEvent {
+                            event_type: "job-completed".to_string(),
+                            job_id: job_id_clone,
+                            status: Some(jobs::JobStatus::Failed),
+                            progress: Some(0.0),
+                            message: Some("Unknown engine".to_string()),
+                        },
+                    );
                     return;
                 }
             };
@@ -187,18 +235,22 @@ pub async fn translate_subtitles(
                 Err(e) => {
                     let mut q = queue_clone.lock().unwrap();
                     q.update_status(&job_id_clone, jobs::JobStatus::Failed);
-                    jobs::emit_event(&sender, jobs::JobEvent {
-                        event_type: "job-completed".to_string(),
-                        job_id: job_id_clone,
-                        status: Some(jobs::JobStatus::Failed),
-                        progress: Some(0.0),
-                        message: Some(e.to_string()),
-                    });
+                    jobs::emit_event(
+                        &sender,
+                        jobs::JobEvent {
+                            event_type: "job-completed".to_string(),
+                            job_id: job_id_clone,
+                            status: Some(jobs::JobStatus::Failed),
+                            progress: Some(0.0),
+                            message: Some(e.to_string()),
+                        },
+                    );
                     return;
                 }
             }
         }
 
+        // Pad to original count if any batch returned fewer lines
         if translated.len() != total {
             while translated.len() < total {
                 translated.push(lines[translated.len()].text.clone());
@@ -206,36 +258,50 @@ pub async fn translate_subtitles(
             translated.truncate(total);
         }
 
-        let temp_json = format!("/tmp/subforge_translate_{}.json", job_id_clone);
+        // Write translations to a temp file for subtitle rebuild
+        let temp_json = std::env::temp_dir()
+            .join(format!("subforge_translate_{}.json", &job_id_clone));
+        let temp_json_str = temp_json.to_string_lossy().to_string();
+
         if let Err(e) = fs::write(&temp_json, serde_json::to_string(&translated).unwrap()) {
             let mut q = queue_clone.lock().unwrap();
             q.update_status(&job_id_clone, jobs::JobStatus::Failed);
-            jobs::emit_event(&sender, jobs::JobEvent {
-                event_type: "job-completed".to_string(),
-                job_id: job_id_clone,
-                status: Some(jobs::JobStatus::Failed),
-                progress: Some(0.0),
-                message: Some(e.to_string()),
-            });
+            jobs::emit_event(
+                &sender,
+                jobs::JobEvent {
+                    event_type: "job-completed".to_string(),
+                    job_id: job_id_clone,
+                    status: Some(jobs::JobStatus::Failed),
+                    progress: Some(0.0),
+                    message: Some(e.to_string()),
+                },
+            );
             return;
         }
 
         {
             let mut q = queue_clone.lock().unwrap();
-            q.update_progress(&job_id_clone, 95.0, Some("Rebuilding subtitle file...".to_string()));
+            q.update_progress(
+                &job_id_clone,
+                95.0,
+                Some("Rebuilding subtitle file...".to_string()),
+            );
         }
 
-        if let Err(e) = translate::rebuild_lines(&req_input, &temp_json, &req_output) {
+        if let Err(e) = translate::rebuild_lines(&req_input, &temp_json_str, &req_output) {
             let _ = fs::remove_file(&temp_json);
             let mut q = queue_clone.lock().unwrap();
             q.update_status(&job_id_clone, jobs::JobStatus::Failed);
-            jobs::emit_event(&sender, jobs::JobEvent {
-                event_type: "job-completed".to_string(),
-                job_id: job_id_clone,
-                status: Some(jobs::JobStatus::Failed),
-                progress: Some(0.0),
-                message: Some(e.to_string()),
-            });
+            jobs::emit_event(
+                &sender,
+                jobs::JobEvent {
+                    event_type: "job-completed".to_string(),
+                    job_id: job_id_clone,
+                    status: Some(jobs::JobStatus::Failed),
+                    progress: Some(0.0),
+                    message: Some(e.to_string()),
+                },
+            );
             return;
         }
 
@@ -244,16 +310,23 @@ pub async fn translate_subtitles(
         {
             let mut q = queue_clone.lock().unwrap();
             q.update_status(&job_id_clone, jobs::JobStatus::Completed);
-            q.update_progress(&job_id_clone, 100.0, Some(format!("Translated {} lines", total)));
+            q.update_progress(
+                &job_id_clone,
+                100.0,
+                Some(format!("Translated {} lines", total)),
+            );
         }
-        jobs::emit_event(&sender, jobs::JobEvent {
-            event_type: "job-completed".to_string(),
-            job_id: job_id_clone,
-            status: Some(jobs::JobStatus::Completed),
-            progress: Some(100.0),
-            message: Some(format!("Translated {} lines", total)),
-        });
+        jobs::emit_event(
+            &sender,
+            jobs::JobEvent {
+                event_type: "job-completed".to_string(),
+                job_id: job_id_clone,
+                status: Some(jobs::JobStatus::Completed),
+                progress: Some(100.0),
+                message: Some(format!("Translated {} lines", total)),
+            },
+        );
     });
 
-    Ok(Json(serde_json::json!({ "job_id": job_id })))
+    Ok(Json(job_id))
 }

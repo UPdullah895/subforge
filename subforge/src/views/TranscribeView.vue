@@ -334,7 +334,7 @@ onUnmounted(() => {
               </div>
               <button
                 class="text-text-muted hover:text-text-secondary transition-colors"
-                @click="transcribeStore.jobs = transcribeStore.jobs.filter((j) => j.id !== job.id)"
+                @click="transcribeStore.removeJob(job.id)"
               >
                 <X class="w-4 h-4" />
               </button>

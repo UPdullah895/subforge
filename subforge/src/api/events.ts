@@ -1,8 +1,7 @@
 import { listen } from "@tauri-apps/api/event";
 
 const isTauri =
-  typeof window !== "undefined" &&
-  !!(window as unknown as Record<string, unknown>).__TAURI__;
+  typeof window !== "undefined" && !!(window as unknown as Record<string, unknown>).__TAURI__;
 
 let ws: WebSocket | null = null;
 let retryCount = 0;

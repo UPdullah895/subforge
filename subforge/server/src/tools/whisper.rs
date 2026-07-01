@@ -14,28 +14,8 @@ pub enum WhisperError {
     JsonError(String),
 }
 
-pub fn find_python() -> Option<PathBuf> {
-    for cmd in ["python3", "python"] {
-        if let Ok(paths) = std::env::var("PATH") {
-            for dir in paths.split(':') {
-                let full = PathBuf::from(dir).join(cmd);
-                if full.is_file() {
-                    return Some(full);
-                }
-            }
-        }
-    }
-    None
-}
-
 fn get_python() -> Result<PathBuf, WhisperError> {
-    find_python().ok_or(WhisperError::PythonNotFound)
-}
-
-fn script_path() -> String {
-    std::env::current_dir()
-        .map(|cwd| cwd.join("scripts").join("transcribe.py").to_string_lossy().to_string())
-        .unwrap_or_else(|_| "scripts/transcribe.py".to_string())
+    super::find_python().ok_or(WhisperError::PythonNotFound)
 }
 
 fn default_cache_dir() -> PathBuf {
@@ -58,7 +38,7 @@ pub struct ModelList {
 
 pub fn get_whisper_info() -> Result<WhisperInfo, WhisperError> {
     let python = get_python()?;
-    let script = script_path();
+    let script = super::script_path("transcribe.py");
 
     let output = Command::new(&python)
         .args([&script, "info"])
@@ -71,7 +51,7 @@ pub fn get_whisper_info() -> Result<WhisperInfo, WhisperError> {
 
 pub fn list_models(cache_dir: Option<String>) -> Result<Vec<String>, WhisperError> {
     let python = get_python()?;
-    let script = script_path();
+    let script = super::script_path("transcribe.py");
     let cache = cache_dir.map(PathBuf::from).unwrap_or_else(default_cache_dir);
 
     let output = Command::new(&python)
@@ -91,7 +71,7 @@ pub fn list_models(cache_dir: Option<String>) -> Result<Vec<String>, WhisperErro
 
 pub fn download_model(model: &str, cache_dir: Option<String>) -> Result<(), WhisperError> {
     let python = get_python()?;
-    let script = script_path();
+    let script = super::script_path("transcribe.py");
     let cache = cache_dir.map(PathBuf::from).unwrap_or_else(default_cache_dir);
 
     let output = Command::new(&python)
@@ -127,7 +107,7 @@ pub struct TranscribeOptions {
 }
 
 pub fn build_transcribe_args(options: &TranscribeOptions) -> Vec<String> {
-    let script = script_path();
+    let script = super::script_path("transcribe.py");
     let cache = options
         .cache_dir
         .as_ref()
