@@ -163,6 +163,7 @@ async function startPipeline() {
       const jobId = await apiInvoke<string>("run_translation_pipeline", { request });
       job.jobId = jobId;
       job.stage = "extracting";
+      await batchStore.registerPipelineJob(jobId, job.path, targetLang.value);
     } catch (e) {
       job.stage = "error";
       job.message = e instanceof Error ? e.message : String(e);

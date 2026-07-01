@@ -1,8 +1,9 @@
-use crate::tools::mkvtoolnix::VideoFileInfo;
+use crate::tools::mkvtoolnix::{ExternalSub, VideoFileInfo};
 use crate::tools::mkvtoolnix;
 use axum::{extract::Json, http::StatusCode};
 use serde::Deserialize;
 use std::collections::HashSet;
+use std::path::Path;
 use walkdir::WalkDir;
 
 #[derive(Deserialize)]
@@ -10,6 +11,62 @@ pub struct ScanRequest {
     path: String,
     recursive: bool,
     extensions: Vec<String>,
+}
+
+const KNOWN_LANG_CODES: &[&str] = &[
+    "en", "ar", "es", "fr", "de", "ja", "ko", "zh", "ru", "pt", "it", "tr", "hi", "fa", "ur",
+];
+
+/// Finds sibling subtitle files matching `{video_stem}.{lang}.{srt,ass}` next
+/// to a video file — e.g. `Show - S01E01.ar.srt` alongside `Show - S01E01.mkv`.
+fn detect_external_subs(video_path: &Path) -> Vec<ExternalSub> {
+    let stem = match video_path.file_stem().and_then(|s| s.to_str()) {
+        Some(s) => s,
+        None => return vec![],
+    };
+    let dir = match video_path.parent() {
+        Some(d) => d,
+        None => return vec![],
+    };
+
+    let entries = match std::fs::read_dir(dir) {
+        Ok(e) => e,
+        Err(_) => return vec![],
+    };
+
+    let prefix = format!("{}.", stem);
+    let mut subs = Vec::new();
+
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if !path.is_file() {
+            continue;
+        }
+        let name = match path.file_name().and_then(|n| n.to_str()) {
+            Some(n) => n,
+            None => continue,
+        };
+        if !name.starts_with(&prefix) {
+            continue;
+        }
+        let rest = &name[prefix.len()..];
+        let parts: Vec<&str> = rest.rsplitn(2, '.').collect();
+        if parts.len() != 2 {
+            continue;
+        }
+        let ext = parts[0].to_lowercase();
+        let lang = parts[1].to_lowercase();
+        if (ext == "srt" || ext == "ass") && KNOWN_LANG_CODES.contains(&lang.as_str()) {
+            subs.push(ExternalSub {
+                lang,
+                status: "ok".to_string(),
+                error_message: None,
+                path: path.to_string_lossy().to_string(),
+            });
+        }
+    }
+
+    subs
 }
 
 pub async fn scan_directory(Json(req): Json<ScanRequest>) -> Result<Json<Vec<VideoFileInfo>>, StatusCode> {
@@ -43,6 +100,7 @@ pub async fn scan_directory(Json(req): Json<ScanRequest>) -> Result<Json<Vec<Vid
                     subtitle_count,
                     audio_count,
                     video_count,
+                    external_subs: detect_external_subs(path),
                 });
             }
             Err(_) => continue,

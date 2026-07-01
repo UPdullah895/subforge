@@ -1,5 +1,6 @@
 import { defineStore } from "pinia";
 import { apiInvoke } from "../api/client";
+import { apiListen } from "../api/events";
 import { ref } from "vue";
 import { useJobQueue } from "../composables/useJobQueue";
 
@@ -13,6 +14,13 @@ interface Track {
   };
 }
 
+export interface ExternalSub {
+  lang: string;
+  status: "ok" | "pending" | "error";
+  error_message?: string;
+  path: string;
+}
+
 export interface VideoFileInfo {
   path: string;
   name: string;
@@ -20,6 +28,7 @@ export interface VideoFileInfo {
   subtitle_count: number;
   audio_count: number;
   video_count: number;
+  external_subs: ExternalSub[];
 }
 
 export interface ScanOptions {
@@ -35,6 +44,64 @@ export const useBatchStore = defineStore("batch", () => {
   const error = ref<string | null>(null);
   const lastScannedPath = ref<string | null>(null);
   const { jobs, addJob, clearAll } = useJobQueue();
+
+  const pipelineJobs = new Map<string, { path: string; lang: string }>();
+  let pipelineListenersRegistered = false;
+
+  function withoutExt(path: string): string {
+    const slash = Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\"));
+    const dot = path.lastIndexOf(".");
+    return dot > slash ? path.slice(0, dot) : path;
+  }
+
+  function upsertExternalSub(
+    path: string,
+    lang: string,
+    status: ExternalSub["status"],
+    errorMessage?: string
+  ) {
+    const file = scannedFiles.value.find((f) => f.path === path);
+    if (!file) return;
+    let sub = file.external_subs.find((s) => s.lang === lang);
+    if (!sub) {
+      sub = { lang, status, path: `${withoutExt(path)}.${lang}.srt` };
+      file.external_subs.push(sub);
+    } else {
+      sub.status = status;
+    }
+    if (errorMessage) sub.error_message = errorMessage;
+  }
+
+  async function ensurePipelineListeners() {
+    if (pipelineListenersRegistered) return;
+    pipelineListenersRegistered = true;
+
+    await apiListen<{ job_id: string; stage?: string }>("job-progress", (payload) => {
+      const mapping = pipelineJobs.get(payload.job_id);
+      if (!mapping) return;
+      upsertExternalSub(mapping.path, mapping.lang, payload.stage === "error" ? "error" : "pending");
+    });
+
+    await apiListen<{ job_id: string; status: string; message?: string }>(
+      "job-completed",
+      (payload) => {
+        const mapping = pipelineJobs.get(payload.job_id);
+        if (!mapping) return;
+        if (payload.status === "completed") {
+          upsertExternalSub(mapping.path, mapping.lang, "ok");
+        } else {
+          upsertExternalSub(mapping.path, mapping.lang, "error", payload.message);
+        }
+        pipelineJobs.delete(payload.job_id);
+      }
+    );
+  }
+
+  async function registerPipelineJob(jobId: string, path: string, lang: string) {
+    await ensurePipelineListeners();
+    pipelineJobs.set(jobId, { path, lang });
+    upsertExternalSub(path, lang, "pending");
+  }
 
   async function scanDirectory(path: string, recursive: boolean = true) {
     loading.value = true;
@@ -115,5 +182,6 @@ export const useBatchStore = defineStore("batch", () => {
     selectAll,
     deselectAll,
     clearJobs,
+    registerPipelineJob,
   };
 });

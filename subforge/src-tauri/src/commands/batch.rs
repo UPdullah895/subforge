@@ -1,9 +1,66 @@
 use crate::jobs::{Job, JobStatus, JobType, SharedJobQueue};
-use crate::tools::mkvtoolnix::{self, VideoFileInfo};
+use crate::tools::mkvtoolnix::{self, ExternalSub, VideoFileInfo};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
+use std::path::Path;
 use tauri::{AppHandle, Emitter, State};
 use walkdir::WalkDir;
+
+const KNOWN_LANG_CODES: &[&str] = &[
+    "en", "ar", "es", "fr", "de", "ja", "ko", "zh", "ru", "pt", "it", "tr", "hi", "fa", "ur",
+];
+
+/// Finds sibling subtitle files matching `{video_stem}.{lang}.{srt,ass}` next
+/// to a video file — e.g. `Show - S01E01.ar.srt` alongside `Show - S01E01.mkv`.
+fn detect_external_subs(video_path: &Path) -> Vec<ExternalSub> {
+    let stem = match video_path.file_stem().and_then(|s| s.to_str()) {
+        Some(s) => s,
+        None => return vec![],
+    };
+    let dir = match video_path.parent() {
+        Some(d) => d,
+        None => return vec![],
+    };
+
+    let entries = match std::fs::read_dir(dir) {
+        Ok(e) => e,
+        Err(_) => return vec![],
+    };
+
+    let prefix = format!("{}.", stem);
+    let mut subs = Vec::new();
+
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if !path.is_file() {
+            continue;
+        }
+        let name = match path.file_name().and_then(|n| n.to_str()) {
+            Some(n) => n,
+            None => continue,
+        };
+        if !name.starts_with(&prefix) {
+            continue;
+        }
+        let rest = &name[prefix.len()..];
+        let parts: Vec<&str> = rest.rsplitn(2, '.').collect();
+        if parts.len() != 2 {
+            continue;
+        }
+        let ext = parts[0].to_lowercase();
+        let lang = parts[1].to_lowercase();
+        if (ext == "srt" || ext == "ass") && KNOWN_LANG_CODES.contains(&lang.as_str()) {
+            subs.push(ExternalSub {
+                lang,
+                status: "ok".to_string(),
+                error_message: None,
+                path: path.to_string_lossy().to_string(),
+            });
+        }
+    }
+
+    subs
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ScanOptions {
@@ -63,6 +120,7 @@ pub fn scan_directory(options: ScanOptions) -> Result<Vec<VideoFileInfo>, String
                     subtitle_count,
                     audio_count,
                     video_count,
+                    external_subs: detect_external_subs(path),
                 });
             }
             Err(_) => {
@@ -133,4 +191,46 @@ pub async fn batch_extract_subtitles(
     }
 
     Ok(job_ids)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+
+    #[test]
+    fn detects_matching_lang_and_ext_siblings() {
+        let dir = std::env::temp_dir().join(format!("subforge_test_{}", uuid::Uuid::new_v4()));
+        fs::create_dir_all(&dir).unwrap();
+        let video = dir.join("Show - S01E01.mkv");
+        fs::write(&video, b"").unwrap();
+        fs::write(dir.join("Show - S01E01.ar.srt"), b"").unwrap();
+        fs::write(dir.join("Show - S01E01.en.ass"), b"").unwrap();
+        // Not a recognized language code — should be ignored.
+        fs::write(dir.join("Show - S01E01.xyz.srt"), b"").unwrap();
+        // Doesn't share the video's stem — should be ignored.
+        fs::write(dir.join("Other - S01E01.ar.srt"), b"").unwrap();
+
+        let mut subs = detect_external_subs(&video);
+        subs.sort_by(|a, b| a.lang.cmp(&b.lang));
+
+        assert_eq!(subs.len(), 2);
+        assert_eq!(subs[0].lang, "ar");
+        assert_eq!(subs[0].status, "ok");
+        assert_eq!(subs[1].lang, "en");
+
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn returns_empty_when_no_siblings_exist() {
+        let dir = std::env::temp_dir().join(format!("subforge_test_{}", uuid::Uuid::new_v4()));
+        fs::create_dir_all(&dir).unwrap();
+        let video = dir.join("Lonely.mkv");
+        fs::write(&video, b"").unwrap();
+
+        assert!(detect_external_subs(&video).is_empty());
+
+        fs::remove_dir_all(&dir).unwrap();
+    }
 }

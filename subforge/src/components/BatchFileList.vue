@@ -2,7 +2,7 @@
 import { ref, computed } from "vue";
 import { useI18n } from "vue-i18n";
 import { FileVideo, ChevronDown, ChevronRight, Pencil, Languages } from "lucide-vue-next";
-import type { VideoFileInfo } from "../stores/batchStore";
+import type { ExternalSub, VideoFileInfo } from "../stores/batchStore";
 
 const { t } = useI18n();
 
@@ -35,6 +35,16 @@ const allSelected = computed(() => {
 function toggleAll() {
   emit("toggleAll");
 }
+
+function hasError(file: VideoFileInfo): boolean {
+  return file.external_subs.some((s) => s.status === "error");
+}
+
+function badgeClass(status: ExternalSub["status"]): string {
+  if (status === "ok") return "bg-success/10 text-success border-success/20";
+  if (status === "error") return "bg-error/10 text-error border-error/20";
+  return "bg-warning/10 text-warning border-warning/20 animate-pulse";
+}
 </script>
 
 <template>
@@ -54,6 +64,7 @@ function toggleAll() {
           <th class="px-4 py-3 font-medium text-center">{{ t("batchFileList.video") }}</th>
           <th class="px-4 py-3 font-medium text-center">{{ t("batchFileList.audio") }}</th>
           <th class="px-4 py-3 font-medium text-center">{{ t("batchFileList.subs") }}</th>
+          <th class="px-4 py-3 font-medium">{{ t("batchFileList.externalSubs") }}</th>
           <th class="px-4 py-3 font-medium w-10"></th>
         </tr>
       </thead>
@@ -78,6 +89,20 @@ function toggleAll() {
             <td class="px-4 py-3 text-center text-text-muted">{{ file.audio_count }}</td>
             <td class="px-4 py-3 text-center text-text-muted">{{ file.subtitle_count }}</td>
             <td class="px-4 py-3">
+              <div class="flex flex-wrap gap-1">
+                <span
+                  v-for="sub in file.external_subs"
+                  :key="sub.lang"
+                  class="px-1.5 py-0.5 rounded border text-[10px] font-medium uppercase"
+                  :class="badgeClass(sub.status)"
+                  :title="sub.status === 'error' ? sub.error_message : undefined"
+                >
+                  {{ sub.lang }}
+                </span>
+                <span v-if="file.external_subs.length === 0" class="text-xs text-text-muted">—</span>
+              </div>
+            </td>
+            <td class="px-4 py-3">
               <button
                 class="text-text-muted hover:text-text-primary"
                 @click="toggleExpand(file.path)"
@@ -87,8 +112,17 @@ function toggleAll() {
               </button>
             </td>
           </tr>
+          <tr v-if="hasError(file)" class="bg-error/5">
+            <td colspan="7" class="px-4 py-2">
+              <div class="flex flex-wrap gap-x-4 gap-y-1 text-xs text-error">
+                <span v-for="sub in file.external_subs.filter((s) => s.status === 'error')" :key="sub.lang">
+                  <strong class="uppercase">{{ sub.lang }}</strong>: {{ sub.error_message || t("batchFileList.externalSubError") }}
+                </span>
+              </div>
+            </td>
+          </tr>
           <tr v-if="expanded.has(file.path)" class="bg-bg-secondary">
-            <td colspan="6" class="px-4 py-3">
+            <td colspan="7" class="px-4 py-3">
               <div class="text-xs text-text-secondary space-y-1">
                 <p class="font-mono text-text-muted">{{ file.path }}</p>
                 <div class="flex items-center justify-between mt-2">
@@ -125,7 +159,7 @@ function toggleAll() {
           </tr>
         </template>
         <tr v-if="props.files.length === 0">
-          <td colspan="6" class="px-4 py-8 text-center text-text-muted">
+          <td colspan="7" class="px-4 py-8 text-center text-text-muted">
             {{ t("batchFileList.empty") }}
           </td>
         </tr>

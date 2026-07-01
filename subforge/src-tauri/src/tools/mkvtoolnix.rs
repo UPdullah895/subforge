@@ -56,6 +56,15 @@ pub struct MkvInfo {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExternalSub {
+    pub lang: String,
+    pub status: String,
+    #[serde(default)]
+    pub error_message: Option<String>,
+    pub path: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VideoFileInfo {
     pub path: String,
     pub name: String,
@@ -63,6 +72,8 @@ pub struct VideoFileInfo {
     pub subtitle_count: usize,
     pub audio_count: usize,
     pub video_count: usize,
+    #[serde(default)]
+    pub external_subs: Vec<ExternalSub>,
 }
 
 pub fn discover_mkvmerge() -> ToolInfo {

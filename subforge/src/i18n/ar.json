@@ -52,6 +52,8 @@
     "video": "فيديو",
     "audio": "صوت",
     "subs": "ترجمات",
+    "externalSubs": "ترجمات خارجية",
+    "externalSubError": "فشلت الترجمة.",
     "empty": "لم يتم العثور على ملفات. امسح دليلاً للبدء."
   },
   "jobMonitor": {

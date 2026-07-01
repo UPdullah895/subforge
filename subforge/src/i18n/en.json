@@ -52,6 +52,8 @@
     "video": "Video",
     "audio": "Audio",
     "subs": "Subs",
+    "externalSubs": "External Subs",
+    "externalSubError": "Translation failed.",
     "empty": "No files found. Scan a directory to get started."
   },
   "jobMonitor": {
