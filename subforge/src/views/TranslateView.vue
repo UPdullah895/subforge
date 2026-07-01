@@ -1,9 +1,12 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, watch } from "vue";
+import { useI18n } from "vue-i18n";
 import { open } from "@tauri-apps/plugin-dialog";
 import { apiListen } from "../api/events";
 import type { UnlistenFn } from "@tauri-apps/api/event";
 import { useTranslateStore, type EngineType } from "../stores/translateStore";
+
+const { t } = useI18n();
 import { JOB_STATUS, type JobStatus } from "../constants/jobStatus";
 import { useAppStore } from "../stores/appStore";
 import ErrorBanner from "../components/ErrorBanner.vue";
@@ -40,35 +43,12 @@ const activeJob = computed(() =>
   translateStore.jobs.find((j) => j.status === JOB_STATUS.RUNNING || j.status === JOB_STATUS.PENDING)
 );
 
-const engines: { id: EngineType; label: string; icon: typeof Brain }[] = [
-  { id: "ollama", label: "Ollama", icon: Brain },
-  { id: "libretranslate", label: "LibreTranslate", icon: Globe },
-  { id: "deepl", label: "DeepL", icon: Zap },
-  { id: "openai", label: "OpenAI", icon: Key },
+const engines: { id: EngineType; icon: typeof Brain }[] = [
+  { id: "ollama", icon: Brain },
+  { id: "libretranslate", icon: Globe },
+  { id: "deepl", icon: Zap },
+  { id: "openai", icon: Key },
 ];
-
-const engineHelp: Record<EngineType, { what: string; install: string; security: string }> = {
-  ollama: {
-    what: "Ollama runs large language models locally on your machine.",
-    install: "Install from https://ollama.com — then pull a model with: ollama pull llama3",
-    security: "Fully local — your subtitles never leave your machine. Open-source.",
-  },
-  libretranslate: {
-    what: "LibreTranslate is a self-hosted machine translation API.",
-    install: "Run via Docker: docker run -it -p 5000:5000 libretranslate/libretranslate",
-    security: "Self-hosted — you control the server. Open-source (AGPL).",
-  },
-  deepl: {
-    what: "DeepL is a cloud translation service with high-quality neural MT.",
-    install: "Get a free or Pro API key at https://www.deepl.com/pro-api",
-    security: "Cloud service — subtitles are sent to DeepL servers over HTTPS. Data handled per DeepL's privacy policy.",
-  },
-  openai: {
-    what: "OpenAI provides GPT models for high-quality translation via API.",
-    install: "Get an API key at https://platform.openai.com/api-keys",
-    security: "Cloud service — subtitles are sent to OpenAI servers over HTTPS. Review OpenAI's data usage policy.",
-  },
-};
 
 const languageOptions = [
   { code: "auto", label: "Auto-detect" },
@@ -215,10 +195,10 @@ onUnmounted(() => {
     <!-- Header -->
     <div class="flex items-center justify-between px-6 py-4 border-b border-border">
       <div class="flex items-center gap-2">
-        <h1 class="text-xl font-semibold text-text-primary">Translate</h1>
+        <h1 class="text-xl font-semibold text-text-primary">{{ t("translate.title") }}</h1>
         <span
           class="text-text-muted hover:text-text-secondary cursor-help"
-          title="Translate subtitles with AI or machine translation engines. Choose a local or cloud provider, set languages, and run."
+          :title="t('translate.tooltip')"
         >
           <Info class="w-4 h-4" />
         </span>
@@ -228,7 +208,7 @@ onUnmounted(() => {
         @click="pickFiles"
       >
         <FolderOpen class="w-4 h-4" />
-        Open Subtitle(s)
+        {{ t("translate.openSubtitles") }}
       </button>
     </div>
 
@@ -240,13 +220,13 @@ onUnmounted(() => {
       <div v-if="fileCount > 0" class="space-y-2">
         <div class="flex items-center justify-between">
           <h2 class="text-sm font-semibold text-text-primary uppercase tracking-wide">
-            Files ({{ fileCount }})
+            {{ t("translate.filesCount", { count: fileCount }) }}
           </h2>
           <button
             class="text-xs text-text-muted hover:text-text-secondary transition-colors"
             @click="clearFiles"
           >
-            Clear all
+            {{ t("common.clearAll") }}
           </button>
         </div>
         <div class="space-y-1.5">
@@ -273,14 +253,14 @@ onUnmounted(() => {
       <div class="space-y-3">
         <div class="flex items-center justify-between">
           <h2 class="text-sm font-semibold text-text-primary uppercase tracking-wide">
-            Translation Engine
+            {{ t("translate.translationEngine") }}
           </h2>
           <button
             class="inline-flex items-center gap-1 text-xs text-text-secondary hover:text-text-primary transition-colors"
             @click="enginesExpanded = !enginesExpanded"
           >
             <component :is="enginesExpanded ? ChevronUp : ChevronDown" class="w-4 h-4" />
-            {{ enginesExpanded ? "Collapse" : "Change" }}
+            {{ enginesExpanded ? t("translate.collapse") : t("translate.change") }}
           </button>
         </div>
 
@@ -294,7 +274,7 @@ onUnmounted(() => {
             class="w-4 h-4"
           />
           <span class="text-sm font-medium">
-            {{ engines.find((e) => e.id === translateStore.selectedEngine)?.label }}
+            {{ t(`translate.${translateStore.selectedEngine}`) }}
           </span>
         </div>
 
@@ -312,10 +292,10 @@ onUnmounted(() => {
             @click="translateStore.selectedEngine = engine.id"
           >
             <component :is="engine.icon" class="w-5 h-5" />
-            <span class="text-sm font-medium">{{ engine.label }}</span>
+            <span class="text-sm font-medium">{{ t(`translate.${engine.id}`) }}</span>
             <button
               class="absolute top-2 right-2 text-text-muted hover:text-text-primary transition-colors"
-              :title="`About ${engine.label}`"
+              :title="t('translate.about', { engine: t(`translate.${engine.id}`) })"
               @click.stop="showEngineHelp = showEngineHelp === engine.id ? null : engine.id"
             >
               <HelpCircle class="w-3.5 h-3.5" />
@@ -330,7 +310,7 @@ onUnmounted(() => {
         >
           <div class="flex items-center justify-between">
             <h3 class="text-sm font-semibold text-text-primary">
-              {{ engines.find((e) => e.id === showEngineHelp)?.label }}
+              {{ t(`translate.${showEngineHelp}`) }}
             </h3>
             <button
               class="text-text-muted hover:text-text-secondary transition-colors"
@@ -340,16 +320,16 @@ onUnmounted(() => {
             </button>
           </div>
           <p class="text-xs text-text-secondary">
-            <strong class="text-text-primary">What:</strong>
-            {{ engineHelp[showEngineHelp].what }}
+            <strong class="text-text-primary">{{ t("translate.what") }}:</strong>
+            {{ t(`translate.${showEngineHelp}Desc`) }}
           </p>
           <p class="text-xs text-text-secondary">
-            <strong class="text-text-primary">Setup:</strong>
-            {{ engineHelp[showEngineHelp].install }}
+            <strong class="text-text-primary">{{ t("translate.setup") }}:</strong>
+            {{ t(`translate.${showEngineHelp}Setup`) }}
           </p>
           <p class="text-xs text-text-secondary">
-            <strong class="text-text-primary">Security:</strong>
-            {{ engineHelp[showEngineHelp].security }}
+            <strong class="text-text-primary">{{ t("translate.security") }}:</strong>
+            {{ t(`translate.${showEngineHelp}Security`) }}
           </p>
         </div>
       </div>
@@ -358,9 +338,9 @@ onUnmounted(() => {
       <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
         <!-- Ollama Settings -->
         <div v-if="translateStore.selectedEngine === 'ollama'" class="space-y-3">
-          <h2 class="text-sm font-semibold text-text-primary uppercase tracking-wide">Ollama</h2>
+          <h2 class="text-sm font-semibold text-text-primary uppercase tracking-wide">{{ t("translate.ollamaSection") }}</h2>
           <div>
-            <label class="block text-xs font-medium text-text-secondary mb-1.5">Host URL</label>
+            <label class="block text-xs font-medium text-text-secondary mb-1.5">{{ t("translate.hostUrl") }}</label>
             <div class="flex items-center gap-2">
               <input
                 v-model="translateStore.ollamaHost"
@@ -369,7 +349,7 @@ onUnmounted(() => {
               />
               <button
                 class="inline-flex items-center justify-center w-10 h-10 rounded-lg bg-bg-tertiary text-text-primary hover:bg-bg-hover transition-colors shrink-0"
-                title="Auto-detect running Ollama instance"
+                :title="t('translate.autoDetect')"
                 @click="translateStore.detectOllama"
               >
                 <RefreshCw class="w-4 h-4" />
@@ -377,7 +357,7 @@ onUnmounted(() => {
             </div>
           </div>
           <div>
-            <label class="block text-xs font-medium text-text-secondary mb-1.5">Model</label>
+            <label class="block text-xs font-medium text-text-secondary mb-1.5">{{ t("translate.modelLabel") }}</label>
             <select
               v-model="translateStore.selectedOllamaModel"
               class="w-full px-4 py-2.5 rounded-lg bg-bg-secondary border border-border text-sm text-text-primary focus:outline-none focus:border-accent"
@@ -385,16 +365,16 @@ onUnmounted(() => {
               <option v-for="m in translateStore.ollamaModels" :key="m" :value="m">{{ m }}</option>
             </select>
             <p v-if="translateStore.ollamaModels.length === 0" class="text-xs text-warning mt-1">
-              No models found. Make sure Ollama is running.
+              {{ t("translate.noModels") }}
             </p>
           </div>
         </div>
 
         <!-- LibreTranslate Settings -->
         <div v-else-if="translateStore.selectedEngine === 'libretranslate'" class="space-y-3">
-          <h2 class="text-sm font-semibold text-text-primary uppercase tracking-wide">LibreTranslate</h2>
+          <h2 class="text-sm font-semibold text-text-primary uppercase tracking-wide">{{ t("translate.libreSection") }}</h2>
           <div>
-            <label class="block text-xs font-medium text-text-secondary mb-1.5">Host URL</label>
+            <label class="block text-xs font-medium text-text-secondary mb-1.5">{{ t("translate.hostUrl") }}</label>
             <div class="flex items-center gap-2">
               <input
                 v-model="translateStore.libreHost"
@@ -403,7 +383,7 @@ onUnmounted(() => {
               />
               <button
                 class="inline-flex items-center justify-center w-10 h-10 rounded-lg bg-bg-tertiary text-text-primary hover:bg-bg-hover transition-colors shrink-0"
-                title="Auto-detect running LibreTranslate instance"
+                :title="t('translate.autoDetectLibre')"
                 @click="translateStore.detectLibreTranslate"
               >
                 <RefreshCw class="w-4 h-4" />
@@ -414,13 +394,13 @@ onUnmounted(() => {
 
         <!-- DeepL Settings -->
         <div v-else-if="translateStore.selectedEngine === 'deepl'" class="space-y-3">
-          <h2 class="text-sm font-semibold text-text-primary uppercase tracking-wide">DeepL</h2>
+          <h2 class="text-sm font-semibold text-text-primary uppercase tracking-wide">{{ t("translate.deeplSection") }}</h2>
           <div>
-            <label class="block text-xs font-medium text-text-secondary mb-1.5">API Key</label>
+            <label class="block text-xs font-medium text-text-secondary mb-1.5">{{ t("translate.apiKey") }}</label>
             <input
               v-model="translateStore.deeplKey"
               type="password"
-              placeholder="DeepL-Auth-Key xxx..."
+              :placeholder="t('translate.deeplPlaceholder')"
               class="w-full px-4 py-2.5 rounded-lg bg-bg-secondary border border-border text-sm text-text-primary placeholder-text-muted focus:outline-none focus:border-accent"
             />
           </div>
@@ -430,24 +410,24 @@ onUnmounted(() => {
               type="checkbox"
               class="rounded border-border bg-bg-primary text-accent focus:ring-accent"
             />
-            <span class="text-sm text-text-secondary">Pro account (not free tier)</span>
+            <span class="text-sm text-text-secondary">{{ t("translate.proAccount") }}</span>
           </label>
         </div>
 
         <!-- OpenAI Settings -->
         <div v-else-if="translateStore.selectedEngine === 'openai'" class="space-y-3">
-          <h2 class="text-sm font-semibold text-text-primary uppercase tracking-wide">OpenAI</h2>
+          <h2 class="text-sm font-semibold text-text-primary uppercase tracking-wide">{{ t("translate.openaiSection") }}</h2>
           <div>
-            <label class="block text-xs font-medium text-text-secondary mb-1.5">API Key</label>
+            <label class="block text-xs font-medium text-text-secondary mb-1.5">{{ t("translate.apiKey") }}</label>
             <input
               v-model="translateStore.openaiKey"
               type="password"
-              placeholder="sk-..."
+              :placeholder="t('translate.openaiPlaceholder')"
               class="w-full px-4 py-2.5 rounded-lg bg-bg-secondary border border-border text-sm text-text-primary placeholder-text-muted focus:outline-none focus:border-accent"
             />
           </div>
           <div>
-            <label class="block text-xs font-medium text-text-secondary mb-1.5">Model</label>
+            <label class="block text-xs font-medium text-text-secondary mb-1.5">{{ t("translate.modelName") }}</label>
             <input
               v-model="translateStore.openaiModel"
               type="text"
@@ -458,10 +438,10 @@ onUnmounted(() => {
 
         <!-- Language Pair -->
         <div class="space-y-3">
-          <h2 class="text-sm font-semibold text-text-primary uppercase tracking-wide">Languages</h2>
+          <h2 class="text-sm font-semibold text-text-primary uppercase tracking-wide">{{ t("translate.languages") }}</h2>
           <div class="grid grid-cols-2 gap-3">
             <div>
-              <label class="block text-xs font-medium text-text-secondary mb-1.5">Source</label>
+              <label class="block text-xs font-medium text-text-secondary mb-1.5">{{ t("translate.source") }}</label>
               <select
                 v-model="translateStore.sourceLang"
                 class="w-full px-4 py-2.5 rounded-lg bg-bg-secondary border border-border text-sm text-text-primary focus:outline-none focus:border-accent"
@@ -472,7 +452,7 @@ onUnmounted(() => {
               </select>
             </div>
             <div>
-              <label class="block text-xs font-medium text-text-secondary mb-1.5">Target</label>
+              <label class="block text-xs font-medium text-text-secondary mb-1.5">{{ t("translate.target") }}</label>
               <select
                 v-model="translateStore.targetLang"
                 class="w-full px-4 py-2.5 rounded-lg bg-bg-secondary border border-border text-sm text-text-primary focus:outline-none focus:border-accent"
@@ -494,7 +474,7 @@ onUnmounted(() => {
       >
         <Loader2 v-if="translating" class="w-4 h-4 animate-spin" />
         <Play v-else class="w-4 h-4" />
-        {{ translating ? "Starting..." : "Translate" }}
+        {{ translating ? t("translate.translating") : t("translate.translate") }}
       </button>
 
       <!-- Active Job Progress Banner -->
@@ -506,7 +486,7 @@ onUnmounted(() => {
           <div class="flex items-center gap-2">
             <Loader2 class="w-4 h-4 text-accent animate-spin" />
             <span class="text-sm font-medium text-text-primary">
-              {{ activeJob.message || "Translating..." }}
+              {{ activeJob.message || t("translate.activeJobProgress") }}
             </span>
           </div>
           <span class="text-sm font-bold text-accent">{{ Math.round(activeJob.progress) }}%</span>
@@ -523,13 +503,13 @@ onUnmounted(() => {
       <div v-if="translateStore.jobs.length > 0" class="space-y-2">
         <div class="flex items-center justify-between">
           <h2 class="text-sm font-semibold text-text-primary uppercase tracking-wide">
-            Translation Jobs
+            {{ t("translate.translationJobs") }}
           </h2>
           <button
             class="text-xs text-text-muted hover:text-text-secondary transition-colors"
             @click="translateStore.clearCompleted"
           >
-            Clear completed
+            {{ t("jobMonitor.clearCompleted") }}
           </button>
         </div>
         <div class="space-y-2">
@@ -574,16 +554,16 @@ onUnmounted(() => {
         <div class="w-16 h-16 rounded-2xl bg-bg-secondary border border-border flex items-center justify-center mb-4">
           <Languages class="w-8 h-8 text-text-muted" />
         </div>
-        <h3 class="text-base font-medium text-text-primary">No subtitle selected</h3>
+        <h3 class="text-base font-medium text-text-primary">{{ t("translate.noSubtitleSelected") }}</h3>
         <p class="text-sm text-text-secondary mt-1 max-w-sm">
-          Open a subtitle file and choose a translation engine to get started.
+          {{ t("translate.noSubtitleSelectedDesc") }}
         </p>
         <button
           class="mt-4 inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-bg-tertiary text-text-primary text-sm font-medium hover:bg-bg-hover transition-colors"
           @click="pickFiles"
         >
           <FolderOpen class="w-4 h-4" />
-          Browse
+          {{ t("common.browse") }}
         </button>
       </div>
     </div>

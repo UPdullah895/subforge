@@ -1,9 +1,16 @@
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
+fn default_language() -> String {
+    "en".to_string()
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppConfig {
     pub theme: String,
+    // Falls back to "en" for config files saved before this field existed.
+    #[serde(default = "default_language")]
+    pub language: String,
     pub mkvmerge_path: Option<String>,
     pub mkvextract_path: Option<String>,
     pub ffmpeg_path: Option<String>,
@@ -18,6 +25,7 @@ impl Default for AppConfig {
     fn default() -> Self {
         Self {
             theme: "dark".to_string(),
+            language: default_language(),
             mkvmerge_path: None,
             mkvextract_path: None,
             ffmpeg_path: None,

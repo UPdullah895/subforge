@@ -1,10 +1,13 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from "vue";
+import { useI18n } from "vue-i18n";
 import { open } from "@tauri-apps/plugin-dialog";
 
 import { apiListen } from "../api/events";
 import type { UnlistenFn } from "@tauri-apps/api/event";
 import { useTranscribeStore } from "../stores/transcribeStore";
+
+const { t } = useI18n();
 import { JOB_STATUS, type JobStatus } from "../constants/jobStatus";
 import { useAppStore } from "../stores/appStore";
 import ErrorBanner from "../components/ErrorBanner.vue";
@@ -125,10 +128,10 @@ onUnmounted(() => {
     <!-- Header -->
     <div class="flex items-center justify-between px-6 py-4 border-b border-border">
       <div class="flex items-center gap-2">
-        <h1 class="text-xl font-semibold text-text-primary">Speech to Text</h1>
+        <h1 class="text-xl font-semibold text-text-primary">{{ t("transcribe.title") }}</h1>
         <span
           class="text-text-muted hover:text-text-secondary cursor-help"
-          title="Transcribe audio and video to subtitles using faster-whisper. Choose a model, set options, and run."
+          :title="t('transcribe.tooltip')"
         >
           <Info class="w-4 h-4" />
         </span>
@@ -138,7 +141,7 @@ onUnmounted(() => {
         @click="pickFiles"
       >
         <FolderOpen class="w-4 h-4" />
-        Open Media
+        {{ t("transcribe.openMedia") }}
       </button>
     </div>
 
@@ -159,7 +162,7 @@ onUnmounted(() => {
             ]"
           />
           <span class="text-xs text-text-secondary">
-            {{ transcribeStore.whisperInfo.cuda_available ? "CUDA available" : "CPU only" }}
+            {{ transcribeStore.whisperInfo.cuda_available ? t("transcribe.cudaAvailable") : t("transcribe.cpuOnly") }}
           </span>
         </div>
         <span class="text-xs text-text-muted">
@@ -171,13 +174,13 @@ onUnmounted(() => {
       <div v-if="fileCount > 0" class="space-y-2">
         <div class="flex items-center justify-between">
           <h2 class="text-sm font-semibold text-text-primary uppercase tracking-wide">
-            Files ({{ fileCount }})
+            {{ t("transcribe.files", { count: fileCount }) }}
           </h2>
           <button
             class="text-xs text-text-muted hover:text-text-secondary transition-colors"
             @click="clearFiles"
           >
-            Clear all
+            {{ t("common.clearAll") }}
           </button>
         </div>
         <div class="space-y-1.5">
@@ -204,11 +207,11 @@ onUnmounted(() => {
       <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
         <div class="space-y-4">
           <h2 class="text-sm font-semibold text-text-primary uppercase tracking-wide">
-            Model
+            {{ t("transcribe.model") }}
           </h2>
 
           <div>
-            <label class="block text-xs font-medium text-text-secondary mb-1.5">Whisper model</label>
+            <label class="block text-xs font-medium text-text-secondary mb-1.5">{{ t("transcribe.whisperModel") }}</label>
             <div class="flex items-center gap-2">
               <select
                 v-model="selectedModel"
@@ -222,7 +225,7 @@ onUnmounted(() => {
                 v-if="!isModelDownloaded"
                 :disabled="transcribeStore.downloadingModel === selectedModel"
                 class="inline-flex items-center justify-center w-10 h-10 rounded-lg bg-bg-tertiary text-text-primary hover:bg-bg-hover transition-colors disabled:opacity-50 shrink-0"
-                title="Download this model"
+                :title="t('transcribe.downloadModel')"
                 @click="transcribeStore.downloadModel(selectedModel)"
               >
                 <Loader2 v-if="transcribeStore.downloadingModel === selectedModel" class="w-4 h-4 animate-spin" />
@@ -230,28 +233,28 @@ onUnmounted(() => {
               </button>
             </div>
             <p v-if="!isModelDownloaded" class="text-xs text-warning mt-1.5">
-              This model is not cached. It will be downloaded on first use (may take several minutes for large models).
+              {{ t("transcribe.modelNotCached") }}
             </p>
           </div>
 
           <div>
-            <label class="block text-xs font-medium text-text-secondary mb-1.5">Device</label>
+            <label class="block text-xs font-medium text-text-secondary mb-1.5">{{ t("transcribe.device") }}</label>
             <select
               v-model="selectedDevice"
               class="w-full px-4 py-2.5 rounded-lg bg-bg-secondary border border-border text-sm text-text-primary focus:outline-none focus:border-accent"
             >
-              <option value="auto">Auto-detect</option>
-              <option value="cpu">CPU</option>
-              <option value="cuda" :disabled="!transcribeStore.whisperInfo?.cuda_available">CUDA</option>
+              <option value="auto">{{ t("transcribe.autoDetect") }}</option>
+              <option value="cpu">{{ t("transcribe.cpu") }}</option>
+              <option value="cuda" :disabled="!transcribeStore.whisperInfo?.cuda_available">{{ t("transcribe.cuda") }}</option>
             </select>
           </div>
 
           <div>
-            <label class="block text-xs font-medium text-text-secondary mb-1.5">Language</label>
+            <label class="block text-xs font-medium text-text-secondary mb-1.5">{{ t("transcribe.language") }}</label>
             <input
               v-model="language"
               type="text"
-              placeholder="Auto-detect (e.g. en, ja, de)"
+              :placeholder="t('transcribe.languagePlaceholder')"
               class="w-full px-4 py-2.5 rounded-lg bg-bg-secondary border border-border text-sm text-text-primary placeholder-text-muted focus:outline-none focus:border-accent"
             />
           </div>
@@ -259,11 +262,11 @@ onUnmounted(() => {
 
         <div class="space-y-4">
           <h2 class="text-sm font-semibold text-text-primary uppercase tracking-wide">
-            Output
+            {{ t("transcribe.output") }}
           </h2>
 
           <div>
-            <label class="block text-xs font-medium text-text-secondary mb-1.5">Format</label>
+            <label class="block text-xs font-medium text-text-secondary mb-1.5">{{ t("transcribe.format") }}</label>
             <select
               v-model="outputFormat"
               class="w-full px-4 py-2.5 rounded-lg bg-bg-secondary border border-border text-sm text-text-primary focus:outline-none focus:border-accent"
@@ -280,7 +283,7 @@ onUnmounted(() => {
                 type="checkbox"
                 class="rounded border-border bg-bg-primary text-accent focus:ring-accent"
               />
-              <span class="text-sm text-text-secondary">Word-level timestamps</span>
+              <span class="text-sm text-text-secondary">{{ t("transcribe.wordLevelTimestamps") }}</span>
             </label>
             <label class="flex items-center gap-2 cursor-pointer">
               <input
@@ -288,7 +291,7 @@ onUnmounted(() => {
                 type="checkbox"
                 class="rounded border-border bg-bg-primary text-accent focus:ring-accent"
               />
-              <span class="text-sm text-text-secondary">Voice Activity Detection filter</span>
+              <span class="text-sm text-text-secondary">{{ t("transcribe.vadFilter") }}</span>
             </label>
           </div>
         </div>
@@ -302,20 +305,20 @@ onUnmounted(() => {
       >
         <Loader2 v-if="transcribing" class="w-4 h-4 animate-spin" />
         <Play v-else class="w-4 h-4" />
-        {{ transcribing ? "Starting..." : "Transcribe" }}
+        {{ transcribing ? t("transcribe.starting") : t("transcribe.transcribe") }}
       </button>
 
       <!-- Jobs -->
       <div v-if="transcribeStore.jobs.length > 0" class="space-y-2">
         <div class="flex items-center justify-between">
           <h2 class="text-sm font-semibold text-text-primary uppercase tracking-wide">
-            Transcription Jobs
+            {{ t("transcribe.transcriptionJobs") }}
           </h2>
           <button
             class="text-xs text-text-muted hover:text-text-secondary transition-colors"
             @click="transcribeStore.clearCompleted"
           >
-            Clear completed
+            {{ t("jobMonitor.clearCompleted") }}
           </button>
         </div>
         <div class="space-y-2">
@@ -360,16 +363,16 @@ onUnmounted(() => {
         <div class="w-16 h-16 rounded-2xl bg-bg-secondary border border-border flex items-center justify-center mb-4">
           <Mic class="w-8 h-8 text-text-muted" />
         </div>
-        <h3 class="text-base font-medium text-text-primary">No media selected</h3>
+        <h3 class="text-base font-medium text-text-primary">{{ t("transcribe.noMediaSelected") }}</h3>
         <p class="text-sm text-text-secondary mt-1 max-w-sm">
-          Open an audio or video file to transcribe it to subtitles.
+          {{ t("transcribe.noMediaSelectedDesc") }}
         </p>
         <button
           class="mt-4 inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-bg-tertiary text-text-primary text-sm font-medium hover:bg-bg-hover transition-colors"
           @click="pickFiles"
         >
           <FolderOpen class="w-4 h-4" />
-          Browse
+          {{ t("common.browse") }}
         </button>
       </div>
     </div>

@@ -1,9 +1,12 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
+import { useI18n } from "vue-i18n";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { invoke } from "@tauri-apps/api/core";
 import { useSubtitleStore } from "../stores/subtitleStore";
 import { useAppStore } from "../stores/appStore";
+
+const { t } = useI18n();
 import TrackTable from "../components/TrackTable.vue";
 import {
   FolderOpen,
@@ -58,7 +61,7 @@ async function pickFiles() {
   const selected = await open({
     multiple: true,
     directory: false,
-    filters: [{ name: "Video files", extensions: ["mkv", "mp4", "avi", "mov", "wmv", "flv", "webm"] }],
+    filters: [{ name: t("subtitle.openVideos"), extensions: ["mkv", "mp4", "avi", "mov", "wmv", "flv", "webm"] }],
   });
   if (Array.isArray(selected)) {
     selectedFiles.value.push(...selected);
@@ -136,7 +139,7 @@ async function pickMergeVideo() {
   const selected = await open({
     multiple: false,
     directory: false,
-    filters: [{ name: "Video files", extensions: ["mkv", "mp4"] }],
+    filters: [{ name: t("subtitle.videoFile"), extensions: ["mkv", "mp4"] }],
   });
   if (selected && typeof selected === "string") mergeVideoPath.value = selected;
 }
@@ -145,7 +148,7 @@ async function pickMergeSubtitle() {
   const selected = await open({
     multiple: false,
     directory: false,
-    filters: [{ name: "Subtitle files", extensions: ["srt", "ass", "ssa", "vtt"] }],
+    filters: [{ name: t("subtitle.subtitleFile"), extensions: ["srt", "ass", "ssa", "vtt"] }],
   });
   if (selected && typeof selected === "string") mergeSubtitlePath.value = selected;
 }
@@ -160,6 +163,7 @@ async function runMerge() {
     const output = await save({
       defaultPath: "merged.mkv",
       filters: [{ name: "MKV", extensions: ["mkv"] }],
+      title: t("subtitle.mergeSubtitle"),
     });
     if (output && typeof output === "string") {
       await invoke("merge_subtitle_into_video", {
@@ -181,7 +185,7 @@ async function pickConvertInput() {
   const selected = await open({
     multiple: false,
     directory: false,
-    filters: [{ name: "Subtitle files", extensions: ["srt", "ass", "ssa", "vtt"] }],
+    filters: [{ name: t("subtitle.subtitleFileLabel"), extensions: ["srt", "ass", "ssa", "vtt"] }],
   });
   if (selected && typeof selected === "string") convertInputPath.value = selected;
 }
@@ -195,7 +199,8 @@ async function runConvert() {
   try {
     const output = await save({
       defaultPath: `output.${convertFormat.value}`,
-      filters: [{ name: "Subtitle files", extensions: ["srt", "ass", "ssa", "vtt"] }],
+      filters: [{ name: t("subtitle.subtitleFileLabel"), extensions: ["srt", "ass", "ssa", "vtt"] }],
+      title: t("subtitle.convertFormat"),
     });
     if (output && typeof output === "string") {
       await invoke("convert_subtitle_format", {
@@ -250,10 +255,10 @@ onMounted(() => {
     <!-- Header -->
     <div class="flex items-center justify-between px-6 py-4 border-b border-border">
       <div class="flex items-center gap-2">
-        <h1 class="text-xl font-semibold text-text-primary">Subtitles</h1>
+        <h1 class="text-xl font-semibold text-text-primary">{{ t("subtitle.title") }}</h1>
         <span
           class="text-text-muted hover:text-text-secondary cursor-help"
-          title="Inspect video files, extract subtitle tracks to SRT/ASS/VTT, merge external subtitles into MKV, convert formats, and shift timings."
+          :title="t('subtitle.tooltip')"
         >
           <Info class="w-4 h-4" />
         </span>
@@ -263,7 +268,7 @@ onMounted(() => {
         @click="pickFiles"
       >
         <FolderOpen class="w-4 h-4" />
-        Open Video(s)
+        {{ t("subtitle.openVideos") }}
       </button>
     </div>
 
@@ -278,7 +283,7 @@ onMounted(() => {
         ]"
         @click="activeTab = 'tracks'"
       >
-        Tracks
+        {{ t("subtitle.tabs.tracks") }}
       </button>
       <button
         :class="[
@@ -289,7 +294,7 @@ onMounted(() => {
         ]"
         @click="activeTab = 'merge'"
       >
-        Merge
+        {{ t("subtitle.tabs.merge") }}
       </button>
       <button
         :class="[
@@ -300,7 +305,7 @@ onMounted(() => {
         ]"
         @click="activeTab = 'convert'"
       >
-        Convert & Retime
+        {{ t("subtitle.tabs.convert") }}
       </button>
     </div>
 
@@ -331,7 +336,7 @@ onMounted(() => {
         <div v-if="fileCount > 0" class="space-y-3">
           <div class="flex items-center justify-between">
             <h2 class="text-sm font-semibold text-text-primary uppercase tracking-wide">
-              Files ({{ fileCount }})
+              {{ t("subtitle.filesCount", { count: fileCount }) }}
             </h2>
             <div class="flex items-center gap-2">
               <button
@@ -340,13 +345,13 @@ onMounted(() => {
                 @click="batchExtractAllSubtitles"
               >
                 <FileVideo class="w-3.5 h-3.5" />
-                Extract All Subtitles
+                {{ t("subtitle.extractAllSubtitles") }}
               </button>
               <button
                 class="text-xs text-text-muted hover:text-text-secondary transition-colors"
                 @click="clearFiles"
               >
-                Clear all
+                {{ t("common.clearAll") }}
               </button>
             </div>
           </div>
@@ -392,21 +397,21 @@ onMounted(() => {
 
         <div v-if="subtitleStore.loading || batchLoading" class="flex items-center justify-center py-12">
           <Loader2 class="w-6 h-6 text-accent animate-spin" />
-          <span class="ml-3 text-sm text-text-secondary">Processing...</span>
+          <span class="ml-3 text-sm text-text-secondary">{{ t("common.processing") }}</span>
         </div>
 
         <div v-else-if="subtitleStore.error" class="flex items-start gap-3 px-4 py-4 rounded-lg bg-error/10 border border-error/20">
           <AlertTriangle class="w-5 h-5 text-error shrink-0 mt-0.5" />
           <div>
-            <p class="text-sm font-medium text-error">Failed to read file</p>
+            <p class="text-sm font-medium text-error">{{ t("common.failedToReadFile") }}</p>
             <p class="text-xs text-error/80 mt-1">{{ subtitleStore.error }}</p>
           </div>
         </div>
 
         <div v-else-if="subtitleStore.tracks.length > 0">
           <div class="flex items-center justify-between mb-3">
-            <h2 class="text-sm font-semibold text-text-primary uppercase tracking-wide">Tracks</h2>
-            <span class="text-xs text-text-muted">{{ subtitleStore.tracks.length }} total</span>
+            <h2 class="text-sm font-semibold text-text-primary uppercase tracking-wide">{{ t("subtitle.tracksHeading") }}</h2>
+            <span class="text-xs text-text-muted">{{ t("subtitle.totalTracks", { count: subtitleStore.tracks.length }) }}</span>
           </div>
           <TrackTable :tracks="subtitleStore.tracks" @extract="extractTrack" />
         </div>
@@ -415,17 +420,17 @@ onMounted(() => {
           <div class="w-16 h-16 rounded-2xl bg-bg-secondary border border-border flex items-center justify-center mb-4">
             <FileVideo class="w-8 h-8 text-text-muted" />
           </div>
-          <h3 class="text-base font-medium text-text-primary">No file selected</h3>
-          <p class="text-sm text-text-secondary mt-1 max-w-sm">Open a video file to enumerate its tracks and extract subtitles.</p>
+          <h3 class="text-base font-medium text-text-primary">{{ t("common.noFileSelected") }}</h3>
+          <p class="text-sm text-text-secondary mt-1 max-w-sm">{{ t("subtitle.noFileSelectedDesc") }}</p>
           <button class="mt-4 inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-bg-tertiary text-text-primary text-sm font-medium hover:bg-bg-hover transition-colors" @click="pickFiles">
-            <FolderOpen class="w-4 h-4" /> Browse
+            <FolderOpen class="w-4 h-4" /> {{ t("common.browse") }}
           </button>
         </div>
 
         <div v-if="subtitleStore.extractJobs.length > 0" class="space-y-2">
           <div class="flex items-center justify-between">
-            <h2 class="text-sm font-semibold text-text-primary uppercase tracking-wide">Recent Jobs</h2>
-            <button class="text-xs text-text-muted hover:text-text-secondary" @click="subtitleStore.clearJobs">Clear</button>
+            <h2 class="text-sm font-semibold text-text-primary uppercase tracking-wide">{{ t("subtitle.recentJobs") }}</h2>
+            <button class="text-xs text-text-muted hover:text-text-secondary" @click="subtitleStore.clearJobs">{{ t("common.clear") }}</button>
           </div>
           <div class="space-y-2">
             <div v-for="job in subtitleStore.extractJobs" :key="job.id" class="flex items-center gap-3 px-4 py-3 rounded-lg bg-bg-secondary border border-border">
@@ -433,7 +438,7 @@ onMounted(() => {
               <XCircle v-else-if="job.status === 'failed'" class="w-4 h-4 text-error shrink-0" />
               <Loader2 v-else class="w-4 h-4 text-accent animate-spin shrink-0" />
               <div class="flex-1 min-w-0">
-                <p class="text-sm text-text-primary">Track #{{ job.trackId }}</p>
+                <p class="text-sm text-text-primary">{{ t("subtitle.trackJob", { id: job.trackId }) }}</p>
                 <p v-if="job.message" class="text-xs text-text-secondary truncate">{{ job.message }}</p>
               </div>
               <button class="text-text-muted hover:text-text-secondary" @click="subtitleStore.extractJobs = subtitleStore.extractJobs.filter((j) => j.id !== job.id)">
@@ -447,27 +452,27 @@ onMounted(() => {
       <!-- Merge Tab -->
       <template v-if="activeTab === 'merge'">
         <div class="max-w-xl space-y-4">
-          <h2 class="text-sm font-semibold text-text-primary uppercase tracking-wide">Merge Subtitle into Video</h2>
+          <h2 class="text-sm font-semibold text-text-primary uppercase tracking-wide">{{ t("subtitle.mergeSubtitle") }}</h2>
 
           <div class="space-y-3">
             <div>
-              <label class="block text-xs font-medium text-text-secondary mb-1.5">Video file</label>
+              <label class="block text-xs font-medium text-text-secondary mb-1.5">{{ t("subtitle.videoFile") }}</label>
               <button class="flex items-center gap-2 w-full px-4 py-2.5 rounded-lg bg-bg-secondary border border-border text-sm text-text-primary hover:bg-bg-hover transition-colors text-left" @click="pickMergeVideo">
                 <FileVideo class="w-4 h-4 text-text-muted" />
-                <span class="truncate">{{ mergeVideoPath || "Select video file..." }}</span>
+                <span class="truncate">{{ mergeVideoPath || t("subtitle.selectVideoFile") }}</span>
               </button>
             </div>
 
             <div>
-              <label class="block text-xs font-medium text-text-secondary mb-1.5">Subtitle file</label>
+              <label class="block text-xs font-medium text-text-secondary mb-1.5">{{ t("subtitle.subtitleFile") }}</label>
               <button class="flex items-center gap-2 w-full px-4 py-2.5 rounded-lg bg-bg-secondary border border-border text-sm text-text-primary hover:bg-bg-hover transition-colors text-left" @click="pickMergeSubtitle">
                 <Merge class="w-4 h-4 text-text-muted" />
-                <span class="truncate">{{ mergeSubtitlePath || "Select subtitle file..." }}</span>
+                <span class="truncate">{{ mergeSubtitlePath || t("subtitle.selectSubtitleFile") }}</span>
               </button>
             </div>
 
             <div>
-              <label class="block text-xs font-medium text-text-secondary mb-1.5">Language code</label>
+              <label class="block text-xs font-medium text-text-secondary mb-1.5">{{ t("subtitle.languageCode") }}</label>
               <input v-model="mergeLanguage" type="text" placeholder="eng" class="w-full px-4 py-2.5 rounded-lg bg-bg-secondary border border-border text-sm text-text-primary placeholder-text-muted focus:outline-none focus:border-accent" />
             </div>
 
@@ -478,7 +483,7 @@ onMounted(() => {
             >
               <Loader2 v-if="mergeLoading" class="w-4 h-4 animate-spin" />
               <Merge v-else class="w-4 h-4" />
-              Merge into MKV
+              {{ t("subtitle.mergeIntoMkv") }}
             </button>
 
             <div v-if="mergeError" class="flex items-start gap-3 px-4 py-3 rounded-lg bg-error/10 border border-error/20">
@@ -487,7 +492,7 @@ onMounted(() => {
             </div>
             <div v-if="mergeSuccess" class="flex items-start gap-3 px-4 py-3 rounded-lg bg-success/10 border border-success/20">
               <CheckCircle2 class="w-4 h-4 text-success shrink-0 mt-0.5" />
-              <p class="text-xs text-success">Merge completed successfully.</p>
+              <p class="text-xs text-success">{{ t("subtitle.mergCompletedSuccessfully") }}</p>
             </div>
           </div>
         </div>
@@ -497,7 +502,7 @@ onMounted(() => {
       <template v-if="activeTab === 'convert'">
         <div class="max-w-xl space-y-6">
           <div class="space-y-4">
-            <h2 class="text-sm font-semibold text-text-primary uppercase tracking-wide">Convert Format</h2>
+            <h2 class="text-sm font-semibold text-text-primary uppercase tracking-wide">{{ t("subtitle.convertFormat") }}</h2>
 
             <div>
               <label class="block text-xs font-medium text-text-secondary mb-1.5">Subtitle file</label>

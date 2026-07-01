@@ -1,6 +1,9 @@
 <script setup lang="ts">
+import { useI18n } from "vue-i18n";
 import { Download, FileText, Film, Headphones, AlertCircle } from "lucide-vue-next";
 import type { TrackInfo } from "../stores/subtitleStore";
+
+const { t } = useI18n();
 
 const props = defineProps<{
   tracks: TrackInfo[];
@@ -24,15 +27,16 @@ function trackTypeIcon(type: string) {
 }
 
 function trackTypeLabel(type: string) {
-  return type.charAt(0).toUpperCase() + type.slice(1);
+  const key = type.toLowerCase() as "video" | "audio" | "subtitles";
+  return t(`trackType.${key}`) || type.charAt(0).toUpperCase() + type.slice(1);
 }
 
 function trackLabel(track: TrackInfo) {
   const parts: string[] = [];
   if (track.track_name) parts.push(track.track_name);
   parts.push(track.language.toUpperCase());
-  if (track.default_track) parts.push("Default");
-  if (track.forced_track) parts.push("Forced");
+  if (track.default_track) parts.push(t("trackTable.default"));
+  if (track.forced_track) parts.push(t("trackTable.forced"));
   return parts.join(" · ");
 }
 </script>
@@ -42,11 +46,11 @@ function trackLabel(track: TrackInfo) {
     <table class="w-full text-sm">
       <thead>
         <tr class="bg-bg-tertiary text-text-secondary text-left">
-          <th class="px-4 py-3 font-medium">ID</th>
-          <th class="px-4 py-3 font-medium">Type</th>
-          <th class="px-4 py-3 font-medium">Codec</th>
-          <th class="px-4 py-3 font-medium">Details</th>
-          <th class="px-4 py-3 font-medium text-right">Action</th>
+          <th class="px-4 py-3 font-medium">{{ t("trackTable.id") }}</th>
+          <th class="px-4 py-3 font-medium">{{ t("trackTable.type") }}</th>
+          <th class="px-4 py-3 font-medium">{{ t("trackTable.codec") }}</th>
+          <th class="px-4 py-3 font-medium">{{ t("trackTable.details") }}</th>
+          <th class="px-4 py-3 font-medium text-right">{{ t("trackTable.action") }}</th>
         </tr>
       </thead>
       <tbody class="divide-y divide-border">
@@ -73,14 +77,14 @@ function trackLabel(track: TrackInfo) {
               @click="emit('extract', track)"
             >
               <Download class="w-3.5 h-3.5" />
-              Extract
+              {{ t("common.extract") }}
             </button>
             <span v-else class="text-text-muted text-xs">—</span>
           </td>
         </tr>
         <tr v-if="props.tracks.length === 0">
           <td colspan="5" class="px-4 py-8 text-center text-text-muted">
-            No tracks found. Open a video file to get started.
+            {{ t("trackTable.empty") }}
           </td>
         </tr>
       </tbody>

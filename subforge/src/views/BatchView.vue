@@ -1,8 +1,11 @@
 <script setup lang="ts">
 import { computed, onMounted } from "vue";
+import { useI18n } from "vue-i18n";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useBatchStore } from "../stores/batchStore";
 import { useAppStore } from "../stores/appStore";
+
+const { t } = useI18n();
 import BatchFileList from "../components/BatchFileList.vue";
 import JobMonitor from "../components/JobMonitor.vue";
 import {
@@ -63,10 +66,10 @@ onMounted(() => {
     <!-- Header -->
     <div class="flex items-center justify-between px-6 py-4 border-b border-border">
       <div class="flex items-center gap-2">
-        <h1 class="text-xl font-semibold text-text-primary">Batch Operations</h1>
+        <h1 class="text-xl font-semibold text-text-primary">{{ t("batch.title") }}</h1>
         <span
           class="text-text-muted hover:text-text-secondary cursor-help"
-          title="Scan directories for video files and run batch subtitle extraction across multiple files at once."
+          :title="t('batch.tooltip')"
         >
           <Info class="w-4 h-4" />
         </span>
@@ -76,7 +79,7 @@ onMounted(() => {
         @click="pickDirectory"
       >
         <FolderOpen class="w-4 h-4" />
-        Scan Directory
+        {{ t("batch.scanDirectory") }}
       </button>
     </div>
 
@@ -85,7 +88,7 @@ onMounted(() => {
       <!-- Loading -->
       <div v-if="batchStore.loading" class="flex items-center justify-center py-12">
         <Loader2 class="w-6 h-6 text-accent animate-spin" />
-        <span class="ml-3 text-sm text-text-secondary">Scanning files...</span>
+        <span class="ml-3 text-sm text-text-secondary">{{ t("batch.scanning") }}</span>
       </div>
 
       <!-- Error -->
@@ -95,7 +98,7 @@ onMounted(() => {
       >
         <AlertTriangle class="w-5 h-5 text-error shrink-0 mt-0.5" />
         <div>
-          <p class="text-sm font-medium text-error">Scan failed</p>
+          <p class="text-sm font-medium text-error">{{ t("common.scanFailed") }}</p>
           <p class="text-xs text-error/80 mt-1">{{ batchStore.error }}</p>
         </div>
       </div>
@@ -105,10 +108,10 @@ onMounted(() => {
         <div class="flex items-center justify-between">
           <div class="flex items-center gap-3">
             <h2 class="text-sm font-semibold text-text-primary uppercase tracking-wide">
-              Files
+              {{ t("batch.files") }}
             </h2>
             <span class="text-xs text-text-muted">
-              {{ selectedCount }} / {{ totalCount }} selected
+              {{ t("batch.selected", { count: selectedCount, total: totalCount }) }}
             </span>
           </div>
           <div class="flex items-center gap-2">
@@ -118,7 +121,7 @@ onMounted(() => {
               @click="runBatchExtract"
             >
               <Download class="w-3.5 h-3.5" />
-              Extract Subs
+              {{ t("batch.extractSubs") }}
             </button>
           </div>
         </div>
@@ -141,16 +144,16 @@ onMounted(() => {
         >
           <FileVideo class="w-8 h-8 text-text-muted" />
         </div>
-        <h3 class="text-base font-medium text-text-primary">No files scanned</h3>
+        <h3 class="text-base font-medium text-text-primary">{{ t("batch.noFilesScanned") }}</h3>
         <p class="text-sm text-text-secondary mt-1 max-w-sm">
-          Select a directory to recursively scan for video files and preview their tracks.
+          {{ t("batch.noFilesScannedDesc") }}
         </p>
         <button
           class="mt-4 inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-bg-tertiary text-text-primary text-sm font-medium hover:bg-bg-hover transition-colors"
           @click="pickDirectory"
         >
           <FolderOpen class="w-4 h-4" />
-          Browse
+          {{ t("common.browse") }}
         </button>
       </div>
 

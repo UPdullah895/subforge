@@ -3,8 +3,11 @@ import { apiInvoke } from "../api/client";
 import { ref } from "vue";
 
 
+export type Language = "en" | "ar";
+
 export interface AppConfig {
   theme: string;
+  language: Language;
   mkvmerge_path?: string;
   mkvextract_path?: string;
   ffmpeg_path?: string;
@@ -31,6 +34,7 @@ export interface ToolRegistry {
 
 export const useAppStore = defineStore("app", () => {
   const theme = ref("dark");
+  const language = ref<Language>("en");
   const sidebarCollapsed = ref(false);
   const toolRegistry = ref<ToolRegistry | null>(null);
   const config = ref<AppConfig | null>(null);
@@ -40,9 +44,11 @@ export const useAppStore = defineStore("app", () => {
     try {
       config.value = await apiInvoke<AppConfig>("load_config");
       theme.value = config.value.theme;
+      language.value = config.value.language ?? "en";
     } catch {
-      config.value = { theme: "dark" };
+      config.value = { theme: "dark", language: "en" };
       theme.value = "dark";
+      language.value = "en";
     }
   }
 
@@ -72,12 +78,21 @@ export const useAppStore = defineStore("app", () => {
     }
   }
 
+  async function setLanguage(next: Language) {
+    language.value = next;
+    if (config.value) {
+      config.value.language = next;
+      await saveConfig();
+    }
+  }
+
   function toggleSidebar() {
     sidebarCollapsed.value = !sidebarCollapsed.value;
   }
 
   return {
     theme,
+    language,
     sidebarCollapsed,
     toolRegistry,
     config,
@@ -86,6 +101,7 @@ export const useAppStore = defineStore("app", () => {
     saveConfig,
     discoverTools,
     toggleTheme,
+    setLanguage,
     toggleSidebar,
   };
 });

@@ -1,8 +1,11 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
+import { useI18n } from "vue-i18n";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { useAudioStore } from "../stores/audioStore";
 import { useAppStore } from "../stores/appStore";
+
+const { t } = useI18n();
 import AudioTrackTable from "../components/AudioTrackTable.vue";
 import {
   FolderOpen,
@@ -163,10 +166,10 @@ onMounted(() => {
     <!-- Header -->
     <div class="flex items-center justify-between px-6 py-4 border-b border-border">
       <div class="flex items-center gap-2">
-        <h1 class="text-xl font-semibold text-text-primary">Audio</h1>
+        <h1 class="text-xl font-semibold text-text-primary">{{ t("audio.title") }}</h1>
         <span
           class="text-text-muted hover:text-text-secondary cursor-help"
-          title="Extract audio tracks from video, merge external audio into containers, and remove unwanted audio tracks."
+          :title="t('audio.tooltip')"
         >
           <Info class="w-4 h-4" />
         </span>
@@ -177,14 +180,14 @@ onMounted(() => {
           @click="mergeAudio"
         >
           <Merge class="w-4 h-4" />
-          Merge Audio
+          {{ t("audio.mergeAudio") }}
         </button>
         <button
           class="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg bg-accent text-white text-sm font-medium hover:bg-accent-hover active:bg-accent-active transition-colors"
           @click="pickFiles"
         >
           <FolderOpen class="w-4 h-4" />
-          Open Video(s)
+          {{ t("audio.openVideos") }}
         </button>
       </div>
     </div>
@@ -204,7 +207,7 @@ onMounted(() => {
             ]"
           />
           <span class="text-xs text-text-secondary">
-            ffmpeg {{ appStore.toolRegistry.ffmpeg.available ? "" : "not found" }}
+            {{ appStore.toolRegistry.ffmpeg.available ? "ffmpeg" : t("audio.notFound") }}
           </span>
         </div>
       </div>
@@ -213,7 +216,7 @@ onMounted(() => {
       <div v-if="fileCount > 0" class="space-y-3">
         <div class="flex items-center justify-between">
           <h2 class="text-sm font-semibold text-text-primary uppercase tracking-wide">
-            Files ({{ fileCount }})
+            {{ t("audio.filesCount", { count: fileCount }) }}
           </h2>
           <div class="flex items-center gap-2">
             <button
@@ -222,7 +225,7 @@ onMounted(() => {
               @click="batchExtractAllAudio"
             >
               <Play class="w-3.5 h-3.5" />
-              Extract All Audio
+              {{ t("audio.extractAllAudio") }}
             </button>
             <button
               :disabled="batchLoading"
@@ -230,13 +233,13 @@ onMounted(() => {
               @click="batchRemoveAllAudio"
             >
               <VolumeX class="w-3.5 h-3.5" />
-              Remove All Audio
+              {{ t("audio.removeAllAudio") }}
             </button>
             <button
               class="text-xs text-text-muted hover:text-text-secondary transition-colors"
               @click="clearFiles"
             >
-              Clear all
+              {{ t("common.clearAll") }}
             </button>
           </div>
         </div>
@@ -274,14 +277,14 @@ onMounted(() => {
         <Volume2 class="w-5 h-5 text-accent shrink-0" />
         <div class="min-w-0">
           <p class="text-sm font-medium text-text-primary truncate">{{ activeFileName }}</p>
-          <p class="text-xs text-text-muted">{{ audioStore.tracks.length }} audio tracks</p>
+          <p class="text-xs text-text-muted">{{ t("audio.trackCount", { count: audioStore.tracks.length }) }}</p>
         </div>
       </div>
 
       <!-- Loading -->
       <div v-if="audioStore.loading || batchLoading" class="flex items-center justify-center py-12">
         <Loader2 class="w-6 h-6 text-accent animate-spin" />
-        <span class="ml-3 text-sm text-text-secondary">Processing...</span>
+        <span class="ml-3 text-sm text-text-secondary">{{ t("common.processing") }}</span>
       </div>
 
       <!-- Error -->
@@ -291,7 +294,7 @@ onMounted(() => {
       >
         <AlertTriangle class="w-5 h-5 text-error shrink-0 mt-0.5" />
         <div>
-          <p class="text-sm font-medium text-error">Failed to read file</p>
+          <p class="text-sm font-medium text-error">{{ t("common.failedToReadFile") }}</p>
           <p class="text-xs text-error/80 mt-1">{{ audioStore.error }}</p>
         </div>
       </div>
@@ -300,7 +303,7 @@ onMounted(() => {
       <div v-else-if="audioStore.tracks.length > 0">
         <div class="flex items-center justify-between mb-3">
           <h2 class="text-sm font-semibold text-text-primary uppercase tracking-wide">
-            Audio Tracks
+            {{ t("audio.audioTracks") }}
           </h2>
         </div>
         <AudioTrackTable :tracks="audioStore.tracks" @extract="extractTrack" />
@@ -316,16 +319,16 @@ onMounted(() => {
         >
           <Volume2 class="w-8 h-8 text-text-muted" />
         </div>
-        <h3 class="text-base font-medium text-text-primary">No file selected</h3>
+        <h3 class="text-base font-medium text-text-primary">{{ t("common.noFileSelected") }}</h3>
         <p class="text-sm text-text-secondary mt-1 max-w-sm">
-          Open a video file to view and extract its audio tracks.
+          {{ t("audio.noFileSelectedDesc") }}
         </p>
         <button
           class="mt-4 inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-bg-tertiary text-text-primary text-sm font-medium hover:bg-bg-hover transition-colors"
           @click="pickFiles"
         >
           <FolderOpen class="w-4 h-4" />
-          Browse
+          {{ t("common.browse") }}
         </button>
       </div>
 
@@ -333,13 +336,13 @@ onMounted(() => {
       <div v-if="audioStore.jobs.length > 0" class="space-y-2">
         <div class="flex items-center justify-between">
           <h2 class="text-sm font-semibold text-text-primary uppercase tracking-wide">
-            Recent Jobs
+            {{ t("audio.recentJobs") }}
           </h2>
           <button
             class="text-xs text-text-muted hover:text-text-secondary transition-colors"
             @click="audioStore.clearJobs"
           >
-            Clear
+            {{ t("common.clear") }}
           </button>
         </div>
         <div class="space-y-2">

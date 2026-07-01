@@ -1,7 +1,10 @@
 <script setup lang="ts">
 import { ref, computed } from "vue";
+import { useI18n } from "vue-i18n";
 import { FileVideo, ChevronDown, ChevronRight } from "lucide-vue-next";
 import type { VideoFileInfo } from "../stores/batchStore";
+
+const { t } = useI18n();
 
 const props = defineProps<{
   files: VideoFileInfo[];
@@ -45,10 +48,10 @@ function toggleAll() {
               @change="toggleAll"
             />
           </th>
-          <th class="px-4 py-3 font-medium">File</th>
-          <th class="px-4 py-3 font-medium text-center">Video</th>
-          <th class="px-4 py-3 font-medium text-center">Audio</th>
-          <th class="px-4 py-3 font-medium text-center">Subs</th>
+          <th class="px-4 py-3 font-medium">{{ t("batchFileList.file") }}</th>
+          <th class="px-4 py-3 font-medium text-center">{{ t("batchFileList.video") }}</th>
+          <th class="px-4 py-3 font-medium text-center">{{ t("batchFileList.audio") }}</th>
+          <th class="px-4 py-3 font-medium text-center">{{ t("batchFileList.subs") }}</th>
           <th class="px-4 py-3 font-medium w-10"></th>
         </tr>
       </thead>

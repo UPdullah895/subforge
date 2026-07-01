@@ -18,7 +18,7 @@ describe("appStore", () => {
     vi.mocked(apiInvoke).mockRejectedValue(new Error("backend unavailable"));
     const store = useAppStore();
     await store.loadConfig();
-    expect(store.config).toEqual({ theme: "dark" });
+    expect(store.config).toEqual({ theme: "dark", language: "en" });
     expect(store.theme).toBe("dark");
     expect(store.error).toBeNull();
   });

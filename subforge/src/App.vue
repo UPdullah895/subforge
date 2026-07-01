@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { ref, onMounted } from "vue";
+import { ref, watch, onMounted } from "vue";
+import { useI18n } from "vue-i18n";
 import { useAppStore } from "./stores/appStore";
 import AppSidebar from "./components/AppSidebar.vue";
 import SubtitleView from "./views/SubtitleView.vue";
@@ -10,8 +11,29 @@ import TranslateView from "./views/TranslateView.vue";
 import SettingsView from "./views/SettingsView.vue";
 
 const appStore = useAppStore();
+const { locale } = useI18n();
 const currentView = ref<"subtitle" | "audio" | "batch" | "transcribe" | "translate" | "settings">(
   "subtitle"
+);
+
+// style.css themes via a [data-theme="light"] selector on the root element —
+// this is the only place that attribute gets set from app state.
+watch(
+  () => appStore.theme,
+  (theme) => {
+    document.documentElement.dataset.theme = theme;
+  },
+  { immediate: true }
+);
+
+watch(
+  () => appStore.language,
+  (language) => {
+    locale.value = language;
+    document.documentElement.dir = language === "ar" ? "rtl" : "ltr";
+    document.documentElement.lang = language;
+  },
+  { immediate: true }
 );
 
 onMounted(() => {

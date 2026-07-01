@@ -1,6 +1,9 @@
 <script setup lang="ts">
+import { useI18n } from "vue-i18n";
 import { Download, Headphones } from "lucide-vue-next";
 import type { AudioTrackInfo } from "../stores/audioStore";
+
+const { t } = useI18n();
 
 const props = defineProps<{
   tracks: AudioTrackInfo[];
@@ -25,10 +28,10 @@ function trackLabel(track: AudioTrackInfo) {
     <table class="w-full text-sm">
       <thead>
         <tr class="bg-bg-tertiary text-text-secondary text-left">
-          <th class="px-4 py-3 font-medium">ID</th>
-          <th class="px-4 py-3 font-medium">Codec</th>
-          <th class="px-4 py-3 font-medium">Details</th>
-          <th class="px-4 py-3 font-medium text-right">Action</th>
+          <th class="px-4 py-3 font-medium">{{ t("audioTrackTable.id") }}</th>
+          <th class="px-4 py-3 font-medium">{{ t("audioTrackTable.codec") }}</th>
+          <th class="px-4 py-3 font-medium">{{ t("audioTrackTable.details") }}</th>
+          <th class="px-4 py-3 font-medium text-right">{{ t("audioTrackTable.action") }}</th>
         </tr>
       </thead>
       <tbody class="divide-y divide-border">
@@ -51,13 +54,13 @@ function trackLabel(track: AudioTrackInfo) {
               @click="emit('extract', track)"
             >
               <Download class="w-3.5 h-3.5" />
-              Extract
+              {{ t("common.extract") }}
             </button>
           </td>
         </tr>
         <tr v-if="props.tracks.length === 0">
           <td colspan="4" class="px-4 py-8 text-center text-text-muted">
-            No audio tracks found. Open a video file to get started.
+            {{ t("audioTrackTable.empty") }}
           </td>
         </tr>
       </tbody>

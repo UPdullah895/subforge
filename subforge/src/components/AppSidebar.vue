@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { computed } from "vue";
+import { useI18n } from "vue-i18n";
 import { useAppStore } from "../stores/appStore";
 import {
   Subtitles,
@@ -23,14 +25,15 @@ const emit = defineEmits<{
 }>();
 
 const app = useAppStore();
+const { t } = useI18n();
 
-const navItems = [
-  { id: "subtitle" as const, label: "Subtitles", icon: Subtitles, active: true },
-  { id: "audio" as const, label: "Audio", icon: Music, active: true },
-  { id: "batch" as const, label: "Batch", icon: FolderSync, active: true },
-  { id: "transcribe" as const, label: "Speech to Text", icon: Mic, active: true },
-  { id: "translate" as const, label: "Translate", icon: Languages, active: true },
-];
+const navItems = computed(() => [
+  { id: "subtitle" as const, label: t("nav.subtitles"), icon: Subtitles, active: true },
+  { id: "audio" as const, label: t("nav.audio"), icon: Music, active: true },
+  { id: "batch" as const, label: t("nav.batch"), icon: FolderSync, active: true },
+  { id: "transcribe" as const, label: t("nav.speechToText"), icon: Mic, active: true },
+  { id: "translate" as const, label: t("nav.translate"), icon: Languages, active: true },
+]);
 </script>
 
 <template>
@@ -52,7 +55,7 @@ const navItems = [
             app.sidebarCollapsed ? 'opacity-0 w-0' : 'opacity-100',
           ]"
         >
-          SubForge
+          {{ t("app.title") }}
         </span>
       </div>
     </div>
@@ -86,7 +89,7 @@ const navItems = [
           v-if="!item.active && !app.sidebarCollapsed"
           class="ml-auto text-xs px-1.5 py-0.5 rounded bg-bg-tertiary text-text-muted"
         >
-          Soon
+          {{ t("nav.soon") }}
         </span>
       </button>
     </nav>
@@ -95,7 +98,7 @@ const navItems = [
     <div class="p-2 border-t border-border space-y-1">
       <button
         class="flex items-center gap-3 w-full px-3 py-2.5 rounded-lg text-sm font-medium text-text-secondary hover:bg-bg-hover hover:text-text-primary transition-colors"
-        :title="app.sidebarCollapsed ? 'Expand' : 'Collapse'"
+        :title="app.sidebarCollapsed ? t('nav.expand') : t('nav.collapse')"
         @click="app.toggleSidebar"
       >
         <PanelLeftClose v-if="!app.sidebarCollapsed" class="w-5 h-5 shrink-0" />
@@ -106,7 +109,7 @@ const navItems = [
             app.sidebarCollapsed ? 'opacity-0 w-0' : 'opacity-100',
           ]"
         >
-          Collapse
+          {{ t("nav.collapse") }}
         </span>
       </button>
       <button
@@ -116,7 +119,7 @@ const navItems = [
             ? 'bg-accent/10 text-accent'
             : 'text-text-secondary hover:bg-bg-hover hover:text-text-primary',
         ]"
-        :title="app.sidebarCollapsed ? 'Settings' : undefined"
+        :title="app.sidebarCollapsed ? t('nav.settings') : undefined"
         @click="emit('navigate', 'settings')"
       >
         <Settings class="w-5 h-5 shrink-0" />
@@ -126,7 +129,7 @@ const navItems = [
             app.sidebarCollapsed ? 'opacity-0 w-0' : 'opacity-100',
           ]"
         >
-          Settings
+          {{ t("nav.settings") }}
         </span>
       </button>
     </div>

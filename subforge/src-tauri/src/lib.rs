@@ -12,6 +12,17 @@ use std::sync::{Arc, Mutex};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Works around a WebKitGTK/Wayland compositor compatibility issue
+    // ("Error 71 (Protocol error) dispatching to Wayland display") seen on
+    // some Linux desktops (e.g. KWin/Wayland) with DMA-BUF rendering.
+    #[cfg(target_os = "linux")]
+    {
+        // SAFETY: called before any threads are spawned, at the very start of run().
+        unsafe {
+            std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
+        }
+    }
+
     let job_queue: SharedJobQueue = Arc::new(Mutex::new(jobs::JobQueue::new()));
 
     tauri::Builder::default()
