@@ -199,7 +199,7 @@
     "setup": "Setup",
     "security": "Security",
     "ollamaDesc": "Ollama runs large language models locally on your machine.",
-    "ollamaSetup": "Install from https://ollama.com — then pull a model with: ollama pull llama3",
+    "ollamaSetup": "1) Download Ollama from https://ollama.com/download. 2) Run \"ollama pull llama3.1\" in a terminal to download a model. 3) Make sure the Ollama service is running in the background before starting a translation.",
     "ollamaSecurity": "Fully local — your subtitles never leave your machine. Open-source.",
     "libreDesc": "LibreTranslate is a self-hosted machine translation API.",
     "libreSetup": "Run via Docker: docker run -it -p 5000:5000 libretranslate/libretranslate",

@@ -199,7 +199,7 @@
     "setup": "الإعداد",
     "security": "الأمان",
     "ollamaDesc": "يقوم Ollama بتشغيل نماذج اللغات الكبيرة محلياً على جهازك.",
-    "ollamaSetup": "قم بالتثبيت من https://ollama.com — ثم اسحب نموذجاً باستخدام: ollama pull llama3",
+    "ollamaSetup": "1) نزّل Ollama من https://ollama.com/download. 2) شغّل \"ollama pull llama3.1\" في الطرفية لتحميل نموذج. 3) تأكد من أن خدمة Ollama تعمل في الخلفية قبل بدء الترجمة.",
     "ollamaSecurity": "محلي بالكامل — لن تغادر الترجمات جهازك أبداً. مفتوح المصدر.",
     "libreDesc": "LibreTranslate هي واجهة برمجية لترجمة آلية موجهة ذاتياً.",
     "libreSetup": "شغّل عبر Docker: docker run -it -p 5000:5000 libretranslate/libretranslate",
