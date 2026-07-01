@@ -33,7 +33,34 @@ const languageOptions = [
   { code: "zh", label: "Chinese" },
   { code: "ru", label: "Russian" },
   { code: "pt", label: "Portuguese" },
+  { code: "it", label: "Italian" },
+  { code: "tr", label: "Turkish" },
+  { code: "hi", label: "Hindi" },
+  { code: "fa", label: "Persian" },
+  { code: "ur", label: "Urdu" },
 ];
+
+// mkvmerge reports track languages as ISO 639-2 codes (e.g. "ita"), not the
+// ISO 639-1 codes used in the language dropdown (e.g. "it") — map each
+// dropdown code to every 639-2 variant mkvmerge might report so track
+// matching actually honors the user's chosen source language.
+const LANG_ALIASES: Record<string, string[]> = {
+  en: ["en", "eng"],
+  ar: ["ar", "ara"],
+  es: ["es", "spa"],
+  fr: ["fr", "fre", "fra"],
+  de: ["de", "ger", "deu"],
+  ja: ["ja", "jpn"],
+  ko: ["ko", "kor"],
+  zh: ["zh", "chi", "zho"],
+  ru: ["ru", "rus"],
+  pt: ["pt", "por"],
+  it: ["it", "ita"],
+  tr: ["tr", "tur"],
+  hi: ["hi", "hin"],
+  fa: ["fa", "per", "fas"],
+  ur: ["ur", "urd"],
+};
 
 const sourceLang = ref("en");
 const targetLang = ref("es");
@@ -96,7 +123,8 @@ function findSubtitleTrack(path: string): number | null {
   if (!file) return null;
   const subs = file.tracks.filter((tr) => tr.track_type === "subtitles");
   if (subs.length === 0) return null;
-  const matching = subs.find((tr) => tr.properties?.language === sourceLang.value);
+  const aliases = LANG_ALIASES[sourceLang.value] ?? [sourceLang.value];
+  const matching = subs.find((tr) => aliases.includes((tr.properties?.language || "").toLowerCase()));
   return (matching ?? subs[0]).id;
 }
 
