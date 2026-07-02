@@ -7,6 +7,7 @@ import { apiListen } from "../api/events";
 import { useBatchStore } from "../stores/batchStore";
 import { useAppStore } from "../stores/appStore";
 import { useTranslateStore, type EngineType, mapJobErrorMessage } from "../stores/translateStore";
+import { isDeeplSupported } from "../utils/languageNames";
 import { AlertTriangle, CheckCircle2, XCircle, Loader2 } from "lucide-vue-next";
 
 const { t } = useI18n();
@@ -150,6 +151,13 @@ watch(ambiguousFiles, (files) => {
   }
 });
 
+watch(() => provider.value, (newProvider) => {
+  // When switching to deepl, uncheck any target languages it doesn't support
+  if (newProvider === "deepl") {
+    targetLangs.value = targetLangs.value.filter((lang) => isDeeplSupported(lang));
+  }
+});
+
 const showSetDefaultSubtitle = computed(() =>
   props.files.some((path) => (batchStore.scannedFiles.find((f) => f.path === path)?.subtitle_count ?? 0) > 0)
 );
@@ -274,8 +282,10 @@ async function startPipeline() {
       auto_merge: autoMerge.value,
       set_default_subtitle: autoMerge.value && setDefaultSubtitle.value,
     };
-    if (provider.value === "ollama") request.host = translateStore.ollamaHost;
-    else if (provider.value === "libretranslate") request.host = translateStore.libreHost;
+    if (provider.value === "ollama") {
+      request.host = translateStore.ollamaHost;
+      request.model = translateStore.selectedOllamaModel || null;
+    } else if (provider.value === "libretranslate") request.host = translateStore.libreHost;
     else if (provider.value === "deepl") request.api_key = translateStore.deeplKey;
     else if (provider.value === "openai") {
       request.api_key = translateStore.openaiKey;
@@ -333,7 +343,15 @@ function stageLabel(stage: FileStage): string {
               v-model="sourceLang"
               class="w-full px-4 py-2.5 rounded-lg bg-bg-primary border border-border text-sm text-text-primary focus:outline-none focus:border-accent"
             >
-              <option v-for="lang in languageOptions" :key="lang.code" :value="lang.code">{{ lang.label }}</option>
+              <option
+                v-for="lang in languageOptions"
+                :key="lang.code"
+                :value="lang.code"
+                :disabled="provider === 'deepl' && !isDeeplSupported(lang.code)"
+              >
+                {{ lang.label }}
+                {{ provider === "deepl" && !isDeeplSupported(lang.code) ? t("translate.deeplUnsupportedSuffix") : "" }}
+              </option>
             </select>
           </div>
 
@@ -343,15 +361,22 @@ function stageLabel(stage: FileStage): string {
               <label
                 v-for="lang in languageOptions"
                 :key="lang.code"
-                class="flex items-center gap-1.5 px-2 py-1.5 rounded-md bg-bg-primary border border-border text-xs text-text-secondary cursor-pointer"
+                :class="[
+                  'flex items-center gap-1.5 px-2 py-1.5 rounded-md border border-border text-xs cursor-pointer',
+                  provider === 'deepl' && !isDeeplSupported(lang.code)
+                    ? 'bg-bg-tertiary text-text-muted opacity-50 cursor-not-allowed'
+                    : 'bg-bg-primary text-text-secondary'
+                ]"
               >
                 <input
                   type="checkbox"
                   class="accent-accent"
                   :checked="targetLangs.includes(lang.code)"
+                  :disabled="provider === 'deepl' && !isDeeplSupported(lang.code)"
                   @change="toggleTargetLang(lang.code)"
                 />
                 {{ lang.label }}
+                {{ provider === "deepl" && !isDeeplSupported(lang.code) ? t("translate.deeplUnsupportedSuffix") : "" }}
               </label>
             </div>
           </div>

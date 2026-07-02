@@ -50,3 +50,10 @@ export function trackDisplayName(code: string, hearingImpaired = false): string 
 
   return name;
 }
+
+/// Languages DeepL's v2 API actually supports, matching the backend const.
+export const DEEPL_LANGS = new Set(["en", "ar", "es", "fr", "de", "ja", "ko", "zh", "ru", "pt", "it", "tr", "nl", "pl", "sv", "id"]);
+
+export function isDeeplSupported(code: string): boolean {
+  return DEEPL_LANGS.has(code.toLowerCase());
+}

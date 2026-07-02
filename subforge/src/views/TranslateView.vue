@@ -5,6 +5,7 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { apiListen } from "../api/events";
 import type { UnlistenFn } from "@tauri-apps/api/event";
 import { useTranslateStore, type EngineType, mapJobErrorMessage } from "../stores/translateStore";
+import { isDeeplSupported } from "../utils/languageNames";
 
 const { t } = useI18n();
 import { JOB_STATUS, type JobStatus } from "../constants/jobStatus";
@@ -453,8 +454,14 @@ onUnmounted(() => {
                 v-model="translateStore.sourceLang"
                 class="w-full px-4 py-2.5 rounded-lg bg-bg-secondary border border-border text-sm text-text-primary focus:outline-none focus:border-accent"
               >
-                <option v-for="lang in languageOptions" :key="lang.code" :value="lang.code">
+                <option
+                  v-for="lang in languageOptions"
+                  :key="lang.code"
+                  :value="lang.code"
+                  :disabled="translateStore.selectedEngine === 'deepl' && !isDeeplSupported(lang.code)"
+                >
                   {{ lang.label }}
+                  {{ translateStore.selectedEngine === "deepl" && !isDeeplSupported(lang.code) ? t("translate.deeplUnsupportedSuffix") : "" }}
                 </option>
               </select>
             </div>
@@ -464,8 +471,14 @@ onUnmounted(() => {
                 v-model="translateStore.targetLang"
                 class="w-full px-4 py-2.5 rounded-lg bg-bg-secondary border border-border text-sm text-text-primary focus:outline-none focus:border-accent"
               >
-                <option v-for="lang in languageOptions" :key="lang.code" :value="lang.code">
+                <option
+                  v-for="lang in languageOptions"
+                  :key="lang.code"
+                  :value="lang.code"
+                  :disabled="translateStore.selectedEngine === 'deepl' && !isDeeplSupported(lang.code)"
+                >
                   {{ lang.label }}
+                  {{ translateStore.selectedEngine === "deepl" && !isDeeplSupported(lang.code) ? t("translate.deeplUnsupportedSuffix") : "" }}
                 </option>
               </select>
             </div>

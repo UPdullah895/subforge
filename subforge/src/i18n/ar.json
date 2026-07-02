@@ -249,6 +249,8 @@
     "googleSetup": "فعّل واجهة Cloud Translation API وأنشئ بيانات اعتماد على https://console.cloud.google.com/apis/credentials",
     "googleSecurity": "خدمة سحابية — يتم إرسال الترجمات إلى خوادم جوجل عبر HTTPS. راجع سياسة استخدام البيانات الخاصة بجوجل.",
     "errorOllamaUnreachable": "تعذر الاتصال بـ Ollama. تأكد إنه شغّال على جهازك (`ollama serve`) وإن العنوان بالإعدادات صحيح.",
+    "errorDeeplUnsupported": "DeepL لا يدعم {lang}. اختر لغة أخرى أو مزوداً مختلفاً.",
+    "deeplUnsupportedSuffix": "(غير مدعومة في DeepL)",
     "ollamaSection": "Ollama",
     "hostUrl": "رابط المضيف",
     "autoDetect": "الكشف التلقائي عن مثيل Ollama قيد التشغيل",

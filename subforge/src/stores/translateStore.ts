@@ -4,6 +4,7 @@ import { ref, watch } from "vue";
 import { useJobQueue } from "../composables/useJobQueue";
 import { useAppStore } from "./appStore";
 import { i18n } from "../i18n";
+import { englishName } from "../utils/languageNames";
 
 export interface OllamaInfo {
   available: boolean;
@@ -32,6 +33,11 @@ export type EngineType = "ollama" | "libretranslate" | "deepl" | "openai" | "goo
 export function mapJobErrorMessage(message?: string): string | undefined {
   if (message === "connect_failed") {
     return i18n.global.t("translate.errorOllamaUnreachable");
+  }
+  if (message?.startsWith("deepl_unsupported_lang:")) {
+    const code = message.substring("deepl_unsupported_lang:".length);
+    const langName = englishName(code) ?? code;
+    return i18n.global.t("translate.errorDeeplUnsupported", { lang: langName });
   }
   return message;
 }

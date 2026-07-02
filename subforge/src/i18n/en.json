@@ -249,6 +249,8 @@
     "googleSetup": "Enable the Cloud Translation API and create credentials at https://console.cloud.google.com/apis/credentials",
     "googleSecurity": "Cloud service — subtitles are sent to Google servers over HTTPS. Review Google's data usage policy.",
     "errorOllamaUnreachable": "Couldn't reach Ollama. Make sure it's running on your machine (`ollama serve`) and that the address in Settings is correct.",
+    "errorDeeplUnsupported": "DeepL does not support {lang}. Choose another language or a different provider.",
+    "deeplUnsupportedSuffix": "(not supported by DeepL)",
     "ollamaSection": "Ollama",
     "hostUrl": "Host URL",
     "autoDetect": "Auto-detect running Ollama instance",

@@ -93,6 +93,59 @@ pub struct OllamaTagResponse {
     pub models: Vec<OllamaModel>,
 }
 
+/// Parse Ollama response content into a Vec of translated strings.
+/// Attempts multiple parsing strategies:
+/// 1. Direct JSON array
+/// 2. Array within markdown fences (```json...```)
+/// 3. Array extracted from text by finding [ and ]
+/// 4. Plain lines (if count matches expected)
+fn parse_ollama_translations(content: &str, expected: usize) -> Result<Vec<String>, String> {
+    let trimmed = content
+        .trim()
+        .trim_start_matches("```json")
+        .trim_start_matches("```")
+        .trim_end_matches("```")
+        .trim();
+
+    if trimmed.is_empty() {
+        return Err("empty response".to_string());
+    }
+
+    // Try direct JSON array parse
+    if let Ok(translations) = serde_json::from_str::<Vec<String>>(trimmed) {
+        return Ok(translations);
+    }
+
+    // Try extracting array from text (find [ and ])
+    if let Some(start) = trimmed.find('[') {
+        if let Some(end) = trimmed.rfind(']') {
+            if start < end {
+                let array_str = &trimmed[start..=end];
+                if let Ok(translations) = serde_json::from_str::<Vec<String>>(array_str) {
+                    return Ok(translations);
+                }
+            }
+        }
+    }
+
+    // Fallback: split into lines and use if count matches
+    let lines: Vec<String> = trimmed
+        .lines()
+        .map(|l| l.trim())
+        .filter(|l| !l.is_empty())
+        .map(|l| l.to_string())
+        .collect();
+    if lines.len() == expected {
+        return Ok(lines);
+    }
+
+    // All attempts failed. Truncate by characters, not bytes — model output
+    // is often Arabic/CJK, and a byte slice at a non-boundary would panic.
+    let snippet: String = trimmed.chars().take(120).collect();
+    let ellipsis = if trimmed.chars().count() > 120 { "..." } else { "" };
+    Err(format!("unparseable response: {}{}", snippet, ellipsis))
+}
+
 pub async fn detect_ollama(host: &str) -> Result<OllamaTagResponse, TranslateError> {
     let client = reqwest::Client::new();
     let url = format!("{}/api/tags", host.trim_end_matches('/'));
@@ -111,7 +164,12 @@ pub async fn translate_ollama(
     _source: &str,
     target: &str,
 ) -> Result<Vec<String>, TranslateError> {
-    let client = reqwest::Client::new();
+    let client = reqwest::Client::builder()
+        // Local model inference on a 25-line batch routinely exceeds 30s;
+        // extend timeout to 5 minutes for more reliable inference.
+        .timeout(std::time::Duration::from_secs(300))
+        .build()
+        .unwrap_or_default();
     let url = format!("{}/v1/chat/completions", host.trim_end_matches('/'));
 
     let texts: Vec<String> = lines.iter().map(|l| l.text.clone()).collect();
@@ -136,21 +194,31 @@ Do not add explanations or markdown formatting.\n\nLines:\n{}\n\nReturn format: 
         return Err(TranslateError::Api(format!("Ollama API error: {}", text)));
     }
 
-    let json_resp: serde_json::Value = resp.json().await?;
+    let body_text = resp.text().await.map_err(|e| TranslateError::Http(e))?;
+    if body_text.trim().is_empty() {
+        return Err(TranslateError::Api(format!(
+            "Ollama returned an empty response from model '{}'",
+            model
+        )));
+    }
+
+    let json_resp: serde_json::Value = serde_json::from_str(&body_text).map_err(|e| {
+        TranslateError::Api(format!(
+            "Ollama returned invalid JSON from model '{}': {}",
+            model, e
+        ))
+    })?;
+
     let content = json_resp["choices"][0]["message"]["content"]
         .as_str()
         .ok_or_else(|| TranslateError::Api("Missing response content".to_string()))?;
 
-    // Try to extract JSON array from the response (models sometimes wrap it in markdown)
-    let cleaned = content
-        .trim()
-        .trim_start_matches("```json")
-        .trim_start_matches("```")
-        .trim_end_matches("```")
-        .trim();
-
-    let translations: Vec<String> = serde_json::from_str(cleaned)?;
-    Ok(translations)
+    parse_ollama_translations(content, lines.len()).map_err(|err| {
+        TranslateError::Api(format!(
+            "Ollama returned an unparseable response from model '{}': {}",
+            model, err
+        ))
+    })
 }
 
 // ─── LibreTranslate ───
@@ -208,12 +276,24 @@ pub async fn translate_libretranslate(
 
 // ─── DeepL ───
 
+/// Languages DeepL's v2 API actually supports, out of the codes SubForge's
+/// UI offers. Hindi (hi), Persian (fa), and Urdu (ur) are NOT supported by
+/// DeepL and produce a 400 "source_lang not supported" if sent.
+const DEEPL_LANGS: &[&str] = &["en", "ar", "es", "fr", "de", "ja", "ko", "zh", "ru", "pt", "it", "tr", "nl", "pl", "sv", "id"];
+
 pub async fn translate_deepl(
     api_key: &str,
     lines: &[SubtitleLine],
     source: &str,
     target: &str,
 ) -> Result<Vec<String>, TranslateError> {
+    // Validate that source and target languages are supported by DeepL
+    for code in &[source, target] {
+        if !DEEPL_LANGS.contains(&code.to_lowercase().as_str()) {
+            return Err(TranslateError::Api(format!("deepl_unsupported_lang:{}", code)));
+        }
+    }
+
     let client = reqwest::Client::new();
     let is_free = api_key.ends_with(":fx");
     let url = if is_free {
@@ -405,5 +485,68 @@ pub async fn test_google_key(api_key: &str) -> Result<(), TranslateError> {
         Ok(())
     } else {
         Err(TranslateError::Api(format!("Google Translate returned {}", resp.status())))
+    }
+}
+
+#[cfg(test)]
+mod ollama_parse_tests {
+    use super::parse_ollama_translations;
+
+    #[test]
+    fn test_plain_json_array() {
+        let content = r#"["Hola", "Mundo"]"#;
+        let result = parse_ollama_translations(content, 2);
+        assert!(result.is_ok());
+        let translations = result.unwrap();
+        assert_eq!(translations, vec!["Hola", "Mundo"]);
+    }
+
+    #[test]
+    fn test_fenced_json_array() {
+        let content = r#"```json
+["Hola", "Mundo"]
+```"#;
+        let result = parse_ollama_translations(content, 2);
+        assert!(result.is_ok());
+        let translations = result.unwrap();
+        assert_eq!(translations, vec!["Hola", "Mundo"]);
+    }
+
+    #[test]
+    fn test_array_embedded_in_prose() {
+        let content = r#"Here are the translations:
+["Hola", "Mundo"]
+Hope this helps!"#;
+        let result = parse_ollama_translations(content, 2);
+        assert!(result.is_ok());
+        let translations = result.unwrap();
+        assert_eq!(translations, vec!["Hola", "Mundo"]);
+    }
+
+    #[test]
+    fn test_plain_lines_fallback() {
+        let content = "Hola\nMundo";
+        let result = parse_ollama_translations(content, 2);
+        assert!(result.is_ok());
+        let translations = result.unwrap();
+        assert_eq!(translations, vec!["Hola", "Mundo"]);
+    }
+
+    #[test]
+    fn test_empty_content() {
+        let content = "";
+        let result = parse_ollama_translations(content, 2);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("empty response"));
+    }
+
+    #[test]
+    fn test_long_multibyte_content_does_not_panic() {
+        // Arabic model output longer than the 120-char snippet cap — the
+        // error snippet must truncate by characters, not bytes.
+        let content = "ترجمة غير صالحة ".repeat(20);
+        let result = parse_ollama_translations(&content, 2);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("unparseable response"));
     }
 }
