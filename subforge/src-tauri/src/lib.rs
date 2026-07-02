@@ -12,14 +12,26 @@ use std::sync::{Arc, Mutex};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    // Works around a WebKitGTK/Wayland compositor compatibility issue
-    // ("Error 71 (Protocol error) dispatching to Wayland display") seen on
-    // some Linux desktops (e.g. KWin/Wayland) with DMA-BUF rendering.
     #[cfg(target_os = "linux")]
     {
         // SAFETY: called before any threads are spawned, at the very start of run().
         unsafe {
+            // Works around a WebKitGTK/Wayland compositor compatibility issue
+            // ("Error 71 (Protocol error) dispatching to Wayland display") seen on
+            // some Linux desktops (e.g. KWin/Wayland) with DMA-BUF rendering.
             std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
+
+            // `decorations: false` in tauri.conf.json means the WM draws no
+            // frame at all — the app's own Vue TitleBar component is the only
+            // titlebar. GTK_CSD is not needed here (there's no OS-drawn frame
+            // to conflict with either way).
+
+            // tauri-plugin-dialog's Linux backend only opens the desktop's
+            // native file picker (e.g. KDE's Dolphin/KFileDialog via
+            // xdg-desktop-portal) for non-sandboxed apps when this is set;
+            // otherwise it silently falls back to a plain GTK dialog that
+            // looks out of place on non-GNOME desktops.
+            std::env::set_var("GTK_USE_PORTAL", "1");
         }
     }
 

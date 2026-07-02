@@ -1,8 +1,12 @@
 import { invoke } from "@tauri-apps/api/core";
 import { commandSchemas } from "./schemas";
 
-function isTauri(): boolean {
-  return typeof window !== "undefined" && !!(window as unknown as Record<string, unknown>).__TAURI__;
+// `__TAURI_INTERNALS__` is injected by every Tauri v2 webview regardless of
+// the `withGlobalTauri` config flag (which only controls `__TAURI__`), so
+// it's the reliable marker for "are we actually running inside Tauri, or is
+// this the same frontend served plain by the Axum server in a browser".
+export function isTauri(): boolean {
+  return typeof window !== "undefined" && !!(window as unknown as Record<string, unknown>).__TAURI_INTERNALS__;
 }
 
 export async function apiInvoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {

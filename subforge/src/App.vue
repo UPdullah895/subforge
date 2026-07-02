@@ -2,6 +2,7 @@
 import { ref, watch, onMounted } from "vue";
 import { useI18n } from "vue-i18n";
 import { useAppStore } from "./stores/appStore";
+import TitleBar from "./components/TitleBar.vue";
 import AppSidebar from "./components/AppSidebar.vue";
 import SubtitleView from "./views/SubtitleView.vue";
 import AudioView from "./views/AudioView.vue";
@@ -42,24 +43,27 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="flex h-full bg-bg-primary">
-    <AppSidebar :current="currentView" @navigate="currentView = $event" />
-    <main class="flex-1 min-w-0 overflow-hidden">
-      <SubtitleView v-if="currentView === 'subtitle'" />
-      <AudioView v-else-if="currentView === 'audio'" />
-      <BatchView v-else-if="currentView === 'batch'" />
-      <TranscribeView v-else-if="currentView === 'transcribe'" />
-      <TranslateView v-else-if="currentView === 'translate'" />
-      <SettingsView v-else-if="currentView === 'settings'" />
-      <div v-else class="flex flex-col items-center justify-center h-full text-center">
-        <div
-          class="w-16 h-16 rounded-2xl bg-bg-secondary border border-border flex items-center justify-center mb-4"
-        >
-          <span class="text-2xl">🚧</span>
+  <div class="flex flex-col h-full bg-bg-primary">
+    <TitleBar />
+    <div class="flex flex-1 min-h-0">
+      <AppSidebar :current="currentView" @navigate="currentView = $event" />
+      <main class="flex-1 min-w-0 overflow-hidden">
+        <SubtitleView v-if="currentView === 'subtitle'" />
+        <AudioView v-else-if="currentView === 'audio'" />
+        <BatchView v-else-if="currentView === 'batch'" />
+        <TranscribeView v-else-if="currentView === 'transcribe'" />
+        <TranslateView v-else-if="currentView === 'translate'" />
+        <SettingsView v-else-if="currentView === 'settings'" />
+        <div v-else class="flex flex-col items-center justify-center h-full text-center">
+          <div
+            class="w-16 h-16 rounded-2xl bg-bg-secondary border border-border flex items-center justify-center mb-4"
+          >
+            <span class="text-2xl">🚧</span>
+          </div>
+          <h2 class="text-lg font-medium text-text-primary">Coming Soon</h2>
+          <p class="text-sm text-text-secondary mt-1">This feature is planned for a future phase.</p>
         </div>
-        <h2 class="text-lg font-medium text-text-primary">Coming Soon</h2>
-        <p class="text-sm text-text-secondary mt-1">This feature is planned for a future phase.</p>
-      </div>
-    </main>
+      </main>
+    </div>
   </div>
 </template>
