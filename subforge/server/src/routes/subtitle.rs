@@ -1,6 +1,8 @@
 use crate::tools::mkvtoolnix;
-use axum::{extract::Json, http::StatusCode};
+use crate::{AppState, jobs};
+use axum::{extract::{Json, State}, http::StatusCode};
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 
 #[derive(Deserialize)]
 pub struct EnumerateRequest {
@@ -64,11 +66,130 @@ pub struct MergeRequest {
     language: Option<String>,
 }
 
-pub async fn merge_subtitle(Json(req): Json<MergeRequest>) -> Result<StatusCode, StatusCode> {
-    let subs = vec![mkvtoolnix::SubtitleMergeSpec::new(req.subtitle_path, req.language)];
-    mkvtoolnix::merge_subtitles(&req.video_path, &subs, &req.output_path)
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    Ok(StatusCode::OK)
+#[derive(Serialize)]
+pub struct MergeResponse {
+    job_id: String,
+}
+
+pub async fn merge_subtitle(
+    State(state): State<AppState>,
+    Json(req): Json<MergeRequest>,
+) -> Result<Json<MergeResponse>, StatusCode> {
+    let job_id = format!("merge-{}", uuid::Uuid::new_v4());
+
+    {
+        let mut q = state.job_queue.lock().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        q.add(jobs::Job {
+            id: job_id.clone(),
+            job_type: jobs::JobType::MergeSubtitle,
+            status: jobs::JobStatus::Pending,
+            input_file: req.video_path.clone(),
+            output_file: Some(req.output_path.clone()),
+            progress: 0.0,
+            message: Some("Queued".to_string()),
+        });
+    }
+
+    let sender = state.event_sender.clone();
+    jobs::emit_event(
+        &sender,
+        jobs::JobEvent {
+            event_type: "job-started".to_string(),
+            job_id: job_id.clone(),
+            status: None,
+            progress: None,
+            message: None,
+            stage: None,
+            output_path: None,
+        },
+    );
+
+    let queue_clone = state.job_queue.clone();
+    let controls_clone = state.job_controls.clone();
+    let job_id_clone = job_id.clone();
+    let sender_clone = state.event_sender.clone();
+    let video_path = req.video_path.clone();
+    let subtitle_path = req.subtitle_path.clone();
+    let output_path = req.output_path.clone();
+    let language = req.language.clone();
+
+    tokio::spawn(async move {
+        let control = Arc::new(jobs::JobControl::new());
+        {
+            let mut registry = controls_clone.lock().unwrap();
+            registry.insert(job_id_clone.clone(), control.clone());
+        }
+
+        {
+            let mut q = queue_clone.lock().unwrap();
+            q.update_status(&job_id_clone, jobs::JobStatus::Running);
+        }
+
+        let subs = vec![mkvtoolnix::SubtitleMergeSpec::new(subtitle_path, language)];
+        let result = mkvtoolnix::merge_subtitles_async(&video_path, &subs, &output_path, Some(&control), |pct| {
+            let mut q = queue_clone.lock().unwrap();
+            q.update_progress(&job_id_clone, pct, None);
+            jobs::emit_event(
+                &sender_clone,
+                jobs::JobEvent {
+                    event_type: "job-progress".to_string(),
+                    job_id: job_id_clone.clone(),
+                    status: None,
+                    progress: Some(pct),
+                    message: None,
+                    stage: None,
+                    output_path: None,
+                },
+            );
+        }).await;
+
+        if let Err(e) = result {
+            let cancelled = matches!(e, mkvtoolnix::MkvError::Cancelled);
+            let msg = e.to_string();
+            let status = if cancelled { jobs::JobStatus::Cancelled } else { jobs::JobStatus::Failed };
+            let mut q = queue_clone.lock().unwrap();
+            q.update_status(&job_id_clone, status.clone());
+            q.update_progress(&job_id_clone, 0.0, Some(msg.clone()));
+            jobs::emit_event(
+                &sender_clone,
+                jobs::JobEvent {
+                    event_type: "job-completed".to_string(),
+                    job_id: job_id_clone.clone(),
+                    status: Some(status),
+                    progress: Some(0.0),
+                    message: Some(msg),
+                    stage: None,
+                    output_path: None,
+                },
+            );
+            let mut registry = controls_clone.lock().unwrap();
+            registry.remove(&job_id_clone);
+            return;
+        }
+
+        {
+            let mut q = queue_clone.lock().unwrap();
+            q.update_status(&job_id_clone, jobs::JobStatus::Completed);
+            q.update_progress(&job_id_clone, 100.0, Some("Merge complete".to_string()));
+        }
+        jobs::emit_event(
+            &sender_clone,
+            jobs::JobEvent {
+                event_type: "job-completed".to_string(),
+                job_id: job_id_clone.clone(),
+                status: Some(jobs::JobStatus::Completed),
+                progress: Some(100.0),
+                message: Some("Merge complete".to_string()),
+                stage: None,
+                output_path: Some(output_path),
+            },
+        );
+
+        let mut registry = controls_clone.lock().unwrap();
+        registry.remove(&job_id_clone);
+    });
+
+    Ok(Json(MergeResponse { job_id }))
 }
 
 #[derive(Deserialize)]

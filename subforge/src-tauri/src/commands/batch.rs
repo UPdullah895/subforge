@@ -217,12 +217,17 @@ pub struct MergeSubsResult {
 
 /// Muxes existing external subtitle files (already detected by the batch
 /// scan) into their video via mkvmerge, reusing the same
-/// `mkvtoolnix::merge_subtitles` call the single-file Subtitles page uses.
+/// `mkvtoolnix::merge_subtitles_async` call the single-file Subtitles page uses.
 /// Writes to a new `{video_stem}.merged.mkv` rather than overwriting the
 /// source, matching the auto-translate pipeline's convention of not
 /// clobbering the original file.
 #[tauri::command]
-pub fn merge_external_subs(request: MergeSubsRequest) -> Result<MergeSubsResult, String> {
+pub async fn merge_external_subs(
+    app: AppHandle,
+    queue: State<'_, SharedJobQueue>,
+    controls: State<'_, crate::jobs::JobControlRegistry>,
+    request: MergeSubsRequest,
+) -> Result<String, String> {
     let video_path = Path::new(&request.video_path);
     let stem = video_path
         .file_stem()
@@ -233,6 +238,29 @@ pub fn merge_external_subs(request: MergeSubsRequest) -> Result<MergeSubsResult,
         .join(format!("{stem}.merged.mkv"))
         .to_string_lossy()
         .to_string();
+
+    let job_id = format!("batch-merge-{}", uuid::Uuid::new_v4());
+
+    {
+        let mut q = queue.lock().map_err(|e| e.to_string())?;
+        q.add(Job {
+            id: job_id.clone(),
+            job_type: JobType::BatchOperation,
+            status: JobStatus::Pending,
+            input_file: request.video_path.clone(),
+            output_file: Some(output_path.clone()),
+            progress: 0.0,
+            message: Some("Queued".to_string()),
+        });
+    }
+
+    let _ = app.emit("job-started", &job_id);
+
+    let app_clone = app.clone();
+    let queue_clone = queue.inner().clone();
+    let controls_clone = controls.inner().clone();
+    let job_id_clone = job_id.clone();
+    let delete_originals = request.delete_originals;
 
     let subs: Vec<mkvtoolnix::SubtitleMergeSpec> = request
         .subs
@@ -246,15 +274,69 @@ pub fn merge_external_subs(request: MergeSubsRequest) -> Result<MergeSubsResult,
         })
         .collect();
 
-    mkvtoolnix::merge_subtitles(&request.video_path, &subs, &output_path).map_err(|e| e.to_string())?;
+    let orig_subs = request.subs.clone();
+    let video_path_str = request.video_path.clone();
 
-    if request.delete_originals {
-        for sub in &request.subs {
-            let _ = std::fs::remove_file(&sub.path);
+    tokio::spawn(async move {
+        let control = std::sync::Arc::new(crate::jobs::JobControl::new());
+        {
+            let mut registry = controls_clone.lock().unwrap();
+            registry.insert(job_id_clone.clone(), control.clone());
         }
-    }
 
-    Ok(MergeSubsResult { output_path })
+        {
+            let mut q = queue_clone.lock().unwrap();
+            q.update_status(&job_id_clone, JobStatus::Running);
+        }
+
+        let result = mkvtoolnix::merge_subtitles_async(&video_path_str, &subs, &output_path, Some(&control), |pct| {
+            let mut q = queue_clone.lock().unwrap();
+            q.update_progress(&job_id_clone, pct, None);
+            let _ = app_clone.emit("job-progress", serde_json::json!({
+                "job_id": job_id_clone,
+                "progress": pct,
+            }));
+        }).await;
+
+        if let Err(e) = result {
+            let cancelled = matches!(e, mkvtoolnix::MkvError::Cancelled);
+            let msg = e.to_string();
+            let mut q = queue_clone.lock().unwrap();
+            q.update_status(&job_id_clone, if cancelled { JobStatus::Cancelled } else { JobStatus::Failed });
+            q.update_progress(&job_id_clone, 0.0, Some(msg.clone()));
+            let _ = app_clone.emit("job-completed", serde_json::json!({
+                "job_id": job_id_clone,
+                "status": if cancelled { "cancelled" } else { "failed" },
+                "message": msg,
+            }));
+            let mut registry = controls_clone.lock().unwrap();
+            registry.remove(&job_id_clone);
+            return;
+        }
+
+        if delete_originals {
+            for sub in &orig_subs {
+                let _ = std::fs::remove_file(&sub.path);
+            }
+        }
+
+        {
+            let mut q = queue_clone.lock().unwrap();
+            q.update_status(&job_id_clone, JobStatus::Completed);
+            q.update_progress(&job_id_clone, 100.0, Some("Merge complete".to_string()));
+        }
+        let _ = app_clone.emit("job-completed", serde_json::json!({
+            "job_id": job_id_clone,
+            "status": "completed",
+            "message": "Merge complete",
+            "output_path": output_path,
+        }));
+
+        let mut registry = controls_clone.lock().unwrap();
+        registry.remove(&job_id_clone);
+    });
+
+    Ok(job_id)
 }
 
 #[cfg(test)]

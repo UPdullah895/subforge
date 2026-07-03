@@ -58,7 +58,18 @@
   },
   "jobMonitor": {
     "backgroundJobs": "Background Jobs",
-    "clearCompleted": "Clear completed"
+    "clearCompleted": "Clear completed",
+    "pause": "Pause",
+    "resume": "Resume",
+    "stop": "Stop"
+  },
+  "jobStatus": {
+    "pending": "Pending",
+    "running": "Running",
+    "completed": "Completed",
+    "failed": "Failed",
+    "cancelled": "Cancelled",
+    "paused": "Paused"
   },
   "subtitle": {
     "title": "Subtitles",
@@ -186,7 +197,8 @@
       "translating": "Translating...",
       "merging": "Merging...",
       "done": "Done",
-      "error": "Error"
+      "error": "Error",
+      "cancelled": "Cancelled"
     }
   },
   "transcribe": {

@@ -84,6 +84,9 @@ function cmdToEndpoint(cmd: string): string {
     preview_rename: "/api/rename/preview",
     apply_rename: "/api/rename/apply",
     test_provider_config: "/api/providers/test",
+    cancel_job: "/api/jobs/cancel",
+    pause_job: "/api/jobs/pause",
+    resume_job: "/api/jobs/resume",
   };
   return map[cmd] || `/api/${cmd.replace(/_/g, "/")}`;
 }

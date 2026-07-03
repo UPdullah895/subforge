@@ -2,7 +2,10 @@ use crate::tools::mkvtoolnix::{self, Track};
 use crate::tools::pysubs2;
 use crate::tools::ToolRegistry;
 use crate::config::AppConfig;
+use crate::jobs::{Job, JobStatus, JobType, SharedJobQueue, JobControlRegistry};
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
+use tauri::{AppHandle, Emitter, State};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TrackInfo {
@@ -75,15 +78,94 @@ pub fn extract_all_subtitles(
 }
 
 #[tauri::command]
-pub fn merge_subtitle_into_video(
+pub async fn merge_subtitle_into_video(
+    app: AppHandle,
+    queue: State<'_, SharedJobQueue>,
+    controls: State<'_, JobControlRegistry>,
     video_path: String,
     subtitle_path: String,
     output_path: String,
     language: Option<String>,
-) -> Result<(), String> {
-    let subs = vec![mkvtoolnix::SubtitleMergeSpec::new(subtitle_path, language)];
-    mkvtoolnix::merge_subtitles(&video_path, &subs, &output_path)
-        .map_err(|e| e.to_string())
+) -> Result<String, String> {
+    let job_id = format!("merge-{}", uuid::Uuid::new_v4());
+
+    {
+        let mut q = queue.lock().map_err(|e| e.to_string())?;
+        q.add(Job {
+            id: job_id.clone(),
+            job_type: JobType::MergeSubtitle,
+            status: JobStatus::Pending,
+            input_file: video_path.clone(),
+            output_file: Some(output_path.clone()),
+            progress: 0.0,
+            message: Some("Queued".to_string()),
+        });
+    }
+
+    let _ = app.emit("job-started", &job_id);
+
+    let app_clone = app.clone();
+    let queue_clone = queue.inner().clone();
+    let controls_clone = controls.inner().clone();
+    let job_id_clone = job_id.clone();
+
+    tokio::spawn(async move {
+        let control = Arc::new(crate::jobs::JobControl::new());
+        {
+            let mut registry = controls_clone.lock().unwrap();
+            registry.insert(job_id_clone.clone(), control.clone());
+        }
+
+        {
+            let mut q = queue_clone.lock().unwrap();
+            q.update_status(&job_id_clone, JobStatus::Running);
+        }
+
+        let subs = vec![mkvtoolnix::SubtitleMergeSpec::new(subtitle_path, language)];
+        let result = mkvtoolnix::merge_subtitles_async(&video_path, &subs, &output_path, Some(&control), |pct| {
+            let mut q = queue_clone.lock().unwrap();
+            q.update_progress(&job_id_clone, pct, None);
+            let _ = app_clone.emit("job-progress", serde_json::json!({
+                "job_id": job_id_clone,
+                "progress": pct,
+            }));
+        }).await;
+
+        if let Err(e) = result {
+            let cancelled = matches!(e, mkvtoolnix::MkvError::Cancelled);
+            let msg = e.to_string();
+            {
+                let mut q = queue_clone.lock().unwrap();
+                q.update_status(&job_id_clone, if cancelled { JobStatus::Cancelled } else { JobStatus::Failed });
+                q.update_progress(&job_id_clone, 0.0, Some(msg.clone()));
+            }
+            let _ = app_clone.emit("job-completed", serde_json::json!({
+                "job_id": job_id_clone,
+                "status": if cancelled { "cancelled" } else { "failed" },
+                "message": msg,
+            }));
+            let mut registry = controls_clone.lock().unwrap();
+            registry.remove(&job_id_clone);
+            return;
+        }
+
+        {
+            let mut q = queue_clone.lock().unwrap();
+            q.update_status(&job_id_clone, JobStatus::Completed);
+            q.update_progress(&job_id_clone, 100.0, Some("Merge complete".to_string()));
+        }
+        let _ = app_clone.emit("job-completed", serde_json::json!({
+            "job_id": job_id_clone,
+            "status": "completed",
+            "message": "Merge complete",
+            "output_path": output_path,
+        }));
+
+        let mut registry = controls_clone.lock().unwrap();
+        registry.remove(&job_id_clone);
+    });
+
+    Ok(job_id)
 }
 
 #[tauri::command]

@@ -18,6 +18,8 @@ pub enum MkvError {
     JsonParseError(String),
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
+    #[error("merge cancelled")]
+    Cancelled,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -409,6 +411,118 @@ pub fn remove_all_audio(video_path: &str, output_path: &str) -> Result<(), MkvEr
     Ok(())
 }
 
+/// Parses a GUI progress line from mkvmerge --gui-mode output.
+/// Returns Some(percentage) if line matches "#GUI#progress <N>%" format, None otherwise.
+fn parse_gui_progress(line: &str) -> Option<f64> {
+    if let Some(stripped) = line.strip_prefix("#GUI#progress ") {
+        if let Some(percent_str) = stripped.strip_suffix("%") {
+            if let Ok(pct) = percent_str.parse::<i32>() {
+                return Some((pct.max(0).min(100)) as f64);
+            }
+        }
+    }
+    None
+}
+
+/// Async version of merge_subtitles with progress callback and cancellation support.
+/// Spawns mkvmerge with --gui-mode, reads stdout line-by-line for progress updates,
+/// and checks the cancellation flag every 200ms.
+pub async fn merge_subtitles_async(
+    video_path: &str,
+    subtitles: &[SubtitleMergeSpec],
+    output_path: &str,
+    control: Option<&crate::jobs::JobControl>,
+    mut on_progress: impl FnMut(f64) + Send,
+) -> Result<(), MkvError> {
+    use tokio::io::AsyncBufReadExt;
+
+    let mkvmerge = get_mkvmerge_path()?;
+
+    // Build args using the same logic as the sync version
+    let mut args = vec!["--gui-mode".to_string(), "-o".to_string(), output_path.to_string(), video_path.to_string()];
+
+    for sub in subtitles {
+        let lang = sub.language.as_deref().unwrap_or("und");
+        args.push("--language".to_string());
+        args.push(format!("0:{lang}"));
+
+        let track_name = sub
+            .track_name
+            .clone()
+            .unwrap_or_else(|| languages::track_display_name(lang, sub.hearing_impaired));
+        args.push("--track-name".to_string());
+        args.push(format!("0:{track_name}"));
+
+        args.push("--default-track-flag".to_string());
+        args.push(format!("0:{}", if sub.make_default { "yes" } else { "no" }));
+
+        args.push(sub.path.clone());
+    }
+
+    let mut child = tokio::process::Command::new(&mkvmerge)
+        .args(&args)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()?;
+
+    let stdout = child.stdout.take().ok_or_else(|| {
+        MkvError::CommandFailed("Failed to open stdout".to_string())
+    })?;
+
+    let mut reader = tokio::io::BufReader::new(stdout).lines();
+
+    // Read output line-by-line, checking for progress and cancellation
+    loop {
+        let read_future = reader.next_line();
+        let timeout = tokio::time::sleep(tokio::time::Duration::from_millis(200));
+
+        tokio::select! {
+            line_result = read_future => {
+                match line_result {
+                    Ok(Some(line)) => {
+                        if let Some(pct) = parse_gui_progress(&line) {
+                            on_progress(pct);
+                        }
+                    }
+                    Ok(None) => {
+                        // EOF
+                        break;
+                    }
+                    Err(_) => {
+                        break;
+                    }
+                }
+            }
+            _ = timeout => {
+                // Check cancellation every 200ms
+                if let Some(ctl) = control {
+                    if ctl.is_cancelled() {
+                        let _ = child.kill().await;
+                        return Err(MkvError::Cancelled);
+                    }
+                }
+            }
+        }
+    }
+
+    let status = child.wait().await?;
+
+    if !status.success() {
+        let stderr = match child.stderr.take() {
+            Some(mut stderr) => {
+                let mut buf = String::new();
+                use tokio::io::AsyncReadExt;
+                let _ = stderr.read_to_string(&mut buf).await;
+                buf
+            }
+            None => "Unknown error".to_string(),
+        };
+        return Err(MkvError::CommandFailed(stderr));
+    }
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod track_serde_tests {
     use super::*;
@@ -432,5 +546,30 @@ mod track_serde_tests {
         let json = serde_json::to_value(&track).unwrap();
         assert_eq!(json.get("track_type").and_then(|v| v.as_str()), Some("subtitles"));
         assert!(json.get("type").is_none());
+    }
+}
+
+#[cfg(test)]
+mod parse_gui_progress_tests {
+    use super::*;
+
+    #[test]
+    fn parses_valid_progress_line() {
+        assert_eq!(parse_gui_progress("#GUI#progress 50%"), Some(50.0));
+    }
+
+    #[test]
+    fn returns_none_for_non_matching_line() {
+        assert_eq!(parse_gui_progress("some random output"), None);
+    }
+
+    #[test]
+    fn clamps_to_0_percent() {
+        assert_eq!(parse_gui_progress("#GUI#progress 0%"), Some(0.0));
+    }
+
+    #[test]
+    fn clamps_to_100_percent() {
+        assert_eq!(parse_gui_progress("#GUI#progress 100%"), Some(100.0));
     }
 }

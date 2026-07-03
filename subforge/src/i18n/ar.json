@@ -58,7 +58,18 @@
   },
   "jobMonitor": {
     "backgroundJobs": "المهام في الخلفية",
-    "clearCompleted": "حذف المكتملة"
+    "clearCompleted": "حذف المكتملة",
+    "pause": "إيقاف مؤقت",
+    "resume": "استئناف",
+    "stop": "إيقاف"
+  },
+  "jobStatus": {
+    "pending": "قيد الانتظار",
+    "running": "قيد التنفيذ",
+    "completed": "مكتمل",
+    "failed": "فشل",
+    "cancelled": "ملغاة",
+    "paused": "موقوفة مؤقتاً"
   },
   "subtitle": {
     "title": "الترجمات",
@@ -186,7 +197,8 @@
       "translating": "جاري الترجمة...",
       "merging": "جاري الدمج...",
       "done": "تم",
-      "error": "خطأ"
+      "error": "خطأ",
+      "cancelled": "ملغاة"
     }
   },
   "transcribe": {

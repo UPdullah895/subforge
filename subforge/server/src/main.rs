@@ -5,6 +5,7 @@ use axum::{
 };
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
+use std::collections::HashMap;
 use tower_http::cors::CorsLayer;
 use tower_http::services::ServeDir;
 
@@ -15,22 +16,25 @@ mod routes;
 mod tools;
 mod ws;
 
-use jobs::{create_event_channel, JobQueue, SharedJobQueue};
+use jobs::{create_event_channel, JobQueue, SharedJobQueue, JobControlRegistry};
 
 #[derive(Clone)]
 pub struct AppState {
     pub job_queue: SharedJobQueue,
     pub event_sender: jobs::EventSender,
+    pub job_controls: JobControlRegistry,
 }
 
 #[tokio::main]
 async fn main() {
     let job_queue: SharedJobQueue = Arc::new(Mutex::new(JobQueue::new()));
     let (event_sender, _event_receiver) = create_event_channel();
+    let job_controls: JobControlRegistry = Arc::new(Mutex::new(HashMap::new()));
 
     let state = AppState {
         job_queue,
         event_sender,
+        job_controls,
     };
 
     let app = Router::new()
@@ -58,6 +62,10 @@ fn api_routes() -> Router<AppState> {
         .route("/upload", post(routes::upload::upload_file))
         .route("/download/{job_id}", get(routes::upload::download_file))
         .route("/jobs/{job_id}", get(routes::upload::get_job_status))
+        // ── Job control (cancel / pause / resume) ────────────────────────────
+        .route("/jobs/cancel", post(routes::jobs::cancel_job))
+        .route("/jobs/pause", post(routes::jobs::pause_job))
+        .route("/jobs/resume", post(routes::jobs::resume_job))
         // ── Tool registry ────────────────────────────────────────────────────
         .route("/tools/registry", get(routes::tools::get_registry))
         // ── Config ───────────────────────────────────────────────────────────

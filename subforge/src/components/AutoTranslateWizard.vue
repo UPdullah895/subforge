@@ -7,8 +7,9 @@ import { apiListen } from "../api/events";
 import { useBatchStore } from "../stores/batchStore";
 import { useAppStore } from "../stores/appStore";
 import { useTranslateStore, type EngineType, mapJobErrorMessage } from "../stores/translateStore";
+import { useJobQueue } from "../composables/useJobQueue";
 import { isDeeplSupported } from "../utils/languageNames";
-import { AlertTriangle, CheckCircle2, XCircle, Loader2 } from "lucide-vue-next";
+import { AlertTriangle, CheckCircle2, XCircle, Loader2, Pause, Play, Square } from "lucide-vue-next";
 
 const { t } = useI18n();
 
@@ -24,6 +25,7 @@ const emit = defineEmits<{
 const batchStore = useBatchStore();
 const translateStore = useTranslateStore();
 const appStore = useAppStore();
+const { cancelJob, pauseJob, resumeJob } = useJobQueue();
 
 const languageOptions = [
   { code: "en", label: "English" },
@@ -79,7 +81,14 @@ const probed = ref(false);
 // track matching the chosen source language (see `ambiguousFiles`).
 const selectedTrackId = reactive<Record<string, number>>({});
 
-type FileStage = "queued" | "extracting" | "translating" | "merging" | "done" | "error";
+type FileStage =
+  | "queued"
+  | "extracting"
+  | "translating"
+  | "merging"
+  | "done"
+  | "error"
+  | "cancelled";
 
 interface FileJob {
   path: string;
@@ -89,6 +98,7 @@ interface FileJob {
   stage: FileStage;
   progress: number;
   message?: string;
+  paused: boolean;
 }
 
 const fileJobs = ref<FileJob[]>([]);
@@ -232,6 +242,7 @@ async function startPipeline() {
         name: `${file?.name ?? path} → ${lang.toUpperCase()}`,
         stage: "queued",
         progress: 0,
+        paused: false,
       });
     }
   }
@@ -258,10 +269,14 @@ async function startPipeline() {
   }>("job-completed", ({ job_id, status, message }) => {
     const job = fileJobs.value.find((f) => f.jobId === job_id);
     if (job) {
-      job.stage = status === "completed" ? "done" : "error";
+      job.stage = status === "completed" ? "done" : status === "cancelled" ? "cancelled" : "error";
       job.progress = 100;
-      const mapped = mapJobErrorMessage(message);
-      if (mapped) job.message = mapped;
+      if (status === "cancelled") {
+        job.message = message;
+      } else {
+        const mapped = mapJobErrorMessage(message);
+        if (mapped) job.message = mapped;
+      }
     }
   });
 
@@ -316,6 +331,26 @@ function close() {
 
 function stageLabel(stage: FileStage): string {
   return t(`autoTranslate.stage.${stage}`);
+}
+
+function isJobActive(job: FileJob): boolean {
+  return !!job.jobId && !["done", "error", "cancelled"].includes(job.stage);
+}
+
+async function togglePauseJob(job: FileJob) {
+  if (!job.jobId) return;
+  if (job.paused) {
+    await resumeJob(job.jobId);
+    job.paused = false;
+  } else {
+    await pauseJob(job.jobId);
+    job.paused = true;
+  }
+}
+
+async function stopJob(job: FileJob) {
+  if (!job.jobId) return;
+  await cancelJob(job.jobId);
 }
 </script>
 
@@ -429,17 +464,34 @@ function stageLabel(stage: FileStage): string {
             <span class="text-sm text-text-primary truncate">{{ job.name }}</span>
             <span class="inline-flex items-center gap-1.5 text-xs shrink-0">
               <CheckCircle2 v-if="job.stage === 'done'" class="w-3.5 h-3.5 text-success" />
-              <XCircle v-else-if="job.stage === 'error'" class="w-3.5 h-3.5 text-error" />
+              <XCircle v-else-if="job.stage === 'error' || job.stage === 'cancelled'" class="w-3.5 h-3.5 text-error" />
               <Loader2 v-else class="w-3.5 h-3.5 text-accent animate-spin" />
-              <span :class="job.stage === 'error' ? 'text-error' : 'text-text-secondary'">
+              <span :class="job.stage === 'error' || job.stage === 'cancelled' ? 'text-error' : 'text-text-secondary'">
                 {{ stageLabel(job.stage) }}
               </span>
+              <template v-if="isJobActive(job)">
+                <button
+                  class="p-1 rounded hover:bg-bg-hover text-text-secondary transition-colors"
+                  :title="job.paused ? t('jobMonitor.resume') : t('jobMonitor.pause')"
+                  @click="togglePauseJob(job)"
+                >
+                  <Play v-if="job.paused" class="w-3 h-3" />
+                  <Pause v-else class="w-3 h-3" />
+                </button>
+                <button
+                  class="p-1 rounded hover:bg-bg-hover text-text-secondary transition-colors"
+                  :title="t('jobMonitor.stop')"
+                  @click="stopJob(job)"
+                >
+                  <Square class="w-3 h-3" />
+                </button>
+              </template>
             </span>
           </div>
           <div class="mt-2 h-1.5 rounded-full bg-bg-tertiary overflow-hidden">
             <div
               class="h-full bg-accent transition-all"
-              :class="{ 'bg-error': job.stage === 'error' }"
+              :class="{ 'bg-error': job.stage === 'error' || job.stage === 'cancelled' }"
               :style="{ width: `${job.progress}%` }"
             />
           </div>

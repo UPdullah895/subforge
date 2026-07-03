@@ -3,9 +3,11 @@ import { computed, reactive, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import Modal from "./Modal.vue";
 import { apiInvoke } from "../api/client";
+import { apiListen } from "../api/events";
 import { useBatchStore } from "../stores/batchStore";
+import { useJobQueue } from "../composables/useJobQueue";
 import { trackDisplayName } from "../utils/languageNames";
-import { AlertTriangle, Loader2 } from "lucide-vue-next";
+import { AlertTriangle, Loader2, Square } from "lucide-vue-next";
 
 const { t } = useI18n();
 
@@ -19,6 +21,7 @@ const emit = defineEmits<{
 }>();
 
 const batchStore = useBatchStore();
+const { cancelJob } = useJobQueue();
 
 const languageOptions = [
   { code: "en", label: "English" },
@@ -40,6 +43,9 @@ const languageOptions = [
 
 const deleteOriginals = ref(false);
 const merging = ref(false);
+const mergeProgress = ref(0);
+const currentJobId = ref<string | null>(null);
+const stopRequested = ref(false);
 
 // file path -> Set of sub paths checked for that file
 const selections = reactive<Record<string, Set<string>>>({});
@@ -292,10 +298,54 @@ async function applyDefaultOverrides(row: FileRow, mergedPath: string) {
   }
 }
 
+interface MergeJobResult {
+  status: string;
+  message?: string;
+  output_path?: string;
+}
+
+// merge_external_subs now returns a job_id immediately (the merge runs async
+// in the background so large-file remuxes no longer block the UI) — wait for
+// its "job-completed" event, filtered by job_id, instead of the old direct
+// return value.
+function waitForMergeJob(jobId: string): Promise<MergeJobResult> {
+  return new Promise((resolve) => {
+    let unlistenProgress: (() => void) | null = null;
+    let unlistenCompleted: (() => void) | null = null;
+    const cleanup = () => {
+      unlistenProgress?.();
+      unlistenCompleted?.();
+    };
+    apiListen<{ job_id: string; progress: number }>("job-progress", (payload) => {
+      if (payload.job_id === jobId) mergeProgress.value = payload.progress;
+    }).then((fn) => {
+      unlistenProgress = fn;
+    });
+    apiListen<{ job_id: string; status: string; message?: string; output_path?: string }>(
+      "job-completed",
+      (payload) => {
+        if (payload.job_id === jobId) {
+          cleanup();
+          resolve(payload);
+        }
+      }
+    ).then((fn) => {
+      unlistenCompleted = fn;
+    });
+  });
+}
+
+async function stopMerge() {
+  stopRequested.value = true;
+  if (currentJobId.value) await cancelJob(currentJobId.value);
+}
+
 async function confirmMerge() {
   merging.value = true;
+  stopRequested.value = false;
   try {
     for (const row of rows.value) {
+      if (stopRequested.value) break;
       const selectedPaths = selections[row.path];
       if (!selectedPaths || selectedPaths.size === 0) continue;
       const subs = row.subs
@@ -307,10 +357,23 @@ async function confirmMerge() {
           make_default: defaultSubtitleChoice[row.path] === `new:${s.path}`,
         }));
       try {
-        const result = await apiInvoke<{ output_path: string }>("merge_external_subs", {
+        mergeProgress.value = 0;
+        const jobId = await apiInvoke<string>("merge_external_subs", {
           request: { video_path: row.path, subs, delete_originals: deleteOriginals.value },
         });
-        await applyDefaultOverrides(row, result.output_path);
+        currentJobId.value = jobId;
+        const result = await waitForMergeJob(jobId);
+        if (result.status === "cancelled") {
+          stopRequested.value = true;
+          break;
+        }
+        if (result.status === "failed") {
+          for (const sub of subs) {
+            batchStore.upsertExternalSub(row.path, sub.lang, "error", result.message ?? "Merge failed");
+          }
+          continue;
+        }
+        await applyDefaultOverrides(row, result.output_path!);
       } catch (e) {
         const message = e instanceof Error ? e.message : String(e);
         for (const sub of subs) {
@@ -321,6 +384,8 @@ async function confirmMerge() {
     await batchStore.rescan();
   } finally {
     merging.value = false;
+    currentJobId.value = null;
+    mergeProgress.value = 0;
     emit("close");
   }
 }
@@ -478,7 +543,26 @@ async function confirmMerge() {
     </div>
 
     <template #footer>
+      <div v-if="merging" class="flex items-center gap-2 flex-1 min-w-0">
+        <div class="flex-1 h-1.5 rounded-full bg-bg-tertiary overflow-hidden">
+          <div
+            class="h-full bg-accent transition-all"
+            :style="{ width: `${mergeProgress}%` }"
+          />
+        </div>
+        <span class="text-xs text-text-secondary tabular-nums shrink-0">{{ Math.round(mergeProgress) }}%</span>
+      </div>
       <button
+        v-if="merging"
+        class="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-bg-tertiary text-text-secondary text-xs font-medium hover:bg-bg-hover transition-colors"
+        :disabled="stopRequested"
+        @click="stopMerge"
+      >
+        <Square class="w-3 h-3" />
+        {{ t("jobMonitor.stop") }}
+      </button>
+      <button
+        v-else
         class="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-bg-tertiary text-text-secondary text-xs font-medium hover:bg-bg-hover transition-colors"
         @click="emit('close')"
       >

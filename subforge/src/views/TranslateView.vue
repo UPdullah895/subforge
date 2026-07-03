@@ -20,6 +20,8 @@ import {
   XCircle,
   X,
   Play,
+  Pause,
+  Square,
   RefreshCw,
   Brain,
   Globe,
@@ -45,6 +47,26 @@ const fileCount = computed(() => selectedFiles.value.length);
 const activeJob = computed(() =>
   translateStore.jobs.find((j) => j.status === JOB_STATUS.RUNNING || j.status === JOB_STATUS.PENDING)
 );
+
+const pausedJobId = ref<string | null>(null);
+
+async function toggleActiveJobPause() {
+  if (!activeJob.value) return;
+  const id = activeJob.value.id;
+  if (pausedJobId.value === id) {
+    await translateStore.resumeJob(id);
+    pausedJobId.value = null;
+  } else {
+    await translateStore.pauseJob(id);
+    pausedJobId.value = id;
+  }
+}
+
+async function stopActiveJob() {
+  if (!activeJob.value) return;
+  await translateStore.cancelJob(activeJob.value.id);
+  pausedJobId.value = null;
+}
 
 const engines: { id: EngineType; icon: typeof Brain }[] = [
   { id: "ollama", icon: Brain },
@@ -509,7 +531,24 @@ onUnmounted(() => {
               {{ activeJob.message || t("translate.activeJobProgress") }}
             </span>
           </div>
-          <span class="text-sm font-bold text-accent">{{ Math.round(activeJob.progress) }}%</span>
+          <div class="flex items-center gap-2">
+            <span class="text-sm font-bold text-accent">{{ Math.round(activeJob.progress) }}%</span>
+            <button
+              class="p-1.5 rounded hover:bg-bg-hover text-text-secondary transition-colors"
+              :title="pausedJobId === activeJob.id ? t('jobMonitor.resume') : t('jobMonitor.pause')"
+              @click="toggleActiveJobPause"
+            >
+              <Play v-if="pausedJobId === activeJob.id" class="w-3.5 h-3.5" />
+              <Pause v-else class="w-3.5 h-3.5" />
+            </button>
+            <button
+              class="p-1.5 rounded hover:bg-bg-hover text-text-secondary transition-colors"
+              :title="t('jobMonitor.stop')"
+              @click="stopActiveJob"
+            >
+              <Square class="w-3.5 h-3.5" />
+            </button>
+          </div>
         </div>
         <div class="w-full bg-bg-tertiary rounded-full h-2 overflow-hidden">
           <div
@@ -540,7 +579,10 @@ onUnmounted(() => {
           >
             <div class="flex items-center gap-3 mb-2">
               <CheckCircle2 v-if="job.status === JOB_STATUS.COMPLETED" class="w-4 h-4 text-success shrink-0" />
-              <XCircle v-else-if="job.status === JOB_STATUS.FAILED" class="w-4 h-4 text-error shrink-0" />
+              <XCircle
+                v-else-if="job.status === JOB_STATUS.FAILED || job.status === JOB_STATUS.CANCELLED"
+                class="w-4 h-4 text-error shrink-0"
+              />
               <Loader2 v-else class="w-4 h-4 text-accent animate-spin shrink-0" />
               <div class="flex-1 min-w-0">
                 <p class="text-xs text-text-muted font-mono truncate">{{ job.id.slice(0, 24) }}…</p>

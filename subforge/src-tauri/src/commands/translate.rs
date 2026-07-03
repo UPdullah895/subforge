@@ -1,9 +1,10 @@
-use crate::jobs::{Job, JobStatus, JobType, SharedJobQueue};
+use crate::jobs::{Job, JobStatus, JobType, SharedJobQueue, JobControlRegistry};
 use crate::tools::mkvtoolnix;
 use crate::tools::translate;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
+use std::sync::Arc;
 use tauri::{AppHandle, Emitter, State};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -64,6 +65,7 @@ pub struct TranslateRequest {
 pub async fn translate_subtitles(
     app: AppHandle,
     queue: State<'_, SharedJobQueue>,
+    controls: State<'_, JobControlRegistry>,
     request: TranslateRequest,
 ) -> Result<String, String> {
     let job_id = format!("translate-{}", uuid::Uuid::new_v4());
@@ -85,10 +87,16 @@ pub async fn translate_subtitles(
 
     let app_clone = app.clone();
     let queue_clone = queue.inner().clone();
+    let controls_clone = controls.inner().clone();
     let job_id_clone = job_id.clone();
     let req = request;
 
     tokio::spawn(async move {
+        let control = Arc::new(crate::jobs::JobControl::new());
+        {
+            let mut registry = controls_clone.lock().unwrap();
+            registry.insert(job_id_clone.clone(), control.clone());
+        }
         // Extract lines
         {
             let mut q = queue_clone.lock().unwrap();
@@ -112,6 +120,8 @@ pub async fn translate_subtitles(
                     "status": "failed",
                     "message": e.to_string(),
                 }));
+                let mut registry = controls_clone.lock().unwrap();
+                registry.remove(&job_id_clone);
                 return;
             }
         };
@@ -126,6 +136,23 @@ pub async fn translate_subtitles(
         };
 
         for (batch_idx, chunk) in lines.chunks(batch_size).enumerate() {
+            control.wait_if_paused().await;
+            if control.is_cancelled() {
+                {
+                    let mut q = queue_clone.lock().unwrap();
+                    q.update_status(&job_id_clone, JobStatus::Cancelled);
+                    q.update_progress(&job_id_clone, 0.0, Some("Translation cancelled".to_string()));
+                }
+                let _ = app_clone.emit("job-completed", serde_json::json!({
+                    "job_id": job_id_clone,
+                    "status": "cancelled",
+                    "message": "Translation cancelled",
+                }));
+                let mut registry = controls_clone.lock().unwrap();
+                registry.remove(&job_id_clone);
+                return;
+            }
+
             let batch_start = batch_idx * batch_size;
             let batch_end = (batch_start + chunk.len()).min(total);
             let pct = 10 + ((batch_end as f64 / total as f64) * 80.0) as i32;
@@ -240,6 +267,8 @@ pub async fn translate_subtitles(
                 "status": "failed",
                 "message": e.to_string(),
             }));
+            let mut registry = controls_clone.lock().unwrap();
+            registry.remove(&job_id_clone);
             return;
         }
 
@@ -255,6 +284,9 @@ pub async fn translate_subtitles(
             "status": "completed",
             "message": format!("Translated {} lines", total),
         }));
+
+        let mut registry = controls_clone.lock().unwrap();
+        registry.remove(&job_id_clone);
     });
 
     Ok(job_id)
@@ -298,6 +330,7 @@ fn emit_stage(app: &AppHandle, job_id: &str, stage: &str, progress: i32, message
 pub async fn run_translation_pipeline(
     app: AppHandle,
     queue: State<'_, SharedJobQueue>,
+    controls: State<'_, JobControlRegistry>,
     request: PipelineRequest,
 ) -> Result<String, String> {
     let job_id = format!("pipeline-{}", uuid::Uuid::new_v4());
@@ -318,10 +351,17 @@ pub async fn run_translation_pipeline(
 
     let app_clone = app.clone();
     let queue_clone = queue.inner().clone();
+    let controls_clone = controls.inner().clone();
     let job_id_clone = job_id.clone();
     let req = request;
 
     tokio::spawn(async move {
+        let control = Arc::new(crate::jobs::JobControl::new());
+        {
+            let mut registry = controls_clone.lock().unwrap();
+            registry.insert(job_id_clone.clone(), control.clone());
+        }
+
         macro_rules! fail {
             ($msg:expr) => {{
                 let __msg: String = $msg;
@@ -339,6 +379,8 @@ pub async fn run_translation_pipeline(
                         "message": __msg,
                     }),
                 );
+                let mut registry = controls_clone.lock().unwrap();
+                registry.remove(&job_id_clone);
                 return;
             }};
         }
@@ -386,6 +428,24 @@ pub async fn run_translation_pipeline(
         };
 
         for (batch_idx, chunk) in lines.chunks(batch_size).enumerate() {
+            control.wait_if_paused().await;
+            if control.is_cancelled() {
+                {
+                    let mut q = queue_clone.lock().unwrap();
+                    q.update_status(&job_id_clone, JobStatus::Cancelled);
+                    q.update_progress(&job_id_clone, 0.0, Some("Translation cancelled".to_string()));
+                }
+                let _ = app_clone.emit("job-completed", serde_json::json!({
+                    "job_id": job_id_clone,
+                    "stage": "error",
+                    "status": "cancelled",
+                    "message": "Translation cancelled",
+                }));
+                let mut registry = controls_clone.lock().unwrap();
+                registry.remove(&job_id_clone);
+                return;
+            }
+
             let batch_start = batch_idx * batch_size;
             let batch_end = (batch_start + chunk.len()).min(total);
             let pct = 15 + ((batch_end as f64 / total as f64) * 65.0) as i32;
@@ -464,6 +524,24 @@ pub async fn run_translation_pipeline(
         let _ = fs::remove_file(&temp_json);
 
         // Stage 3: merge (optional)
+        control.wait_if_paused().await;
+        if control.is_cancelled() {
+            {
+                let mut q = queue_clone.lock().unwrap();
+                q.update_status(&job_id_clone, JobStatus::Cancelled);
+                q.update_progress(&job_id_clone, 0.0, Some("Translation cancelled".to_string()));
+            }
+            let _ = app_clone.emit("job-completed", serde_json::json!({
+                "job_id": job_id_clone,
+                "stage": "error",
+                "status": "cancelled",
+                "message": "Translation cancelled",
+            }));
+            let mut registry = controls_clone.lock().unwrap();
+            registry.remove(&job_id_clone);
+            return;
+        }
+
         let output_path = if req.auto_merge {
             emit_stage(&app_clone, &job_id_clone, "merging", 90, "Merging translated subtitle into video...");
             let merged_path = video_dir
@@ -477,7 +555,14 @@ pub async fn run_translation_pipeline(
                 hearing_impaired: req.hearing_impaired,
                 make_default: req.set_default_subtitle,
             };
-            if let Err(e) = mkvtoolnix::merge_subtitles(&req.video_path, &[sub_spec], &merged_path) {
+            if let Err(e) = mkvtoolnix::merge_subtitles_async(&req.video_path, &[sub_spec], &merged_path, Some(&control), |pct| {
+                let merge_pct = 90.0 + (pct * 0.1);
+                {
+                    let mut q = queue_clone.lock().unwrap();
+                    q.update_progress(&job_id_clone, merge_pct, None);
+                }
+                emit_stage(&app_clone, &job_id_clone, "merging", merge_pct as i32, &format!("Merging... {}%", pct as i32));
+            }).await {
                 fail!(e.to_string());
             }
             merged_path
@@ -500,6 +585,9 @@ pub async fn run_translation_pipeline(
                 "output_path": output_path,
             }),
         );
+
+        let mut registry = controls_clone.lock().unwrap();
+        registry.remove(&job_id_clone);
     });
 
     Ok(job_id)

@@ -1,7 +1,9 @@
 use serde::{Deserialize, Serialize};
 use std::sync::{Arc, Mutex};
+use std::sync::atomic::{AtomicBool, Ordering};
 use tauri::{AppHandle, Emitter};
 use tokio::process::Command;
+use tokio::sync::Notify;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "lowercase")]
@@ -10,6 +12,8 @@ pub enum JobStatus {
     Running,
     Completed,
     Failed,
+    Cancelled,
+    Paused,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -78,6 +82,64 @@ impl JobQueue {
 }
 
 pub type SharedJobQueue = Arc<Mutex<JobQueue>>;
+
+#[derive(Debug)]
+pub struct JobControl {
+    cancelled: AtomicBool,
+    paused: AtomicBool,
+    notify: Notify,
+}
+
+impl JobControl {
+    pub fn new() -> Self {
+        Self {
+            cancelled: AtomicBool::new(false),
+            paused: AtomicBool::new(false),
+            notify: Notify::new(),
+        }
+    }
+
+    pub fn cancel(&self) {
+        self.cancelled.store(true, Ordering::SeqCst);
+        self.notify.notify_waiters();
+    }
+
+    pub fn pause(&self) {
+        self.paused.store(true, Ordering::SeqCst);
+    }
+
+    pub fn resume(&self) {
+        self.paused.store(false, Ordering::SeqCst);
+        self.notify.notify_waiters();
+    }
+
+    pub fn is_cancelled(&self) -> bool {
+        self.cancelled.load(Ordering::SeqCst)
+    }
+
+    pub fn is_paused(&self) -> bool {
+        self.paused.load(Ordering::SeqCst)
+    }
+
+    /// Waits until resumed or cancelled. Uses the documented Notify idiom
+    /// (create the `notified()` future, re-check the condition, THEN await
+    /// it) to avoid the missed-wakeup race between checking `is_paused()`
+    /// and a concurrent `resume()`/`cancel()` call.
+    pub async fn wait_if_paused(&self) {
+        loop {
+            if self.is_cancelled() || !self.is_paused() {
+                return;
+            }
+            let notified = self.notify.notified();
+            if self.is_cancelled() || !self.is_paused() {
+                return;
+            }
+            notified.await;
+        }
+    }
+}
+
+pub type JobControlRegistry = Arc<Mutex<std::collections::HashMap<String, Arc<JobControl>>>>;
 
 pub async fn run_command_job(
     app: AppHandle,

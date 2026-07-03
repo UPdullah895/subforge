@@ -4,11 +4,12 @@ pub mod jobs;
 pub mod tools;
 
 use commands::{
-    audio as audio_cmds, batch as batch_cmds, providers as providers_cmds, rename as rename_cmds,
+    audio as audio_cmds, batch as batch_cmds, jobs as jobs_cmds, providers as providers_cmds, rename as rename_cmds,
     subtitle as subtitle_cmds, transcribe as transcribe_cmds, translate as translate_cmds,
 };
-use jobs::SharedJobQueue;
+use jobs::{SharedJobQueue, JobControlRegistry};
 use std::sync::{Arc, Mutex};
+use std::collections::HashMap;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -36,9 +37,11 @@ pub fn run() {
     }
 
     let job_queue: SharedJobQueue = Arc::new(Mutex::new(jobs::JobQueue::new()));
+    let job_controls: JobControlRegistry = Arc::new(Mutex::new(HashMap::new()));
 
     tauri::Builder::default()
         .manage(job_queue)
+        .manage(job_controls)
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
@@ -74,6 +77,9 @@ pub fn run() {
             rename_cmds::preview_rename,
             rename_cmds::apply_rename,
             providers_cmds::test_provider_config,
+            jobs_cmds::cancel_job,
+            jobs_cmds::pause_job,
+            jobs_cmds::resume_job,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

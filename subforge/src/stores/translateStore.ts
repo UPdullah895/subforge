@@ -60,7 +60,8 @@ export const useTranslateStore = defineStore("translate", () => {
   const openaiKey = ref("");
   const openaiModel = ref("gpt-4o-mini");
   const googleApiKey = ref("");
-  const { jobs, addJob, updateJobProgress, completeJob, clearCompleted } = useJobQueue();
+  const { jobs, addJob, updateJobProgress, completeJob, clearCompleted, cancelJob, pauseJob, resumeJob } =
+    useJobQueue();
   const error = ref<string | null>(null);
   const previewOriginal = ref<string[]>([]);
   const previewTranslated = ref<string[]>([]);
@@ -201,6 +202,9 @@ export const useTranslateStore = defineStore("translate", () => {
     updateJobProgress,
     completeJob,
     clearCompleted,
+    cancelJob,
+    pauseJob,
+    resumeJob,
     setPreview,
   };
 });

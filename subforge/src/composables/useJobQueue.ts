@@ -1,5 +1,6 @@
 import { ref } from "vue";
 import { JOB_STATUS, type JobStatus } from "../constants/jobStatus";
+import { apiInvoke } from "../api/client";
 
 export interface Job {
   id: string;
@@ -48,5 +49,30 @@ export function useJobQueue() {
     jobs.value = jobs.value.filter((j) => j.id !== id);
   }
 
-  return { jobs, addJob, updateJobProgress, completeJob, clearCompleted, clearAll, removeJob };
+  async function cancelJob(jobId: string): Promise<void> {
+    try {
+      await apiInvoke<void>("cancel_job", { request: { job_id: jobId } });
+    } catch (e) {
+      // Expected if job already finished or never existed
+      console.debug(`Cancel job failed (expected if job finished): ${jobId}`, e);
+    }
+  }
+
+  async function pauseJob(jobId: string): Promise<void> {
+    try {
+      await apiInvoke<void>("pause_job", { request: { job_id: jobId } });
+    } catch (e) {
+      console.debug(`Pause job failed: ${jobId}`, e);
+    }
+  }
+
+  async function resumeJob(jobId: string): Promise<void> {
+    try {
+      await apiInvoke<void>("resume_job", { request: { job_id: jobId } });
+    } catch (e) {
+      console.debug(`Resume job failed: ${jobId}`, e);
+    }
+  }
+
+  return { jobs, addJob, updateJobProgress, completeJob, clearCompleted, clearAll, removeJob, cancelJob, pauseJob, resumeJob };
 }
