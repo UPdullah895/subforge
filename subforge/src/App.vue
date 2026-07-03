@@ -3,6 +3,7 @@ import { ref, watch, onMounted } from "vue";
 import { useI18n } from "vue-i18n";
 import { useAppStore } from "./stores/appStore";
 import TitleBar from "./components/TitleBar.vue";
+import ResizeHandles from "./components/ResizeHandles.vue";
 import AppSidebar from "./components/AppSidebar.vue";
 import SubtitleView from "./views/SubtitleView.vue";
 import AudioView from "./views/AudioView.vue";
@@ -44,6 +45,7 @@ onMounted(() => {
 
 <template>
   <div class="flex flex-col h-full bg-bg-primary">
+    <ResizeHandles />
     <TitleBar />
     <div class="flex flex-1 min-h-0">
       <AppSidebar :current="currentView" @navigate="currentView = $event" />
