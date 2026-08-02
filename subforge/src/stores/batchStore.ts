@@ -36,6 +36,15 @@ export interface VideoFileInfo {
   external_subs: ExternalSub[];
 }
 
+export interface ResolvedMetadata {
+  title: string;
+  year?: number;
+  season?: number;
+  episode?: number;
+  provider: "tmdb" | "tvmaze";
+  seriesId: string;
+}
+
 export interface ScanOptions {
   path: string;
   recursive: boolean;
@@ -49,6 +58,7 @@ export const useBatchStore = defineStore("batch", () => {
   const error = ref<string | null>(null);
   const lastScannedPath = ref<string | null>(null);
   const { jobs, addJob, clearAll } = useJobQueue();
+  const resolvedMetadata = ref<Record<string, ResolvedMetadata>>({});
 
   const pipelineJobs = new Map<string, { path: string; lang: string }>();
   let pipelineListenersRegistered = false;
@@ -173,6 +183,10 @@ export const useBatchStore = defineStore("batch", () => {
     clearAll();
   }
 
+  function setResolvedMetadata(path: string, metadata: ResolvedMetadata) {
+    resolvedMetadata.value[path] = metadata;
+  }
+
   return {
     scannedFiles,
     selectedFiles,
@@ -180,6 +194,7 @@ export const useBatchStore = defineStore("batch", () => {
     error,
     jobs,
     lastScannedPath,
+    resolvedMetadata,
     scanDirectory,
     rescan,
     batchExtract,
@@ -187,6 +202,7 @@ export const useBatchStore = defineStore("batch", () => {
     selectAll,
     deselectAll,
     clearJobs,
+    setResolvedMetadata,
     registerPipelineJob,
     upsertExternalSub,
   };

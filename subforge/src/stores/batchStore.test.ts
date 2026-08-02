@@ -46,4 +46,24 @@ describe("batchStore", () => {
     expect(store.error).toBeTruthy();
     expect(store.jobs).toHaveLength(0);
   });
+
+  it("records resolved metadata for a path", () => {
+    const store = useBatchStore();
+    store.setResolvedMetadata("/videos/Show - S01E02.mkv", {
+      title: "Show",
+      year: 2020,
+      season: 1,
+      episode: 2,
+      provider: "tmdb",
+      seriesId: "123",
+    });
+    expect(store.resolvedMetadata["/videos/Show - S01E02.mkv"]).toEqual({
+      title: "Show",
+      year: 2020,
+      season: 1,
+      episode: 2,
+      provider: "tmdb",
+      seriesId: "123",
+    });
+  });
 });

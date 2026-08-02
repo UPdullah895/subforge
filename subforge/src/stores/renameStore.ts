@@ -1,6 +1,7 @@
 import { defineStore } from "pinia";
 import { ref } from "vue";
 import { apiInvoke } from "../api/client";
+import { useBatchStore } from "./batchStore";
 
 export type RenameProvider = "tmdb" | "tvmaze";
 export type RenameMode = "manual" | RenameProvider;
@@ -188,14 +189,32 @@ export const useRenameStore = defineStore("rename", () => {
   }
 
   async function apply(): Promise<number> {
-    const mapping = previewRows.value
-      .filter((r) => r.new_name)
-      .map((r) => ({
-        old_path: r.old_path,
-        new_path: `${fileDir(r.old_path)}${r.new_name}`,
-      }));
+    const rows = previewRows.value.filter((r) => r.new_name);
+    const mapping = rows.map((r) => ({
+      old_path: r.old_path,
+      new_path: `${fileDir(r.old_path)}${r.new_name}`,
+    }));
     if (mapping.length === 0) return 0;
-    return apiInvoke<number>("apply_rename", { mapping });
+
+    const renamed = await apiInvoke<number>("apply_rename", { mapping });
+
+    if (mode.value !== "manual" && selectedSeries.value) {
+      const { name, year, provider, id } = selectedSeries.value;
+      for (const row of rows) {
+        if (row.season == null || row.episode == null) continue;
+        const newPath = `${fileDir(row.old_path)}${row.new_name}`;
+        useBatchStore().setResolvedMetadata(newPath, {
+          title: name,
+          year,
+          season: row.season,
+          episode: row.episode,
+          provider,
+          seriesId: id,
+        });
+      }
+    }
+
+    return renamed;
   }
 
   return {
