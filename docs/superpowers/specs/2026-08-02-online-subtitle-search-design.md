@@ -15,10 +15,36 @@ to the current auto-translate flow unchanged.
 1. **Subsource** — primary, default-on, no user setup. Uses an app-embedded API key (per the
    product decision that Subsource currently has no restrictive per-user quota). Title/season/
    episode/year search only.
-2. **OpenSubtitles.com** — optional, requires the user's own free API key (free tier is
-   5 downloads/24h and tied to the key, so an app-embedded key is not viable). Supports file-hash
-   matching, which is more accurate than title search because it matches the exact release
-   (correct timing/frame count). Skipped silently (not an error) when no key is configured.
+2. **OpenSubtitles.com** — optional, requires the user's own credentials (see "OpenSubtitles auth
+   model" below — this changed from the original "just an API key" framing after checking their
+   live docs). Supports file-hash matching, which is more accurate than title search because it
+   matches the exact release (correct timing/frame count). Skipped silently (not an error) when
+   no credentials are configured.
+
+### OpenSubtitles auth model (corrected during research)
+
+Their live docs (`https://opensubtitles.stoplight.io/docs/opensubtitles-api`) state: *"Using one
+key per application is mandatory — if you develop an application requiring users to create their
+own API key we will ban their access."* Their `/download` endpoint requires **both** an `Api-Key`
+header (identifies the consuming application) **and** an `Authorization: Bearer <JWT>` header,
+where the JWT comes only from `POST /api/v1/login` with a **username + password** — not from an
+API key.
+
+The conventional fix (what Bazarr does) is one API key embedded by the app's maintainer, with
+each end user logging in via username/password for their personal quota. **SubForge deliberately
+does not do this**: because SubForge is fully open source, the project embeds no OpenSubtitles
+credential of its own (unlike Subsource, above). Instead, **each user supplies all three**: their
+own OpenSubtitles.com API key (created from their own account's Profile → API Consumers page),
+username, and password. This is a disclosed, deliberate departure from OpenSubtitles' stated
+preference — since every user brings their own key rather than sharing one app-wide key, the
+blast radius of any single misuse/ban is that one user's own key, not a shared SubForge-wide key
+affecting everyone.
+
+Flow: `POST /api/v1/login` (headers: `Api-Key`, `Content-Type: application/json`, `User-Agent`;
+body `{"username", "password"}`) → response `{token, base_url, user: {allowed_downloads, ...},
+status}`. Cache the JWT for 24h (their documented validity window); re-login on expiry or on a
+401/`"invalid"` response. Login itself is rate-limited (1/sec, 10/min, 30/hour per their docs) —
+never retry a login in a loop.
 
 ## Fallback order
 
@@ -43,22 +69,48 @@ New shared crate `crates/subforge-subtitle-sources`, following the existing
 `subforge-metadata` pattern (already depended on by both `src-tauri/Cargo.toml` and
 `server/Cargo.toml`):
 
-- `subsource.rs` — Subsource API client: search by title/year/season/episode, download the
-  matched file. Exact endpoint shapes to be confirmed against Subsource's docs during planning —
-  not fabricated here.
-- `opensubtitles.rs` — OpenSubtitles.com REST client (`https://opensubtitles.stoplight.io/`):
-  - Hash computation following their documented (non-standard) algorithm exactly — must be
-    verified against their spec and, ideally, checked against published test vectors during
-    planning, not assumed.
-  - `search_by_hash(hash, filesize, lang)`.
-  - `search_by_title(title, year, season, episode, lang)` fallback for when no hash match exists
-    even with a key configured.
-  - `download(file_id, api_key)`.
-  - Distinct handling for HTTP 429 (rate limit) vs. other failures.
-- `mod.rs` — orchestration: a `find_subtitle(request, opensubtitles_key: Option<String>)`
-  function implementing the fallback order above. Pure business logic — it receives an
-  already-resolved API key as a parameter rather than reading credential storage itself, so it
-  stays backend-agnostic and testable with mocked HTTP.
+- `subsource.rs` — Subsource API client. Base URL `https://api.subsource.net`, auth header
+  `X-API-Key`, documented rate limits 60/min, 1800/hour, 7200/day. The public docs page
+  (`subsource.net/api-docs`) is a JS-rendered app that blocks automated fetching (403), so the
+  exact request/response JSON field names must be confirmed with a live "Try it out" call (or by
+  inspecting the official `.NET` wrapper at `github.com/moviecollection/sub-source`, which exposes
+  the same shape as `SearchMoviesAsync({Query, SearchType}) → movie.id`, then
+  `GetSubtitlesAsync({MovieId, Language}) → subtitle list`, then `GetSubtitleByIdAsync(id)`, then
+  `DownloadSubtitleAsync(id) → zip file`) as the first task of implementation, not assumed here.
+- `opensubtitles.rs` — OpenSubtitles.com REST client, verified against their live Stoplight docs:
+  - Base URL `https://api.opensubtitles.com/api/v1`. Every request needs `Api-Key` and
+    `User-Agent` (or `X-User-Agent`) headers; `Authorization: Bearer <JWT>` is added once logged
+    in.
+  - `login(api_key, username, password) -> {token, base_url, user}` — `POST /login`, body
+    `{"username", "password"}`. Note the response can carry a different `base_url` (e.g.
+    `vip-api.opensubtitles.com`) that subsequent requests should use.
+  - Hash computation: `moviehash = filesize + sum_u64_le(first 64KiB) + sum_u64_le(last 64KiB)`,
+    unsigned 64-bit wraparound arithmetic, data read as little-endian `u64` (8192 values per
+    64KiB chunk), formatted as a zero-padded lowercase 16-hex-digit string. Files under 128KiB
+    can't be hashed (both regions overlap the same bytes when the file is between 64KiB and
+    128KiB). This is the same "OSHash"/"moviehash" algorithm documented at
+    `opensubtitles.github.io/oshash` and used by Subliminal/`subliminal` and other established
+    clients — cross-checked across two independent sources during planning, not assumed from one.
+  - `search(moviehash?, query?, languages, parent_imdb_id?/parent_tmdb_id?, season_number?,
+    episode_number?, year?, type) -> GET /subtitles` — response
+    `{total_pages, total_count, per_page, page, data: [{id, type, attributes: {subtitle_id,
+    language, download_count, hearing_impaired, hd, feature_details: {title, year,
+    season_number, episode_number, ...}, files: [{file_id, cd_number, file_name}]}}]}`. When
+    `moviehash` is sent, matches get `moviehash_match: true` and sort first.
+  - `download(file_id, jwt) -> POST /download` — requires **both** `Api-Key` and
+    `Authorization: Bearer` headers per their docs (their separate "Getting started" page
+    describes a small anonymous quota that appears to contradict this, so the client always
+    logs in first rather than relying on undocumented anonymous behavior). Body `{"file_id"}`,
+    response `{link, file_name, requests, remaining, message, reset_time_utc}` — `link` is a
+    temporary URL (≤3 hours) to fetch the actual SRT.
+  - Distinct handling for HTTP 429 / rate-limit response headers (`ratelimit-remaining`,
+    `x-ratelimit-remaining-second`) vs. other failures — both map to "treat as miss, fall
+    through" per the orchestration logic below, never a crash or blocking retry loop.
+- `mod.rs` — orchestration: a `find_subtitle(request, opensubtitles_credentials:
+  Option<OpenSubtitlesCredentials>)` function (where `OpenSubtitlesCredentials { api_key,
+  username, password }`) implementing the fallback order above. Pure business logic — it
+  receives already-resolved credentials as a parameter rather than reading credential storage
+  itself, so it stays backend-agnostic and testable with mocked HTTP.
 
 Both binaries get thin wrapper layers over this crate:
 
@@ -75,30 +127,39 @@ rather than failing the job or crashing — mirroring the existing per-file try/
 ## Credential storage — forked by binary
 
 The original requirement (OS-keychain storage for the OpenSubtitles key, verified equivalent on
-Linux/Windows/macOS) assumed a single desktop binary. With server mode also in scope, this
-necessarily forks:
+Linux/Windows/macOS) assumed a single desktop binary and a single key value. With server mode
+also in scope, and the auth-model correction above (three fields — API key, username, password —
+instead of one), this necessarily forks:
 
 - **Tauri desktop app**: new `src-tauri/src/credentials.rs` module wrapping the `keyring` crate
   (confirmed support: Secret Service/libsecret on Linux, Credential Manager on Windows, Keychain
-  on macOS). Behind a small trait so unit tests inject a mock instead of touching the real OS
-  credential store. The raw key is never sent back to the frontend after it's saved — only a
-  `configured: bool` status. Commands: `set_opensubtitles_key`, `test_opensubtitles_connection`,
-  `clear_opensubtitles_key`, `get_opensubtitles_status`.
+  on macOS). All three fields (`api_key`, `username`, `password`) are stored as one
+  JSON-serialized secret under a single keyring `Entry` (service `"subforge"`, account
+  `"opensubtitles"`), behind a small trait so unit tests inject a mock instead of touching the
+  real OS credential store. None of the three raw values are ever sent back to the frontend
+  after saving — only a `configured: bool` status. Commands: `set_opensubtitles_credentials`,
+  `test_opensubtitles_connection`, `clear_opensubtitles_credentials`, `get_opensubtitles_status`.
   - Linux build dependency: `libsecret-1-dev` (apt) / `libsecret` (pacman), added to
     `.github/workflows/ci.yml`'s `rust-tauri` job and `.github/workflows/release.yml`'s Linux
     step, alongside the existing `libwebkit2gtk-4.1-dev` etc.
   - `cargo check` in CI only needs the dev headers at compile time, not a running Secret Service
     daemon, so CI stays green without a desktop session.
-- **Axum server** (headless, Docker-oriented): the key joins the existing plaintext
-  `AppConfig.opensubtitles_api_key: Option<String>` field, exactly like `tmdb_api_key`,
-  `deepl_api_key`, etc. today (confirmed both binaries already share one `config.json` on disk
-  for these). Adds an `OPENSUBTITLES_API_KEY` env var override, read at startup and taking
-  precedence over the config file value — a common self-hosted/Docker convention, and new
-  compared to the server's current config handling (no other key has an env override today).
+- **Axum server** (headless, Docker-oriented): the three fields join the existing plaintext
+  `AppConfig` as `opensubtitles_api_key: Option<String>`, `opensubtitles_username: Option<String>`,
+  `opensubtitles_password: Option<String>`, exactly like `tmdb_api_key`, `deepl_api_key`, etc.
+  today (confirmed both binaries already share one `config.json` on disk for these). Adds
+  `OPENSUBTITLES_API_KEY` / `OPENSUBTITLES_USERNAME` / `OPENSUBTITLES_PASSWORD` env var
+  overrides, read at startup and taking precedence over the config file values — a common
+  self-hosted/Docker convention, and new compared to the server's current config handling (no
+  other key has an env override today).
   - This does **not** meet "stored securely" for server mode — no coherent alternative exists
     for a headless process. It's consistent with how the server already treats every other
     secret, and is a deliberate, disclosed deviation from the original spec's letter, driven by
     the decision to cover both backends.
+- The cached JWT (from login) is kept **in memory only** in both binaries (process-lifetime
+  `Mutex<Option<CachedToken>>` state, not persisted to disk or keychain) — it's a derived,
+  short-lived (24h) credential, re-obtainable from the stored username/password, so persisting it
+  separately would just be another place for a secret to leak without benefit.
 
 ## Metadata: title/season/episode/year for the search
 
@@ -131,16 +192,21 @@ today, via `mkvtoolnix::merge_subtitles_async`.
 - New Pinia store `subtitleSourcesStore.ts` (8th store, alongside `appStore`, `subtitleStore`,
   `audioStore`, `batchStore`, `renameStore`, `transcribeStore`, `translateStore`). Holds: the
   on/off toggle (persisted via `AppConfig.search_online_before_translate`, default `true`),
-  OpenSubtitles `configured: bool` status (never the raw key), Subsource reachability status.
+  OpenSubtitles `configured: bool` status (never the raw credentials), Subsource reachability
+  status.
 - New "Subtitle Sources" section in `SettingsView.vue`, matching the existing "API & Providers"
   card pattern (`providers` array + `testStatus` reactive + `test_provider_config` command). The
-  `"opensubtitles"` provider joins the existing match in
-  `src-tauri/src/commands/providers.rs::test_provider_config` (reading the key from the keyring
-  module instead of `AppConfig`, unlike every other arm there). Subsource shows as always-active
-  with a status indicator only (reachable/unreachable ping), no config. Help text for
-  OpenSubtitles links to registration + API docs and explains the personal-key requirement,
-  using the app's existing i18n system (`en.json`/`ar.json`) rather than being hardcoded to one
-  language.
+  OpenSubtitles card is a **login form** (API key, username, password fields — not a single key
+  field, per the auth-model correction above), with a "Test connection" button that calls
+  `set_opensubtitles_credentials` then `test_opensubtitles_connection`. The `"opensubtitles"`
+  provider joins the existing match in
+  `src-tauri/src/commands/providers.rs::test_provider_config` (reading from the keyring module
+  instead of `AppConfig`, unlike every other arm there). Subsource shows as always-active with a
+  status indicator only (reachable/unreachable ping), no config. Help text explains, via the
+  app's existing i18n system (`en.json`/`ar.json`, not hardcoded to one language), why a personal
+  OpenSubtitles account + API key are required (linking to registration and the API docs), and
+  that this is a deliberate SubForge choice (no shared app key) rather than an OpenSubtitles
+  requirement.
 - `AutoTranslateWizard.vue`'s `FileStage` type gains a `"searching"` stage before
   `"extracting"`/`"translating"`. When the toggle is on, `startPipeline()` calls
   `search_online_subtitle` per file/lang first; on a hit it downloads and (if `autoMerge` is on)
@@ -150,15 +216,19 @@ today, via `mkvtoolnix::merge_subtitles_async`.
 
 ## Testing
 
-- Rust unit tests for the hash algorithm against OpenSubtitles' published test vectors.
+- Rust unit tests for the hash algorithm against known-good fixtures (cross-checked hand
+  computation, since OpenSubtitles' docs don't publish a downloadable test-vector file — see
+  planning notes for the fixture used).
 - Rust unit tests for the fallback-order orchestration logic (`mod.rs`) with mocked HTTP
-  responses: OS-key-present-and-hash-hits, OS-key-present-but-misses-falls-to-Subsource,
-  no-OS-key-uses-Subsource-only, both-miss-falls-through-to-not-found, 429-treated-as-miss,
-  network-error-treated-as-miss.
+  responses: OS-credentials-present-and-hash-hits, OS-credentials-present-but-misses-falls-to-
+  Subsource, no-OS-credentials-uses-Subsource-only, both-miss-falls-through-to-not-found,
+  429-treated-as-miss, network-error-treated-as-miss, expired-JWT-triggers-relogin-once.
 - Credential module tests use the mock trait, never the real OS keychain — keeps CI green
   without a desktop session or Secret Service daemon.
 - Manual verification checklist (from the original request), scoped per the environment
-  available:
+  available. The OpenSubtitles-dependent items additionally require the user to supply a real
+  OpenSubtitles.com account (API key + username/password) for end-to-end testing — this can't be
+  faked or embedded per the auth-model decision above:
   - [ ] Builds and runs on Linux (primary target, verifiable directly).
   - [ ] Builds on Windows via CI (`release.yml` already has a `windows-latest` matrix entry);
         interactive run/verification is the user's to do.
@@ -166,19 +236,22 @@ today, via `mkvtoolnix::merge_subtitles_async`.
         environment. Code will be written platform-neutral and every crate used (`keyring`,
         `reqwest`) confirmed via its docs to officially support macOS, but actual
         compile/run/keychain verification on macOS is out of reach here and is the user's to do.
-  - [ ] Subsource-only path (no OpenSubtitles key).
-  - [ ] OpenSubtitles hash-match path (valid key configured).
+  - [ ] Subsource-only path (no OpenSubtitles credentials).
+  - [ ] OpenSubtitles hash-match path (valid credentials configured) — needs a real account.
   - [ ] Graceful fallback to auto-translate when both sources fail/miss.
-  - [ ] OpenSubtitles key persists across app restarts (keychain on desktop, config file/env var
-        on server).
+  - [ ] OpenSubtitles credentials persist across app restarts (keychain on desktop, config
+        file/env var on server).
   - [ ] Rate-limit/network-failure handling doesn't crash the app or hang the UI.
 
 ## Explicitly out of scope
 
 - Migrating the other existing API keys (TMDB, DeepL, OpenAI, Google) to the keychain on the
-  desktop app — only the new OpenSubtitles key gets this treatment, per the original request.
-  This leaves a visible inconsistency (one key in the keychain, the rest in plaintext) that is
-  not being resolved here.
+  desktop app — only the new OpenSubtitles credentials get this treatment, per the original
+  request. This leaves a visible inconsistency (one credential set in the keychain, the rest in
+  plaintext) that is not being resolved here.
+- Registering a shared SubForge-wide OpenSubtitles API key — deliberately not done; see
+  "OpenSubtitles auth model" above. Subsource still needs one app-level key registered by the
+  maintainer before this ships (unchanged from the original decision).
 - Adding macOS to `release.yml`'s build matrix (the user chose best-effort/code-review-only for
   macOS over expanding CI).
 - Any UI for manually picking between multiple online-search candidates — matches are chosen
