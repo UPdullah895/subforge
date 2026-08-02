@@ -65,6 +65,7 @@ export const commandSchemas: Record<string, z.ZodTypeAny> = {
     default_source_lang: z.string().optional(),
     default_target_lang: z.string().optional(),
     default_output_dir: z.string().optional(),
+    search_online_before_translate: z.boolean().optional(),
   }),
 
   scan_directory: z.array(
@@ -91,4 +92,18 @@ export const commandSchemas: Record<string, z.ZodTypeAny> = {
   ),
 
   batch_extract_subtitles: z.array(z.string()),
+
+  get_opensubtitles_status: z.object({ configured: z.boolean() }),
+
+  check_subsource_status: z.object({ reachable: z.boolean() }),
+
+  search_online_subtitle: z.discriminatedUnion("status", [
+    z.object({
+      status: z.literal("found"),
+      subtitle_path: z.string(),
+      source: z.string(),
+      matched_via: z.string(),
+    }),
+    z.object({ status: z.literal("not_found") }),
+  ]),
 };

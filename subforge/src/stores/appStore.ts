@@ -25,6 +25,7 @@ export interface AppConfig {
   google_translate_api_key?: string;
   ollama_base_url?: string;
   libretranslate_base_url?: string;
+  search_online_before_translate?: boolean;
 }
 
 export interface ToolInfo {

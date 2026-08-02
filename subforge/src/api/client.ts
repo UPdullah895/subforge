@@ -87,6 +87,11 @@ function cmdToEndpoint(cmd: string): string {
     cancel_job: "/api/jobs/cancel",
     pause_job: "/api/jobs/pause",
     resume_job: "/api/jobs/resume",
+    search_online_subtitle: "/api/subtitle-sources/search",
+    set_opensubtitles_credentials: "/api/subtitle-sources/opensubtitles/credentials",
+    clear_opensubtitles_credentials: "/api/subtitle-sources/opensubtitles/clear",
+    get_opensubtitles_status: "/api/subtitle-sources/opensubtitles/status",
+    check_subsource_status: "/api/subtitle-sources/subsource/status",
   };
   return map[cmd] || `/api/${cmd.replace(/_/g, "/")}`;
 }
