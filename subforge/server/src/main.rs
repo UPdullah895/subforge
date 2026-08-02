@@ -31,6 +31,18 @@ async fn main() {
     let (event_sender, _event_receiver) = create_event_channel();
     let job_controls: JobControlRegistry = Arc::new(Mutex::new(HashMap::new()));
 
+    let mut config = crate::config::AppConfig::load();
+    if let Ok(key) = std::env::var("OPENSUBTITLES_API_KEY") {
+        config.opensubtitles_api_key = Some(key);
+    }
+    if let Ok(username) = std::env::var("OPENSUBTITLES_USERNAME") {
+        config.opensubtitles_username = Some(username);
+    }
+    if let Ok(password) = std::env::var("OPENSUBTITLES_PASSWORD") {
+        config.opensubtitles_password = Some(password);
+    }
+    let _ = config.save();
+
     let state = AppState {
         job_queue,
         event_sender,
@@ -123,4 +135,25 @@ fn api_routes() -> Router<AppState> {
         .route("/rename/apply", post(routes::rename::apply_rename))
         // ── Providers ─────────────────────────────────────────────────────────
         .route("/providers/test", post(routes::providers::test_provider_config))
+        // ── Online subtitle sources ─────────────────────────────────────────
+        .route(
+            "/subtitle-sources/search",
+            post(routes::subtitle_sources::search_online_subtitle),
+        )
+        .route(
+            "/subtitle-sources/opensubtitles/credentials",
+            post(routes::subtitle_sources::set_opensubtitles_credentials),
+        )
+        .route(
+            "/subtitle-sources/opensubtitles/clear",
+            post(routes::subtitle_sources::clear_opensubtitles_credentials),
+        )
+        .route(
+            "/subtitle-sources/opensubtitles/status",
+            post(routes::subtitle_sources::get_opensubtitles_status),
+        )
+        .route(
+            "/subtitle-sources/subsource/status",
+            post(routes::subtitle_sources::check_subsource_status),
+        )
 }

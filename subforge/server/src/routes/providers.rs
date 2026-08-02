@@ -55,6 +55,32 @@ pub async fn test_provider_config(
             Some(key) => translate_tools::test_google_key(&key).await.map_err(|e| e.to_string()),
             None => Err("No Google Translate API key configured".to_string()),
         },
+        "opensubtitles" => {
+            match (
+                config.opensubtitles_api_key.clone(),
+                config.opensubtitles_username.clone(),
+                config.opensubtitles_password.clone(),
+            ) {
+                (Some(api_key), Some(username), Some(password)) => {
+                    let creds = subforge_subtitle_sources::OpenSubtitlesCredentials {
+                        api_key,
+                        username,
+                        password,
+                    };
+                    let client = reqwest::Client::new();
+                    subforge_subtitle_sources::opensubtitles::login(
+                        &client,
+                        subforge_subtitle_sources::opensubtitles::DEFAULT_BASE_URL,
+                        &creds,
+                        &format!("SubForge v{}", env!("CARGO_PKG_VERSION")),
+                    )
+                    .await
+                    .map(|_| ())
+                    .map_err(|e| e.to_string())
+                }
+                _ => Err("No OpenSubtitles credentials configured".to_string()),
+            }
+        }
         other => Err(format!("Unknown provider: {other}")),
     };
 

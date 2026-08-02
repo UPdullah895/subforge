@@ -9,6 +9,10 @@ fn default_target_langs() -> Vec<String> {
     vec!["ar".to_string()]
 }
 
+fn default_search_online_before_translate() -> bool {
+    true
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppConfig {
     pub theme: String,
@@ -37,6 +41,11 @@ pub struct AppConfig {
     pub google_translate_api_key: Option<String>,
     pub ollama_base_url: Option<String>,
     pub libretranslate_base_url: Option<String>,
+    #[serde(default = "default_search_online_before_translate")]
+    pub search_online_before_translate: bool,
+    pub opensubtitles_api_key: Option<String>,
+    pub opensubtitles_username: Option<String>,
+    pub opensubtitles_password: Option<String>,
 }
 
 impl Default for AppConfig {
@@ -61,6 +70,10 @@ impl Default for AppConfig {
             google_translate_api_key: None,
             ollama_base_url: None,
             libretranslate_base_url: None,
+            search_online_before_translate: default_search_online_before_translate(),
+            opensubtitles_api_key: None,
+            opensubtitles_username: None,
+            opensubtitles_password: None,
         }
     }
 }
