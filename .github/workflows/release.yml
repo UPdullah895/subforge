@@ -35,6 +35,7 @@ jobs:
             libwebkit2gtk-4.1-dev \
             libappindicator3-dev \
             librsvg2-dev \
+            libdbus-1-dev \
             patchelf
 
       - uses: dtolnay/rust-toolchain@stable
@@ -50,6 +51,7 @@ jobs:
       - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SUBFORGE_SUBSOURCE_API_KEY: ${{ secrets.SUBFORGE_SUBSOURCE_API_KEY }}
         with:
           projectPath: subforge
           tagName: ${{ github.ref_name }}
