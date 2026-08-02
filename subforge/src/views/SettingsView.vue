@@ -3,6 +3,7 @@ import { onMounted, reactive, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import { useAppStore } from "../stores/appStore";
 import { useTranslateStore } from "../stores/translateStore";
+import { useSubtitleSourcesStore } from "../stores/subtitleSourcesStore";
 import { apiInvoke } from "../api/client";
 import SetupInstructions from "../components/SetupInstructions.vue";
 import {
@@ -28,6 +29,11 @@ const { t } = useI18n();
 
 const appStore = useAppStore();
 const translateStore = useTranslateStore();
+const subtitleSourcesStore = useSubtitleSourcesStore();
+
+const osApiKey = ref("");
+const osUsername = ref("");
+const osPassword = ref("");
 
 type ProviderId = "tmdb" | "tvmaze" | "deepl" | "openai" | "google" | "ollama";
 
@@ -165,6 +171,7 @@ function setupContentFor(id: ProviderId) {
 
 onMounted(() => {
   appStore.loadConfig();
+  subtitleSourcesStore.loadStatus();
 });
 </script>
 
@@ -516,6 +523,82 @@ onMounted(() => {
               v-bind="setupContentFor(provider.id)"
               @close="showSetupFor = null"
             />
+          </div>
+        </div>
+      </section>
+
+      <!-- Subtitle Sources -->
+      <section>
+        <h2 class="text-sm font-semibold text-text-primary uppercase tracking-wide">{{ t("settings.subtitleSources") }}</h2>
+        <p class="text-xs text-text-muted mt-1 mb-4">{{ t("settings.subtitleSourcesDesc") }}</p>
+
+        <label class="flex items-center gap-2 text-sm text-text-secondary mb-4">
+          <input
+            type="checkbox"
+            class="accent-accent"
+            :checked="subtitleSourcesStore.searchEnabled()"
+            @change="subtitleSourcesStore.setSearchEnabled(($event.target as HTMLInputElement).checked)"
+          />
+          {{ t("settings.searchOnlineToggle") }}
+        </label>
+
+        <div class="flex items-center justify-between px-3 py-2 rounded-lg bg-bg-primary border border-border mb-3">
+          <span class="text-sm text-text-primary">{{ t("settings.subsourceStatus") }}</span>
+          <span
+            :class="subtitleSourcesStore.subsourceReachable ? 'text-success' : 'text-error'"
+            class="text-xs"
+          >
+            {{ subtitleSourcesStore.subsourceReachable ? t("settings.subsourceReachable") : t("settings.subsourceUnreachable") }}
+          </span>
+        </div>
+
+        <div class="p-3 rounded-lg bg-bg-secondary border border-border space-y-2">
+          <div class="flex items-center justify-between">
+            <span class="text-sm text-text-primary">{{ t("settings.openSubtitlesTitle") }}</span>
+            <span v-if="subtitleSourcesStore.opensubtitlesConfigured" class="text-xs text-success">
+              {{ t("settings.openSubtitlesConfigured") }}
+            </span>
+          </div>
+          <p class="text-xs text-text-muted">
+            {{ t("settings.openSubtitlesHelp") }}
+            <a href="https://www.opensubtitles.com" target="_blank" rel="noopener" class="text-accent hover:underline">{{ t("settings.openSubtitlesRegisterLink") }}</a>
+            &middot;
+            <a href="https://opensubtitles.stoplight.io" target="_blank" rel="noopener" class="text-accent hover:underline">{{ t("settings.openSubtitlesDocsLink") }}</a>
+          </p>
+          <input
+            v-model="osApiKey"
+            type="text"
+            :placeholder="t('settings.openSubtitlesApiKey')"
+            class="w-full px-3 py-2 rounded-lg bg-bg-primary border border-border text-sm text-text-primary focus:outline-none focus:border-accent"
+          />
+          <input
+            v-model="osUsername"
+            type="text"
+            :placeholder="t('settings.openSubtitlesUsername')"
+            class="w-full px-3 py-2 rounded-lg bg-bg-primary border border-border text-sm text-text-primary focus:outline-none focus:border-accent"
+          />
+          <input
+            v-model="osPassword"
+            type="password"
+            :placeholder="t('settings.openSubtitlesPassword')"
+            class="w-full px-3 py-2 rounded-lg bg-bg-primary border border-border text-sm text-text-primary focus:outline-none focus:border-accent"
+          />
+          <div class="flex items-center gap-2">
+            <button
+              class="px-3 py-1.5 rounded-md bg-accent text-white text-xs font-medium hover:bg-accent-hover transition-colors"
+              @click="async () => { await subtitleSourcesStore.setOpenSubtitlesCredentials({ api_key: osApiKey, username: osUsername, password: osPassword }); await subtitleSourcesStore.testOpenSubtitlesConnection(); }"
+            >
+              {{ t("settings.openSubtitlesSave") }}
+            </button>
+            <button
+              v-if="subtitleSourcesStore.opensubtitlesConfigured"
+              class="px-3 py-1.5 rounded-md bg-bg-tertiary text-text-secondary text-xs font-medium hover:bg-bg-hover transition-colors"
+              @click="subtitleSourcesStore.clearOpenSubtitlesCredentials"
+            >
+              {{ t("settings.openSubtitlesClear") }}
+            </button>
+            <span v-if="subtitleSourcesStore.testStatus === 'success'" class="text-xs text-success">{{ t("settings.testSuccess") }}</span>
+            <span v-else-if="subtitleSourcesStore.testStatus === 'error'" class="text-xs text-error">{{ subtitleSourcesStore.testError }}</span>
           </div>
         </div>
       </section>
