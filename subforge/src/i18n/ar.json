@@ -193,13 +193,15 @@
     "noSubtitleTrack": "لم يتم العثور على مسار ترجمة في هذا الملف.",
     "stage": {
       "queued": "في الانتظار",
+      "searching": "جارٍ البحث عن ترجمات عبر الإنترنت...",
       "extracting": "جاري الاستخراج...",
       "translating": "جاري الترجمة...",
       "merging": "جاري الدمج...",
       "done": "تم",
       "error": "خطأ",
       "cancelled": "ملغاة"
-    }
+    },
+    "foundOnline": "تم العثور عليها في {source}"
   },
   "transcribe": {
     "title": "تحويل الكلام إلى نص",

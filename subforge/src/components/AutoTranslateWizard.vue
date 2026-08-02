@@ -7,6 +7,7 @@ import { apiListen } from "../api/events";
 import { useBatchStore } from "../stores/batchStore";
 import { useAppStore } from "../stores/appStore";
 import { useTranslateStore, type EngineType, mapJobErrorMessage } from "../stores/translateStore";
+import { useSubtitleSourcesStore } from "../stores/subtitleSourcesStore";
 import { useJobQueue } from "../composables/useJobQueue";
 import { isDeeplSupported } from "../utils/languageNames";
 import { AlertTriangle, CheckCircle2, XCircle, Loader2, Pause, Play, Square } from "lucide-vue-next";
@@ -25,6 +26,7 @@ const emit = defineEmits<{
 const batchStore = useBatchStore();
 const translateStore = useTranslateStore();
 const appStore = useAppStore();
+const subtitleSourcesStore = useSubtitleSourcesStore();
 const { cancelJob, pauseJob, resumeJob } = useJobQueue();
 
 const languageOptions = [
@@ -83,6 +85,7 @@ const selectedTrackId = reactive<Record<string, number>>({});
 
 type FileStage =
   | "queued"
+  | "searching"
   | "extracting"
   | "translating"
   | "merging"
@@ -281,6 +284,53 @@ async function startPipeline() {
   });
 
   for (const job of fileJobs.value) {
+    if (subtitleSourcesStore.searchEnabled()) {
+      job.stage = "searching";
+      const metadata = batchStore.resolvedMetadata[job.path];
+      let title: string | undefined = metadata?.title;
+      let year = metadata?.year;
+      let season = metadata?.season;
+      let episode = metadata?.episode;
+
+      if (!title) {
+        try {
+          const fileName = job.path.split(/[/\\]/).pop() || job.path;
+          const parsed = await apiInvoke<{ series_guess: string; season?: number; episode?: number }>(
+            "parse_filename",
+            { name: fileName }
+          );
+          title = parsed.series_guess;
+          season = parsed.season;
+          episode = parsed.episode;
+        } catch {
+          title = undefined;
+        }
+      }
+
+      if (title) {
+        try {
+          const result = await subtitleSourcesStore.searchOnlineSubtitle({
+            video_path: job.path,
+            title,
+            year,
+            season,
+            episode,
+            language: job.lang,
+          });
+          if (result.status === "found") {
+            job.stage = "done";
+            job.progress = 100;
+            job.message = t("autoTranslate.foundOnline", { source: result.source });
+            batchStore.upsertExternalSub(job.path, job.lang, "ok");
+            continue;
+          }
+        } catch {
+          // Search failures fall through to translation — never block the
+          // pipeline on a source being down.
+        }
+      }
+    }
+
     const trackId = findSubtitleTrack(job.path);
     if (trackId === null) {
       job.stage = "error";

@@ -193,13 +193,15 @@
     "noSubtitleTrack": "No subtitle track found on this file.",
     "stage": {
       "queued": "Queued",
+      "searching": "Searching online subtitles...",
       "extracting": "Extracting...",
       "translating": "Translating...",
       "merging": "Merging...",
       "done": "Done",
       "error": "Error",
       "cancelled": "Cancelled"
-    }
+    },
+    "foundOnline": "Found on {source}"
   },
   "transcribe": {
     "title": "Speech to Text",
