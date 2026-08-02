@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=SubForge
+Comment=Launch SubForge (subtitle extraction, translation, and rename tool)
+Exec=/home/updullah/Documents/Projects/subforge/scripts/launch-subforge.sh
+Icon=/home/updullah/Documents/Projects/subforge/src-tauri/icons/128x128.png
+Path=/home/updullah/Documents/Projects/subforge
+Terminal=false
+Categories=Utility;

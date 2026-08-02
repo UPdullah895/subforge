@@ -5,6 +5,9 @@ on:
     tags:
       - 'v*'
 
+permissions:
+  contents: write
+
 jobs:
   build:
     strategy:
@@ -25,7 +28,7 @@ jobs:
         with:
           node-version: 20
           cache: npm
-          cache-dependency-path: subforge/package-lock.json
+          cache-dependency-path: package-lock.json
 
       - name: Install Tauri Linux deps
         if: matrix.platform == 'ubuntu-22.04'
@@ -42,18 +45,17 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: subforge/src-tauri
+          workspaces: src-tauri
 
       - name: Install frontend deps
         run: npm ci
-        working-directory: subforge
 
       - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SUBFORGE_SUBSOURCE_API_KEY: ${{ secrets.SUBFORGE_SUBSOURCE_API_KEY }}
         with:
-          projectPath: subforge
+          projectPath: .
           tagName: ${{ github.ref_name }}
           releaseName: SubForge ${{ github.ref_name }}
           releaseBody: 'See the assets below to download this release.'
