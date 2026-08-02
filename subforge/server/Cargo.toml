@@ -20,6 +20,7 @@ tokio-util = { version = "0.7", features = ["io"] }
 hyper = { version = "1", features = ["full"] }
 http-body-util = "0.1"
 subforge-metadata = { path = "../crates/subforge-metadata" }
+subforge-subtitle-sources = { path = "../crates/subforge-subtitle-sources" }
 
 [profile.release]
 opt-level = 3
