@@ -69,14 +69,23 @@ New shared crate `crates/subforge-subtitle-sources`, following the existing
 `subforge-metadata` pattern (already depended on by both `src-tauri/Cargo.toml` and
 `server/Cargo.toml`):
 
-- `subsource.rs` — Subsource API client. Base URL `https://api.subsource.net`, auth header
-  `X-API-Key`, documented rate limits 60/min, 1800/hour, 7200/day. The public docs page
-  (`subsource.net/api-docs`) is a JS-rendered app that blocks automated fetching (403), so the
-  exact request/response JSON field names must be confirmed with a live "Try it out" call (or by
-  inspecting the official `.NET` wrapper at `github.com/moviecollection/sub-source`, which exposes
-  the same shape as `SearchMoviesAsync({Query, SearchType}) → movie.id`, then
-  `GetSubtitlesAsync({MovieId, Language}) → subtitle list`, then `GetSubtitleByIdAsync(id)`, then
-  `DownloadSubtitleAsync(id) → zip file`) as the first task of implementation, not assumed here.
+- `subsource.rs` — Subsource API client, verified against their live docs
+  (`subsource.net/api-docs`, rendered via browser since it 403s plain HTTP fetches):
+  - Base URL `https://api.subsource.net/api/v1`, auth header `X-API-Key`. Rate limits 60/min,
+    1800/hour, 7200/day; 429 on exceed.
+  - `search_movies(search_type: "text"|"imdb", q?, imdb?, year?, type?, season?) -> GET
+    /movies/search` — response `{success, data: [{movieId, title, alternateTitle, type,
+    releaseYear, imdbId, tmdbId, season, subtitleCount, posters}]}`.
+  - `search_subtitles(movie_id, language?, sort?) -> GET /subtitles` — `language` takes a full
+    English language name (`"english"`, `"arabic"`), not an ISO code — reuse
+    `subforge_metadata::languages::english_name(code)` (already used for track-naming
+    elsewhere) lowercased, rather than building a second mapping table. Response
+    `{success, data: [{subtitleId, movieId, language, releaseInfo: [...], hearingImpaired,
+    foreignParts, framerate, downloads, rating: {good, bad, total}, uploaderId, createdAt,
+    ...}], pagination, filters}`.
+  - `download(subtitle_id) -> GET /subtitles/{id}/download` — returns a **ZIP file stream**
+    directly (`Content-Type: application/zip`), not a JSON wrapper; the client must unzip it to
+    get the actual `.srt`.
 - `opensubtitles.rs` — OpenSubtitles.com REST client, verified against their live Stoplight docs:
   - Base URL `https://api.opensubtitles.com/api/v1`. Every request needs `Api-Key` and
     `User-Agent` (or `X-User-Agent`) headers; `Authorization: Bearer <JWT>` is added once logged
@@ -132,18 +141,26 @@ also in scope, and the auth-model correction above (three fields — API key, us
 instead of one), this necessarily forks:
 
 - **Tauri desktop app**: new `src-tauri/src/credentials.rs` module wrapping the `keyring` crate
-  (confirmed support: Secret Service/libsecret on Linux, Credential Manager on Windows, Keychain
-  on macOS). All three fields (`api_key`, `username`, `password`) are stored as one
-  JSON-serialized secret under a single keyring `Entry` (service `"subforge"`, account
-  `"opensubtitles"`), behind a small trait so unit tests inject a mock instead of touching the
-  real OS credential store. None of the three raw values are ever sent back to the frontend
-  after saving — only a `configured: bool` status. Commands: `set_opensubtitles_credentials`,
-  `test_opensubtitles_connection`, `clear_opensubtitles_credentials`, `get_opensubtitles_status`.
-  - Linux build dependency: `libsecret-1-dev` (apt) / `libsecret` (pacman), added to
-    `.github/workflows/ci.yml`'s `rust-tauri` job and `.github/workflows/release.yml`'s Linux
-    step, alongside the existing `libwebkit2gtk-4.1-dev` etc.
+  (v3, which requires explicitly choosing backend features — no default backend as of v3):
+  `keyring = { version = "3", features = ["apple-native", "windows-native",
+  "sync-secret-service"] }`, giving Keychain on macOS, Credential Manager on Windows, and a
+  direct D-Bus Secret Service client on Linux. All three fields (`api_key`, `username`,
+  `password`) are stored as one JSON-serialized secret under a single keyring `Entry` (service
+  `"subforge"`, account `"opensubtitles"`), behind a small trait so unit tests inject a mock
+  instead of touching the real OS credential store. None of the three raw values are ever sent
+  back to the frontend after saving — only a `configured: bool` status. Commands:
+  `set_opensubtitles_credentials`, `test_opensubtitles_connection`,
+  `clear_opensubtitles_credentials`, `get_opensubtitles_status`.
+  - Linux build dependency: `libdbus-1-dev` (apt) — **not** `libsecret`; the `sync-secret-service`
+    backend talks to Secret Service directly over D-Bus (via the `dbus-secret-service` crate), it
+    doesn't link libsecret.so. Added to `.github/workflows/ci.yml`'s `rust-tauri` job and
+    `.github/workflows/release.yml`'s Linux step, alongside the existing `libwebkit2gtk-4.1-dev`
+    etc. On Arch/CachyOS the equivalent headers ship inside the base `dbus` package (no separate
+    `-dev` split), so no pacman changes are needed there.
   - `cargo check` in CI only needs the dev headers at compile time, not a running Secret Service
-    daemon, so CI stays green without a desktop session.
+    daemon, so CI stays green without a desktop session. Runtime still needs a Secret Service
+    provider (gnome-keyring, kwallet) — present by default on any desktop Linux session, but
+    absent in CI, hence the mock-trait requirement for tests below.
 - **Axum server** (headless, Docker-oriented): the three fields join the existing plaintext
   `AppConfig` as `opensubtitles_api_key: Option<String>`, `opensubtitles_username: Option<String>`,
   `opensubtitles_password: Option<String>`, exactly like `tmdb_api_key`, `deepl_api_key`, etc.
