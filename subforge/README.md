@@ -68,6 +68,7 @@ SubForge is a free, cross-platform desktop application for subtitle manipulation
 - [Rust](https://rustup.rs/)
 - [MKVToolNix](https://mkvtoolnix.download/) (`mkvmerge` + `mkvextract`)
 - [FFmpeg](https://ffmpeg.org/) (required for audio extraction/merge)
+- Building requires `SUBFORGE_SUBSOURCE_API_KEY` set in the environment (a Subsource API key created from your Subsource profile) — see `docs/superpowers/specs/2026-08-02-online-subtitle-search-design.md`.
 
 ### Install MKVToolNix
 

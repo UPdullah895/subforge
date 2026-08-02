@@ -3,7 +3,10 @@ use crate::tools::translate as translate_tools;
 use subforge_metadata::{tmdb::TmdbClient, tvmaze::TvmazeClient};
 
 #[tauri::command]
-pub async fn test_provider_config(provider: String) -> Result<(), String> {
+pub async fn test_provider_config(
+    credential_store: tauri::State<'_, std::sync::Arc<dyn crate::credentials::CredentialStore>>,
+    provider: String,
+) -> Result<(), String> {
     let config = AppConfig::load();
     match provider.as_str() {
         "tmdb" => {
@@ -58,6 +61,21 @@ pub async fn test_provider_config(provider: String) -> Result<(), String> {
                 .filter(|k| !k.is_empty())
                 .ok_or_else(|| "No Google Translate API key configured".to_string())?;
             translate_tools::test_google_key(&key).await.map_err(|e| e.to_string())
+        }
+        "opensubtitles" => {
+            let creds = credential_store
+                .get()?
+                .ok_or_else(|| "No OpenSubtitles credentials configured".to_string())?;
+            let client = reqwest::Client::new();
+            subforge_subtitle_sources::opensubtitles::login(
+                &client,
+                subforge_subtitle_sources::opensubtitles::DEFAULT_BASE_URL,
+                &creds,
+                &format!("SubForge v{}", env!("CARGO_PKG_VERSION")),
+            )
+            .await
+            .map(|_| ())
+            .map_err(|e| e.to_string())
         }
         other => Err(format!("Unknown provider: {other}")),
     }

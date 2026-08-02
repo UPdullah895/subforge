@@ -6,7 +6,7 @@ pub mod tools;
 
 use commands::{
     audio as audio_cmds, batch as batch_cmds, jobs as jobs_cmds, providers as providers_cmds, rename as rename_cmds,
-    subtitle as subtitle_cmds, transcribe as transcribe_cmds, translate as translate_cmds,
+    subtitle as subtitle_cmds, subtitle_sources as subtitle_sources_cmds, transcribe as transcribe_cmds, translate as translate_cmds,
 };
 use credentials::{CredentialStore, KeyringCredentialStore};
 use jobs::{SharedJobQueue, JobControlRegistry};
@@ -81,6 +81,11 @@ pub fn run() {
             rename_cmds::preview_rename,
             rename_cmds::apply_rename,
             providers_cmds::test_provider_config,
+            subtitle_sources_cmds::search_online_subtitle,
+            subtitle_sources_cmds::set_opensubtitles_credentials,
+            subtitle_sources_cmds::clear_opensubtitles_credentials,
+            subtitle_sources_cmds::get_opensubtitles_status,
+            subtitle_sources_cmds::check_subsource_status,
             jobs_cmds::cancel_job,
             jobs_cmds::pause_job,
             jobs_cmds::resume_job,
