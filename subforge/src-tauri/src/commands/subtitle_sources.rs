@@ -33,6 +33,7 @@ pub async fn search_online_subtitle(
     credential_store: State<'_, Arc<dyn CredentialStore>>,
     request: OnlineSubtitleSearchRequest,
 ) -> Result<OnlineSubtitleSearchResponse, String> {
+    // Credential-store read errors are treated as "not configured" to degrade gracefully (never fail loudly).
     let opensubtitles_creds: Option<OpenSubtitlesCredentials> =
         credential_store.get().unwrap_or(None);
 
@@ -108,7 +109,8 @@ pub struct OpenSubtitlesStatus {
 pub async fn get_opensubtitles_status(
     credential_store: State<'_, Arc<dyn CredentialStore>>,
 ) -> Result<OpenSubtitlesStatus, String> {
-    let configured = credential_store.get()?.is_some();
+    // Credential-store read errors are treated as "not configured" to degrade gracefully (never fail loudly).
+    let configured = credential_store.get().unwrap_or(None).is_some();
     Ok(OpenSubtitlesStatus { configured })
 }
 
