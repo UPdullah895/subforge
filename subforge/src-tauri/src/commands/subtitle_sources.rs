@@ -5,10 +5,13 @@ use std::sync::Arc;
 use subforge_subtitle_sources::{find_subtitle, OpenSubtitlesCredentials, SearchRequest, SubtitleSearchResult};
 use tauri::State;
 
-const SUBSOURCE_API_KEY: &str = env!(
-    "SUBFORGE_SUBSOURCE_API_KEY",
-    "Set SUBFORGE_SUBSOURCE_API_KEY at build time (see README) to the app-level Subsource API key."
-);
+// Not set at build time = Subsource search is silently disabled (falls through
+// to translate) rather than failing the whole build. OpenSubtitles.com is
+// unaffected — it always uses the user's own credentials, never this key.
+const SUBSOURCE_API_KEY: &str = match option_env!("SUBFORGE_SUBSOURCE_API_KEY") {
+    Some(key) => key,
+    None => "",
+};
 const USER_AGENT: &str = concat!("SubForge v", env!("CARGO_PKG_VERSION"));
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -121,6 +124,9 @@ pub struct SubsourceStatus {
 
 #[tauri::command(rename_all = "snake_case")]
 pub async fn check_subsource_status() -> Result<SubsourceStatus, String> {
+    if SUBSOURCE_API_KEY.is_empty() {
+        return Ok(SubsourceStatus { reachable: false });
+    }
     let client = reqwest::Client::new();
     let reachable = client
         .get(format!("{}/movies/search", subforge_subtitle_sources::subsource::DEFAULT_BASE_URL))
