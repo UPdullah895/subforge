@@ -1,5 +1,6 @@
 pub mod commands;
 pub mod config;
+pub mod credentials;
 pub mod jobs;
 pub mod tools;
 
@@ -7,6 +8,7 @@ use commands::{
     audio as audio_cmds, batch as batch_cmds, jobs as jobs_cmds, providers as providers_cmds, rename as rename_cmds,
     subtitle as subtitle_cmds, transcribe as transcribe_cmds, translate as translate_cmds,
 };
+use credentials::{CredentialStore, KeyringCredentialStore};
 use jobs::{SharedJobQueue, JobControlRegistry};
 use std::sync::{Arc, Mutex};
 use std::collections::HashMap;
@@ -38,10 +40,12 @@ pub fn run() {
 
     let job_queue: SharedJobQueue = Arc::new(Mutex::new(jobs::JobQueue::new()));
     let job_controls: JobControlRegistry = Arc::new(Mutex::new(HashMap::new()));
+    let credential_store: Arc<dyn CredentialStore> = Arc::new(KeyringCredentialStore);
 
     tauri::Builder::default()
         .manage(job_queue)
         .manage(job_controls)
+        .manage(credential_store)
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
