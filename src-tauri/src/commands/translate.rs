@@ -155,7 +155,7 @@ pub async fn translate_subtitles(
 
             let batch_start = batch_idx * batch_size;
             let batch_end = (batch_start + chunk.len()).min(total);
-            let pct = 10 + ((batch_end as f64 / total as f64) * 80.0) as i32;
+            let pct = 10 + ((batch_start as f64 / total as f64) * 80.0) as i32;
 
             {
                 let mut q = queue_clone.lock().unwrap();
@@ -448,7 +448,7 @@ pub async fn run_translation_pipeline(
 
             let batch_start = batch_idx * batch_size;
             let batch_end = (batch_start + chunk.len()).min(total);
-            let pct = 15 + ((batch_end as f64 / total as f64) * 65.0) as i32;
+            let pct = 15 + ((batch_start as f64 / total as f64) * 65.0) as i32;
             emit_stage(
                 &app_clone,
                 &job_id_clone,
