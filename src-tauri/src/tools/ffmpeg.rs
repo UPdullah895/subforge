@@ -177,43 +177,41 @@ pub fn extract_audio(
 ) -> Result<(), FfmpegError> {
     let ffmpeg = get_ffmpeg_path()?;
 
-    let mut args = vec![
+    // `track_index` is the stream's absolute index as ffprobe reports it (that
+    // is what the track list shows and sends back), so map by absolute index.
+    // `0:a:N` would be the N-th *audio* stream and picks the wrong track, or
+    // none at all, in any file where audio isn't the first stream.
+    let source_codec = probe_audio_tracks(video_path)
+        .ok()
+        .and_then(|streams| streams.into_iter().find(|s| s.index == track_index))
+        .and_then(|s| s.codec_name);
+
+    let mut args: Vec<String> = vec![
+        "-y".to_string(),
+        "-nostdin".to_string(),
         "-i".to_string(),
         video_path.to_string(),
         "-map".to_string(),
-        format!("0:a:{}", track_index),
+        format!("0:{}", track_index),
         "-vn".to_string(),
     ];
 
-    if let Some(fmt) = format {
-        match fmt.to_lowercase().as_str() {
-            "aac" => {
-                args.push("-c:a".to_string());
-                args.push("copy".to_string());
-            }
-            "mp3" => {
-                args.push("-c:a".to_string());
-                args.push("libmp3lame".to_string());
-                args.push("-q:a".to_string());
-                args.push("2".to_string());
-            }
-            "opus" => {
-                args.push("-c:a".to_string());
-                args.push("libopus".to_string());
-                args.push("-b:a".to_string());
-                args.push("128k".to_string());
-            }
-            "flac" => {
-                args.push("-c:a".to_string());
-                args.push("flac".to_string());
-            }
-            _ => {
-                args.push("-c:a".to_string());
-                args.push("copy".to_string());
-            }
-        }
-    }
-
+    let fmt = format.map(|f| f.to_lowercase());
+    // Stream-copy (lossless, instant) when the track already has the codec the
+    // chosen format implies; otherwise encode.
+    let copy_if = |codec: &str| source_codec.as_deref() == Some(codec);
+    let codec_args: Vec<&str> = match fmt.as_deref() {
+        Some("aac") if copy_if("aac") => vec!["-c:a", "copy"],
+        Some("aac") => vec!["-c:a", "aac", "-b:a", "256k"],
+        Some("mp3") if copy_if("mp3") => vec!["-c:a", "copy"],
+        Some("mp3") => vec!["-c:a", "libmp3lame", "-q:a", "2"],
+        Some("opus") if copy_if("opus") => vec!["-c:a", "copy"],
+        Some("opus") => vec!["-c:a", "libopus", "-b:a", "128k"],
+        Some("flac") => vec!["-c:a", "flac"],
+        Some("wav") => vec!["-c:a", "pcm_s16le"],
+        _ => vec!["-c:a", "copy"],
+    };
+    args.extend(codec_args.into_iter().map(String::from));
     args.push(output_path.to_string());
 
     let output = Command::new(&ffmpeg).args(&args).output()?;
@@ -235,6 +233,8 @@ pub fn merge_audio(
 
     let output = Command::new(&ffmpeg)
         .args([
+            "-y",
+            "-nostdin",
             "-i", video_path,
             "-i", audio_path,
             "-c", "copy",

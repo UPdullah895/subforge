@@ -24,3 +24,13 @@ pub fn err400(msg: impl ToString) -> AppError {
 pub fn err503(msg: impl ToString) -> AppError {
     AppError(StatusCode::SERVICE_UNAVAILABLE, msg.to_string())
 }
+
+/// Runs a blocking closure (std `Command`, sync file IO) on tokio's blocking
+/// pool so it can't stall the async worker threads.
+pub async fn blocking<T: Send + 'static>(
+    f: impl FnOnce() -> T + Send + 'static,
+) -> Result<T, StatusCode> {
+    tokio::task::spawn_blocking(f)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
+}

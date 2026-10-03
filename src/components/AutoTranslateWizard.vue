@@ -136,10 +136,34 @@ function trackLabel(tr: {
   return parts.join(" — ");
 }
 
-// Files where more than one subtitle track matches the chosen source
-// language (e.g. a regular track and an SDH track) — the pipeline needs a
-// single specific track, so these need an explicit pick instead of silently
-// defaulting to the first match.
+interface RankableTrack {
+  id: number;
+  properties?: { track_name?: string; forced_track?: boolean; hearing_impaired?: boolean; default_track?: boolean };
+}
+
+// Which kind of track is best to translate from: the full-dialogue one.
+// SDH tracks add sound descriptions ("[door slams]") and forced tracks only
+// carry signs/foreign-language lines, so both rank after a plain track.
+function trackKindRank(tr: RankableTrack): number {
+  const name = tr.properties?.track_name ?? "";
+  if (tr.properties?.forced_track || /\bforced\b/i.test(name)) return 2;
+  if (tr.properties?.hearing_impaired || /\b(sdh|cc|hearing[ -]impaired)\b/i.test(name)) return 1;
+  return 0;
+}
+
+// Best candidates first: lowest kind rank, then the file's default track.
+function bestFirst<T extends RankableTrack>(tracks: T[]): T[] {
+  return [...tracks].sort(
+    (a, b) =>
+      trackKindRank(a) - trackKindRank(b) ||
+      Number(b.properties?.default_track ?? false) - Number(a.properties?.default_track ?? false)
+  );
+}
+
+// Files where several tracks match the chosen source language *and* are the
+// same kind (e.g. two plain English tracks) — only then does the user need
+// to choose. A regular track next to an SDH/forced one is resolved silently
+// in favour of the regular one.
 const ambiguousFiles = computed(() => {
   const result: { path: string; name: string; candidates: TrackCandidate[] }[] = [];
   const aliases = LANG_ALIASES[sourceLang.value] ?? [sourceLang.value];
@@ -149,8 +173,11 @@ const ambiguousFiles = computed(() => {
     const matches = file.tracks.filter(
       (tr) => tr.track_type === "subtitles" && aliases.includes((tr.properties?.language || "").toLowerCase())
     );
-    if (matches.length > 1) {
-      result.push({ path, name: file.name, candidates: matches.map((tr) => ({ id: tr.id, label: trackLabel(tr) })) });
+    const ranked = bestFirst(matches);
+    const bestRank = ranked.length > 0 ? trackKindRank(ranked[0]) : 0;
+    const tied = ranked.filter((tr) => trackKindRank(tr) === bestRank);
+    if (tied.length > 1) {
+      result.push({ path, name: file.name, candidates: tied.map((tr) => ({ id: tr.id, label: trackLabel(tr) })) });
     }
   }
   return result;
@@ -219,7 +246,9 @@ function findSubtitleTrack(path: string): number | null {
   const subs = file.tracks.filter((tr) => tr.track_type === "subtitles");
   if (subs.length === 0) return null;
   const aliases = LANG_ALIASES[sourceLang.value] ?? [sourceLang.value];
-  const matching = subs.find((tr) => aliases.includes((tr.properties?.language || "").toLowerCase()));
+  const matching = bestFirst(
+    subs.filter((tr) => aliases.includes((tr.properties?.language || "").toLowerCase()))
+  )[0];
   return (matching ?? subs[0]).id;
 }
 

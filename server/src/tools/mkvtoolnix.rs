@@ -34,7 +34,9 @@ pub struct TrackProperties {
     pub forced_track: Option<bool>,
     // mkvmerge's `-J` output calls this "hearing_impaired_flag"; expose it as
     // the plainer `hearing_impaired` name the frontend/track-naming logic use.
-    #[serde(rename(deserialize = "hearing_impaired_flag"), default)]
+    // Newer mkvmerge (v70+) emits "flag_hearing_impaired"; older builds used
+    // "hearing_impaired_flag". Accept both.
+    #[serde(alias = "flag_hearing_impaired", alias = "hearing_impaired_flag", default)]
     pub hearing_impaired: Option<bool>,
 }
 
@@ -140,11 +142,44 @@ pub fn discover_mkvextract() -> ToolInfo {
     }
 }
 
+/// mkvmerge/mkvextract exit with 0 on success, 1 when they finished but
+/// emitted warnings (output is still written), and 2 on a real error.
+fn mkv_succeeded(status: &std::process::ExitStatus) -> bool {
+    matches!(status.code(), Some(0) | Some(1))
+}
+
+/// mkvmerge reports errors on stdout, not stderr, so surface both.
+fn mkv_error_text(output: &std::process::Output) -> String {
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let text = format!("{}\n{}", stdout.trim(), stderr.trim());
+    let text = text.trim();
+    if text.is_empty() {
+        format!("mkvtoolnix exited with {}", output.status)
+    } else {
+        text.to_string()
+    }
+}
+
 pub fn get_mkvmerge_path() -> Result<PathBuf, MkvError> {
+    // A path set in Settings > Tool paths wins over whatever is on PATH.
+    if let Some(p) = crate::config::AppConfig::load().mkvmerge_path {
+        let path = PathBuf::from(&p);
+        if path.is_file() {
+            return Ok(path);
+        }
+    }
     which("mkvmerge").ok_or(MkvError::MkvmergeNotFound)
 }
 
 pub fn get_mkvextract_path() -> Result<PathBuf, MkvError> {
+    // A path set in Settings > Tool paths wins over whatever is on PATH.
+    if let Some(p) = crate::config::AppConfig::load().mkvextract_path {
+        let path = PathBuf::from(&p);
+        if path.is_file() {
+            return Ok(path);
+        }
+    }
     which("mkvextract").ok_or(MkvError::MkvextractNotFound)
 }
 
@@ -155,9 +190,8 @@ pub fn enumerate_tracks(file_path: &str) -> Result<MkvInfo, MkvError> {
         .args(["-J", file_path])
         .output()?;
 
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-        return Err(MkvError::CommandFailed(stderr));
+    if !mkv_succeeded(&output.status) {
+        return Err(MkvError::CommandFailed(mkv_error_text(&output)));
     }
 
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -178,9 +212,8 @@ pub fn extract_subtitle_track(
         .args(["tracks", file_path, &format!("{}:{}", track_id, output_path)])
         .output()?;
 
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-        return Err(MkvError::CommandFailed(stderr));
+    if !mkv_succeeded(&output.status) {
+        return Err(MkvError::CommandFailed(mkv_error_text(&output)));
     }
 
     Ok(output_path.to_string())
@@ -344,14 +377,20 @@ pub fn merge_subtitles(
         args.push("--default-track-flag".to_string());
         args.push(format!("0:{}", if sub.make_default { "yes" } else { "no" }));
 
+        // Real SDH flag (not just "(SDH)" in the name) so players and media
+        // servers can offer/auto-select these tracks for hearing-impaired viewers.
+        if sub.hearing_impaired {
+            args.push("--hearing-impaired-flag".to_string());
+            args.push("0:yes".to_string());
+        }
+
         args.push(sub.path.clone());
     }
 
     let output = Command::new(&mkvmerge).args(&args).output()?;
 
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-        return Err(MkvError::CommandFailed(stderr));
+    if !mkv_succeeded(&output.status) {
+        return Err(MkvError::CommandFailed(mkv_error_text(&output)));
     }
 
     Ok(())
@@ -375,9 +414,8 @@ pub fn remove_tracks(
     // For specific tracks, we build a track selection string
     let output = Command::new(&mkvmerge).args(&args).output()?;
 
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-        return Err(MkvError::CommandFailed(stderr));
+    if !mkv_succeeded(&output.status) {
+        return Err(MkvError::CommandFailed(mkv_error_text(&output)));
     }
 
     Ok(())
@@ -389,9 +427,8 @@ pub fn remove_all_subtitles(video_path: &str, output_path: &str) -> Result<(), M
         .args(["-o", output_path, "--no-subtitles", video_path])
         .output()?;
 
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-        return Err(MkvError::CommandFailed(stderr));
+    if !mkv_succeeded(&output.status) {
+        return Err(MkvError::CommandFailed(mkv_error_text(&output)));
     }
 
     Ok(())
@@ -403,9 +440,8 @@ pub fn remove_all_audio(video_path: &str, output_path: &str) -> Result<(), MkvEr
         .args(["-o", output_path, "--no-audio", video_path])
         .output()?;
 
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-        return Err(MkvError::CommandFailed(stderr));
+    if !mkv_succeeded(&output.status) {
+        return Err(MkvError::CommandFailed(mkv_error_text(&output)));
     }
 
     Ok(())
@@ -456,6 +492,13 @@ pub async fn merge_subtitles_async(
         args.push("--default-track-flag".to_string());
         args.push(format!("0:{}", if sub.make_default { "yes" } else { "no" }));
 
+        // Real SDH flag (not just "(SDH)" in the name) so players and media
+        // servers can offer/auto-select these tracks for hearing-impaired viewers.
+        if sub.hearing_impaired {
+            args.push("--hearing-impaired-flag".to_string());
+            args.push("0:yes".to_string());
+        }
+
         args.push(sub.path.clone());
     }
 
@@ -468,6 +511,17 @@ pub async fn merge_subtitles_async(
     let stdout = child.stdout.take().ok_or_else(|| {
         MkvError::CommandFailed("Failed to open stdout".to_string())
     })?;
+
+    // Drain stderr concurrently so a chatty child can't block on a full pipe.
+    let stderr_task = child.stderr.take().map(|mut stderr| {
+        tokio::spawn(async move {
+            use tokio::io::AsyncReadExt;
+            let mut buf = String::new();
+            let _ = stderr.read_to_string(&mut buf).await;
+            buf
+        })
+    });
+    let mut stdout_tail: std::collections::VecDeque<String> = std::collections::VecDeque::new();
 
     let mut reader = tokio::io::BufReader::new(stdout).lines();
 
@@ -482,6 +536,11 @@ pub async fn merge_subtitles_async(
                     Ok(Some(line)) => {
                         if let Some(pct) = parse_gui_progress(&line) {
                             on_progress(pct);
+                        } else if !line.trim().is_empty() {
+                            if stdout_tail.len() >= 20 {
+                                stdout_tail.pop_front();
+                            }
+                            stdout_tail.push_back(line);
                         }
                     }
                     Ok(None) => {
@@ -507,17 +566,19 @@ pub async fn merge_subtitles_async(
 
     let status = child.wait().await?;
 
-    if !status.success() {
-        let stderr = match child.stderr.take() {
-            Some(mut stderr) => {
-                let mut buf = String::new();
-                use tokio::io::AsyncReadExt;
-                let _ = stderr.read_to_string(&mut buf).await;
-                buf
-            }
-            None => "Unknown error".to_string(),
+    if !mkv_succeeded(&status) {
+        let stderr = match stderr_task {
+            Some(task) => task.await.unwrap_or_default(),
+            None => String::new(),
         };
-        return Err(MkvError::CommandFailed(stderr));
+        let stdout_text = stdout_tail.into_iter().collect::<Vec<_>>().join("\n");
+        let text = format!("{}\n{}", stdout_text.trim(), stderr.trim());
+        let text = text.trim();
+        return Err(MkvError::CommandFailed(if text.is_empty() {
+            format!("mkvmerge exited with {status}")
+        } else {
+            text.to_string()
+        }));
     }
 
     Ok(())
@@ -533,6 +594,17 @@ mod track_serde_tests {
         let track: Track = serde_json::from_str(raw).unwrap();
         assert_eq!(track.track_type, "subtitles");
         assert_eq!(track.properties.unwrap().language.as_deref(), Some("ita"));
+    }
+
+    #[test]
+    fn reads_hearing_impaired_flag_under_either_mkvmerge_name() {
+        for key in ["flag_hearing_impaired", "hearing_impaired_flag"] {
+            let raw = format!(
+                r#"{{"id":4,"type":"subtitles","codec":"SubRip/SRT","properties":{{"language":"eng","{key}":true}}}}"#
+            );
+            let track: Track = serde_json::from_str(&raw).unwrap();
+            assert_eq!(track.properties.unwrap().hearing_impaired, Some(true), "{key}");
+        }
     }
 
     #[test]

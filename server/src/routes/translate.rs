@@ -1,3 +1,4 @@
+use crate::config::AppConfig;
 use crate::tools::mkvtoolnix;
 use crate::tools::translate;
 use crate::{jobs, AppState};
@@ -5,6 +6,38 @@ use axum::{extract::Json, extract::State, http::StatusCode};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
+
+/// Host precedence: explicit request value, then the saved provider config,
+/// then the built-in default — so the saved setting is honoured even when a
+/// caller omits `host`.
+fn resolve_host(
+    requested: Option<String>,
+    from_config: impl FnOnce(AppConfig) -> Option<String>,
+    default: &str,
+) -> String {
+    requested
+        .filter(|h| !h.trim().is_empty())
+        .or_else(|| from_config(AppConfig::load()).filter(|h| !h.trim().is_empty()))
+        .unwrap_or_else(|| default.to_string())
+}
+
+/// `GET /api/config` masks secrets, so the UI may send the mask (or nothing)
+/// back as the key; in that case use the real value from the saved config.
+fn resolve_api_key(engine: &str, requested: Option<String>) -> String {
+    match requested {
+        Some(k) if !k.is_empty() && !AppConfig::is_mask(&k) => k,
+        _ => {
+            let c = AppConfig::load();
+            match engine {
+                "deepl" => c.deepl_api_key,
+                "openai" => c.openai_api_key,
+                "google" => c.google_translate_api_key,
+                _ => None,
+            }
+            .unwrap_or_default()
+        }
+    }
+}
 
 #[derive(Deserialize)]
 pub struct DetectRequest {
@@ -20,7 +53,7 @@ pub struct OllamaInfoResp {
 pub async fn detect_ollama(
     Json(req): Json<DetectRequest>,
 ) -> Result<Json<OllamaInfoResp>, StatusCode> {
-    let host = req.host.unwrap_or_else(|| "http://localhost:11434".to_string());
+    let host = resolve_host(req.host, |c| c.ollama_base_url, "http://localhost:11434");
     match translate::detect_ollama(&host).await {
         Ok(resp) => Ok(Json(OllamaInfoResp {
             available: true,
@@ -42,7 +75,7 @@ pub struct LibreInfoResp {
 pub async fn detect_libretranslate(
     Json(req): Json<DetectRequest>,
 ) -> Result<Json<LibreInfoResp>, StatusCode> {
-    let host = req.host.unwrap_or_else(|| "http://localhost:5000".to_string());
+    let host = resolve_host(req.host, |c| c.libretranslate_base_url, "http://localhost:5000");
     match translate::detect_libretranslate(&host).await {
         Ok(langs) => Ok(Json(LibreInfoResp {
             available: true,
@@ -139,7 +172,7 @@ pub async fn translate_subtitles(
             },
         );
 
-        let lines = match translate::extract_lines(&req_input) {
+        let lines = match tokio::task::block_in_place(|| translate::extract_lines(&req_input)) {
             Ok(l) => l,
             Err(e) => {
                 let mut q = queue_clone.lock().unwrap();
@@ -229,26 +262,22 @@ pub async fn translate_subtitles(
 
             let result = match req_engine.as_str() {
                 "ollama" => {
-                    let host = req_host
-                        .clone()
-                        .unwrap_or_else(|| "http://localhost:11434".to_string());
+                    let host = resolve_host(req_host.clone(), |c| c.ollama_base_url, "http://localhost:11434");
                     let model = req_model.clone().unwrap_or_else(|| "llama3".to_string());
                     translate::translate_ollama(&host, &model, chunk, &req_source, &req_target)
                         .await
                 }
                 "libretranslate" => {
-                    let host = req_host
-                        .clone()
-                        .unwrap_or_else(|| "http://localhost:5000".to_string());
+                    let host = resolve_host(req_host.clone(), |c| c.libretranslate_base_url, "http://localhost:5000");
                     translate::translate_libretranslate(&host, chunk, &req_source, &req_target)
                         .await
                 }
                 "deepl" => {
-                    let key = req_key.clone().unwrap_or_default();
+                    let key = resolve_api_key(&req_engine, req_key.clone());
                     translate::translate_deepl(&key, chunk, &req_source, &req_target).await
                 }
                 "openai" => {
-                    let key = req_key.clone().unwrap_or_default();
+                    let key = resolve_api_key(&req_engine, req_key.clone());
                     let model = req_model
                         .clone()
                         .unwrap_or_else(|| "gpt-4o-mini".to_string());
@@ -256,7 +285,7 @@ pub async fn translate_subtitles(
                         .await
                 }
                 "google" => {
-                    let key = req_key.clone().unwrap_or_default();
+                    let key = resolve_api_key(&req_engine, req_key.clone());
                     translate::translate_google(&key, chunk, &req_source, &req_target).await
                 }
                 _ => {
@@ -344,7 +373,7 @@ pub async fn translate_subtitles(
             );
         }
 
-        if let Err(e) = translate::rebuild_lines(&req_input, &temp_json_str, &req_output) {
+        if let Err(e) = tokio::task::block_in_place(|| translate::rebuild_lines(&req_input, &temp_json_str, &req_output)) {
             let _ = fs::remove_file(&temp_json);
             let mut q = queue_clone.lock().unwrap();
             q.update_status(&job_id_clone, jobs::JobStatus::Failed);
@@ -526,13 +555,13 @@ pub async fn run_translation_pipeline(
             .to_string_lossy()
             .to_string();
 
-        if let Err(e) = mkvtoolnix::extract_subtitle_track(&req.video_path, req.track_id, &extracted_path) {
+        if let Err(e) = tokio::task::block_in_place(|| mkvtoolnix::extract_subtitle_track(&req.video_path, req.track_id, &extracted_path)) {
             fail!(e.to_string());
         }
 
         // Stage 2: translate
         emit_stage(&sender_clone, &job_id_clone, "translating", 15, "Extracting lines...");
-        let lines = match translate::extract_lines(&extracted_path) {
+        let lines = match tokio::task::block_in_place(|| translate::extract_lines(&extracted_path)) {
             Ok(l) => l,
             Err(e) => {
                 let _ = fs::remove_file(&extracted_path);
@@ -585,25 +614,25 @@ pub async fn run_translation_pipeline(
 
             let result = match req.engine.as_str() {
                 "ollama" => {
-                    let host = req.host.clone().unwrap_or_else(|| "http://localhost:11434".to_string());
+                    let host = resolve_host(req.host.clone(), |c| c.ollama_base_url, "http://localhost:11434");
                     let model = req.model.clone().unwrap_or_else(|| "llama3".to_string());
                     translate::translate_ollama(&host, &model, chunk, &req.source_lang, &req.target_lang).await
                 }
                 "libretranslate" => {
-                    let host = req.host.clone().unwrap_or_else(|| "http://localhost:5000".to_string());
+                    let host = resolve_host(req.host.clone(), |c| c.libretranslate_base_url, "http://localhost:5000");
                     translate::translate_libretranslate(&host, chunk, &req.source_lang, &req.target_lang).await
                 }
                 "deepl" => {
-                    let key = req.api_key.clone().unwrap_or_default();
+                    let key = resolve_api_key(&req.engine, req.api_key.clone());
                     translate::translate_deepl(&key, chunk, &req.source_lang, &req.target_lang).await
                 }
                 "openai" => {
-                    let key = req.api_key.clone().unwrap_or_default();
+                    let key = resolve_api_key(&req.engine, req.api_key.clone());
                     let model = req.model.clone().unwrap_or_else(|| "gpt-4o-mini".to_string());
                     translate::translate_openai(&key, &model, chunk, &req.source_lang, &req.target_lang).await
                 }
                 "google" => {
-                    let key = req.api_key.clone().unwrap_or_default();
+                    let key = resolve_api_key(&req.engine, req.api_key.clone());
                     translate::translate_google(&key, chunk, &req.source_lang, &req.target_lang).await
                 }
                 _ => {
@@ -641,7 +670,7 @@ pub async fn run_translation_pipeline(
             .to_string();
 
         emit_stage(&sender_clone, &job_id_clone, "translating", 82, "Rebuilding subtitle file...");
-        if let Err(e) = translate::rebuild_lines(&extracted_path, &temp_json_str, &translated_srt) {
+        if let Err(e) = tokio::task::block_in_place(|| translate::rebuild_lines(&extracted_path, &temp_json_str, &translated_srt)) {
             let _ = fs::remove_file(&extracted_path);
             let _ = fs::remove_file(&temp_json);
             fail!(e.to_string());

@@ -56,6 +56,7 @@ pub fn run() {
             subtitle_cmds::remove_subtitle_tracks,
             subtitle_cmds::convert_subtitle_format,
             subtitle_cmds::shift_subtitle_timing,
+            subtitle_cmds::stretch_subtitle_timing,
             subtitle_cmds::set_track_metadata,
             subtitle_cmds::get_tool_registry,
             subtitle_cmds::load_config,

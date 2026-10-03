@@ -61,6 +61,22 @@ pub fn extract_lines(input_path: &str) -> Result<Vec<SubtitleLine>, TranslateErr
     Ok(lines)
 }
 
+/// Builds the `rebuild` argument list, adding `--rtl-fix` when the saved
+/// setting asks for right-to-left punctuation fixing (on by default).
+fn rebuild_args(script: &str, original: &str, translations: &str, output: &str) -> Vec<String> {
+    let mut args = vec![
+        script.to_string(),
+        "rebuild".to_string(),
+        original.to_string(),
+        translations.to_string(),
+        output.to_string(),
+    ];
+    if crate::config::AppConfig::load().fix_rtl_punctuation {
+        args.push("--rtl-fix".to_string());
+    }
+    args
+}
+
 pub fn rebuild_lines(
     original_path: &str,
     translations_json: &str,
@@ -70,7 +86,7 @@ pub fn rebuild_lines(
     let script = super::script_path("subtitle_lines.py");
 
     let output = Command::new(&python)
-        .args([&script, "rebuild", original_path, translations_json, output_path])
+        .args(rebuild_args(&script, original_path, translations_json, output_path))
         .output()?;
 
     if !output.status.success() {

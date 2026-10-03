@@ -26,19 +26,40 @@ const LANGUAGES: Record<string, { english: string; native: string }> = {
   und: { english: "Undetermined", native: "Undetermined" },
 };
 
+// mkvmerge reports ISO 639-2 three-letter codes ("eng"); the table above is
+// keyed by ISO 639-1 ("en"). Includes both bibliographic and terminology forms.
+const ISO3_TO_ISO1: Record<string, string> = {
+  eng: "en", ara: "ar", spa: "es", fre: "fr", fra: "fr", ger: "de", deu: "de", jpn: "ja",
+  kor: "ko", chi: "zh", zho: "zh", rus: "ru", por: "pt", ita: "it", tur: "tr", hin: "hi",
+  per: "fa", fas: "fa", urd: "ur", dut: "nl", nld: "nl", pol: "pl", swe: "sv", tha: "th",
+  vie: "vi", ind: "id",
+};
+
+/** "eng" / "ENG" / "en" -> "en"; unknown codes come back lower-cased. */
+export function normalizeLangCode(code: string): string {
+  const c = code.toLowerCase();
+  return ISO3_TO_ISO1[c] ?? c;
+}
+
+/** True for ISO 639-1 codes SubForge knows ("en") and their 639-2 forms ("eng"). */
+export function isKnownLangCode(code: string): boolean {
+  const c = code.toLowerCase();
+  return c in LANGUAGES || c in ISO3_TO_ISO1;
+}
+
 export function englishName(code: string): string | undefined {
-  return LANGUAGES[code.toLowerCase()]?.english;
+  return LANGUAGES[normalizeLangCode(code)]?.english;
 }
 
 export function nativeName(code: string): string | undefined {
-  return LANGUAGES[code.toLowerCase()]?.native;
+  return LANGUAGES[normalizeLangCode(code)]?.native;
 }
 
 // Builds a track-name preview like "Arabic - عربي", matching what the Rust
 // backend actually writes via `--track-name` when merging. Appends
 // "(SDH)" for hearing-impaired tracks unless already present.
 export function trackDisplayName(code: string, hearingImpaired = false): string {
-  const entry = LANGUAGES[code.toLowerCase()];
+  const entry = LANGUAGES[normalizeLangCode(code)];
   const english = entry?.english ?? code;
   const native = entry?.native ?? code;
 

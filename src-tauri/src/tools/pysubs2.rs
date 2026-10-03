@@ -69,3 +69,33 @@ pub fn shift_subtitles(
 
     Ok(())
 }
+
+pub fn stretch_framerate(
+    input: &str,
+    output: &str,
+    from_fps: f64,
+    to_fps: f64,
+) -> Result<(), Pysubs2Error> {
+    let python = get_python()?;
+    let script = super::script_path("subtitle_ops.py");
+
+    let output_cmd = Command::new(&python)
+        .args([
+            &script,
+            "stretch",
+            input,
+            output,
+            "--from-fps",
+            &from_fps.to_string(),
+            "--to-fps",
+            &to_fps.to_string(),
+        ])
+        .output()?;
+
+    if !output_cmd.status.success() {
+        let stderr = String::from_utf8_lossy(&output_cmd.stderr).to_string();
+        return Err(Pysubs2Error::ScriptFailed(stderr));
+    }
+
+    Ok(())
+}

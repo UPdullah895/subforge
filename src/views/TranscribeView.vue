@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from "vue";
 import { useI18n } from "vue-i18n";
-import { open } from "@tauri-apps/plugin-dialog";
+import { open } from "../utils/dialog";
 
 import { apiListen } from "../api/events";
 import type { UnlistenFn } from "@tauri-apps/api/event";
@@ -21,6 +21,8 @@ import {
   XCircle,
   Play,
   Info,
+  AlertTriangle,
+  RefreshCw,
 } from "lucide-vue-next";
 
 const transcribeStore = useTranscribeStore();
@@ -100,7 +102,7 @@ let unlistenCompleted: UnlistenFn | null = null;
 onMounted(async () => {
   appStore.discoverTools();
   await transcribeStore.loadInfo();
-  await transcribeStore.loadModels();
+  if (!transcribeStore.whisperMissing) await transcribeStore.loadModels();
 
   unlistenProgress = await apiListen<{ job_id: string; progress: number; message?: string }>(
     "job-progress",
@@ -116,6 +118,11 @@ onMounted(async () => {
     }
   );
 });
+
+async function retrySetup() {
+  await transcribeStore.loadInfo();
+  if (!transcribeStore.whisperMissing) await transcribeStore.loadModels();
+}
 
 onUnmounted(() => {
   if (unlistenProgress) unlistenProgress();
@@ -137,7 +144,8 @@ onUnmounted(() => {
         </span>
       </div>
       <button
-        class="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg bg-accent text-white text-sm font-medium hover:bg-accent-hover active:bg-accent-active transition-colors"
+        :disabled="transcribeStore.whisperMissing"
+        class="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg bg-accent text-white text-sm font-medium hover:bg-accent-hover active:bg-accent-active transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
         @click="pickFiles"
       >
         <FolderOpen class="w-4 h-4" />
@@ -148,6 +156,33 @@ onUnmounted(() => {
     <!-- Content -->
     <div class="flex-1 overflow-auto p-6 space-y-6">
       <ErrorBanner :message="transcribeStore.error" @dismiss="transcribeStore.error = null" />
+
+      <!-- Engine missing: explain what to install instead of a vague error -->
+      <div
+        v-if="transcribeStore.whisperMissing"
+        class="p-4 rounded-lg bg-warning/10 border border-warning/30 space-y-3"
+        role="alert"
+      >
+        <div class="flex items-start gap-3">
+          <AlertTriangle class="w-5 h-5 text-warning shrink-0 mt-0.5" />
+          <div class="space-y-1">
+            <h2 class="text-sm font-semibold text-text-primary">{{ t("transcribe.notInstalledTitle") }}</h2>
+            <p class="text-xs text-text-secondary">{{ t("transcribe.notInstalledBody") }}</p>
+          </div>
+        </div>
+        <pre
+          dir="ltr"
+          class="px-3 py-2 rounded-md bg-bg-primary border border-border text-xs text-text-primary overflow-x-auto select-all"
+        >pip install faster-whisper</pre>
+        <p class="text-xs text-text-muted">{{ t("transcribe.notInstalledHint") }}</p>
+        <button
+          class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-bg-tertiary text-text-secondary text-xs font-medium hover:bg-bg-hover transition-colors"
+          @click="retrySetup"
+        >
+          <RefreshCw class="w-3.5 h-3.5" :class="transcribeStore.loadingInfo ? 'animate-spin' : ''" />
+          {{ t("transcribe.checkAgain") }}
+        </button>
+      </div>
 
       <!-- Environment Info -->
       <div

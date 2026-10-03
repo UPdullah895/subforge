@@ -19,7 +19,9 @@ pub struct TrackRequest {
 pub async fn list_audio_tracks(
     Json(req): Json<TrackRequest>,
 ) -> Result<Json<Vec<AudioTrackInfo>>, StatusCode> {
-    let streams = ffmpeg::probe_audio_tracks(&req.file_path).map_err(|_| StatusCode::BAD_REQUEST)?;
+    let streams = crate::error::blocking(move || ffmpeg::probe_audio_tracks(&req.file_path))
+        .await?
+        .map_err(|_| StatusCode::BAD_REQUEST)?;
     let tracks: Vec<AudioTrackInfo> = streams
         .iter()
         .map(|s| AudioTrackInfo {
@@ -46,8 +48,11 @@ pub struct ExtractRequest {
 }
 
 pub async fn extract_audio_track(Json(req): Json<ExtractRequest>) -> Result<StatusCode, StatusCode> {
-    ffmpeg::extract_audio(&req.file_path, req.track_index, &req.output_path, req.format.as_deref())
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    crate::error::blocking(move || {
+        ffmpeg::extract_audio(&req.file_path, req.track_index, &req.output_path, req.format.as_deref())
+    })
+    .await?
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok(StatusCode::OK)
 }
 
@@ -59,8 +64,11 @@ pub struct MergeRequest {
 }
 
 pub async fn merge_audio_track(Json(req): Json<MergeRequest>) -> Result<StatusCode, StatusCode> {
-    ffmpeg::merge_audio(&req.video_path, &req.audio_path, &req.output_path)
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    crate::error::blocking(move || {
+        ffmpeg::merge_audio(&req.video_path, &req.audio_path, &req.output_path)
+    })
+    .await?
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok(StatusCode::OK)
 }
 
@@ -71,7 +79,10 @@ pub struct RemoveRequest {
 }
 
 pub async fn remove_audio_tracks(Json(req): Json<RemoveRequest>) -> Result<StatusCode, StatusCode> {
-    crate::tools::mkvtoolnix::remove_all_audio(&req.file_path, &req.output_path)
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    crate::error::blocking(move || {
+        crate::tools::mkvtoolnix::remove_all_audio(&req.file_path, &req.output_path)
+    })
+    .await?
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok(StatusCode::OK)
 }

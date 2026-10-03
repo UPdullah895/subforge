@@ -23,7 +23,7 @@ import {
   Loader2,
   HelpCircle,
 } from "lucide-vue-next";
-import { open as openDialog } from "@tauri-apps/plugin-dialog";
+import { open as openDialog } from "../utils/dialog";
 
 const { t } = useI18n();
 
@@ -140,7 +140,10 @@ async function saveSettings() {
 }
 
 function resetDefaults() {
+  // Reset preferences only; keep API keys, provider URLs and credentials so
+  // pressing Save afterwards doesn't silently wipe them.
   appStore.config = {
+    ...appStore.config,
     theme: "dark",
     language: "en",
     default_engine: "ollama",
@@ -301,6 +304,18 @@ onMounted(() => {
               </button>
             </div>
           </div>
+          <label class="flex items-start gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              class="mt-0.5 accent-accent"
+              :checked="appStore.config.fix_rtl_punctuation !== false"
+              @change="appStore.config.fix_rtl_punctuation = ($event.target as HTMLInputElement).checked"
+            />
+            <span>
+              <span class="block text-sm text-text-primary">{{ t("settings.fixRtlPunctuation") }}</span>
+              <span class="block text-xs text-text-muted">{{ t("settings.fixRtlPunctuationHint") }}</span>
+            </span>
+          </label>
         </div>
       </section>
 

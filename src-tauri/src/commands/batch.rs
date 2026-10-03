@@ -141,7 +141,17 @@ pub async fn batch_extract_subtitles(
 
     for file in &options.files {
         let job_id = format!("batch-extract-{}", uuid::Uuid::new_v4());
-        let output_dir = options.output_dir.clone();
+        // An empty output_dir means "next to each video" (where media servers
+        // look for external subtitles; right for per-season folders).
+        let output_dir = if options.output_dir.trim().is_empty() {
+            std::path::Path::new(file)
+                .parent()
+                .map(|p| p.to_string_lossy().to_string())
+                .filter(|p| !p.is_empty())
+                .unwrap_or_else(|| ".".to_string())
+        } else {
+            options.output_dir.clone()
+        };
         let languages = options.languages.clone();
         let file = file.clone();
 
@@ -208,6 +218,10 @@ pub struct MergeSubsRequest {
     pub subs: Vec<SubToMerge>,
     #[serde(default)]
     pub delete_originals: bool,
+    /// Swap the merged file in for the original video instead of leaving a
+    /// `.merged.mkv` next to it.
+    #[serde(default)]
+    pub replace_original: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -261,6 +275,7 @@ pub async fn merge_external_subs(
     let controls_clone = controls.inner().clone();
     let job_id_clone = job_id.clone();
     let delete_originals = request.delete_originals;
+    let replace_original = request.replace_original;
 
     let subs: Vec<mkvtoolnix::SubtitleMergeSpec> = request
         .subs
@@ -320,16 +335,35 @@ pub async fn merge_external_subs(
             }
         }
 
+        // Optionally swap the merged file in for the original, so the library
+        // doesn't end up with two copies of the same episode. Only after the
+        // merge succeeded and produced a non-empty file; if the swap fails
+        // (file in use, permissions) the merged copy is kept and we say so.
+        let mut final_output = output_path.clone();
+        let mut done_message = "Merge complete".to_string();
+        if replace_original {
+            let produced = std::fs::metadata(&output_path).map(|m| m.len() > 0).unwrap_or(false);
+            if produced {
+                match std::fs::rename(&output_path, &video_path_str) {
+                    Ok(()) => final_output = video_path_str.clone(),
+                    Err(e) => {
+                        done_message =
+                            format!("Merged, but could not replace the original (kept {output_path}): {e}");
+                    }
+                }
+            }
+        }
+
         {
             let mut q = queue_clone.lock().unwrap();
             q.update_status(&job_id_clone, JobStatus::Completed);
-            q.update_progress(&job_id_clone, 100.0, Some("Merge complete".to_string()));
+            q.update_progress(&job_id_clone, 100.0, Some(done_message.clone()));
         }
         let _ = app_clone.emit("job-completed", serde_json::json!({
             "job_id": job_id_clone,
             "status": "completed",
-            "message": "Merge complete",
-            "output_path": output_path,
+            "message": done_message,
+            "output_path": final_output,
         }));
 
         let mut registry = controls_clone.lock().unwrap();

@@ -35,7 +35,9 @@ pub struct TrackProperties {
     pub forced_track: Option<bool>,
     // mkvmerge's `-J` output calls this "hearing_impaired_flag"; expose it as
     // the plainer `hearing_impaired` name the frontend/track-naming logic use.
-    #[serde(rename(deserialize = "hearing_impaired_flag"), default)]
+    // Newer mkvmerge (v70+) emits "flag_hearing_impaired"; older builds used
+    // "hearing_impaired_flag". Accept both.
+    #[serde(alias = "flag_hearing_impaired", alias = "hearing_impaired_flag", default)]
     pub hearing_impaired: Option<bool>,
 }
 
@@ -359,6 +361,13 @@ pub fn merge_subtitles(
         args.push("--default-track-flag".to_string());
         args.push(format!("0:{}", if sub.make_default { "yes" } else { "no" }));
 
+        // Real SDH flag (not just "(SDH)" in the name) so players and media
+        // servers can offer/auto-select these tracks for hearing-impaired viewers.
+        if sub.hearing_impaired {
+            args.push("--hearing-impaired-flag".to_string());
+            args.push("0:yes".to_string());
+        }
+
         args.push(sub.path.clone());
     }
 
@@ -496,6 +505,13 @@ pub async fn merge_subtitles_async(
         args.push("--default-track-flag".to_string());
         args.push(format!("0:{}", if sub.make_default { "yes" } else { "no" }));
 
+        // Real SDH flag (not just "(SDH)" in the name) so players and media
+        // servers can offer/auto-select these tracks for hearing-impaired viewers.
+        if sub.hearing_impaired {
+            args.push("--hearing-impaired-flag".to_string());
+            args.push("0:yes".to_string());
+        }
+
         args.push(sub.path.clone());
     }
 
@@ -573,6 +589,17 @@ mod track_serde_tests {
         let track: Track = serde_json::from_str(raw).unwrap();
         assert_eq!(track.track_type, "subtitles");
         assert_eq!(track.properties.unwrap().language.as_deref(), Some("ita"));
+    }
+
+    #[test]
+    fn reads_hearing_impaired_flag_under_either_mkvmerge_name() {
+        for key in ["flag_hearing_impaired", "hearing_impaired_flag"] {
+            let raw = format!(
+                r#"{{"id":4,"type":"subtitles","codec":"SubRip/SRT","properties":{{"language":"eng","{key}":true}}}}"#
+            );
+            let track: Track = serde_json::from_str(&raw).unwrap();
+            assert_eq!(track.properties.unwrap().hearing_impaired, Some(true), "{key}");
+        }
     }
 
     #[test]

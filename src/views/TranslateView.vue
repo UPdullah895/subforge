@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, watch } from "vue";
 import { useI18n } from "vue-i18n";
-import { open } from "@tauri-apps/plugin-dialog";
+import { open } from "../utils/dialog";
+import { baseName, externalSubFilename, parseSubtitleFilename } from "../utils/subtitleNaming";
 import { apiListen } from "../api/events";
 import type { UnlistenFn } from "@tauri-apps/api/event";
 import { useTranslateStore, type EngineType, mapJobErrorMessage } from "../stores/translateStore";
@@ -103,12 +104,11 @@ const languageOptions = [
   { code: "ur", label: "Urdu" },
 ];
 
-const knownLangCodes = languageOptions.map((l) => l.code).filter((c) => c !== "auto");
-const langPattern = new RegExp(`\\.(${knownLangCodes.join("|")})\\.(srt|ass|ssa|vtt)$`, "i");
+const selectableLangs = new Set(languageOptions.map((l) => l.code));
 
 function detectLangFromFileName(name: string): string | null {
-  const m = name.match(langPattern);
-  return m ? m[1].toLowerCase() : null;
+  const lang = parseSubtitleFilename(name).lang;
+  return lang && selectableLangs.has(lang) ? lang : null;
 }
 
 function buildOutputPath(inputPath: string, targetLang: string): string {
@@ -116,14 +116,10 @@ function buildOutputPath(inputPath: string, targetLang: string): string {
   const dir = inputPath.substring(0, lastSlash + 1);
   const name = inputPath.substring(lastSlash + 1);
 
-  const extMatch = name.match(/\.(srt|ass|ssa|vtt)$/i);
-  const ext = extMatch ? extMatch[1] : "srt";
-
-  // Strip the real extension first, then strip an existing language code if present
-  const withoutExt = name.replace(/\.[^.]+$/, "");
-  const base = withoutExt.replace(new RegExp(`\\.(${knownLangCodes.join("|")})$`, "i"), "");
-
-  return `${dir}${base}.${targetLang}.${ext}`;
+  // `Show.eng.sdh.srt` -> `Show.ar.sdh.srt`: swap the language tag, keep the
+  // SDH/forced flavor, so the result is still `{video}.{lang}[.flavor].ext`.
+  const { stem, flavor, ext } = parseSubtitleFilename(name);
+  return `${dir}${externalSubFilename(stem, targetLang, ext, flavor)}`;
 }
 
 async function pickFiles() {
@@ -585,7 +581,7 @@ onUnmounted(() => {
               />
               <Loader2 v-else class="w-4 h-4 text-accent animate-spin shrink-0" />
               <div class="flex-1 min-w-0">
-                <p class="text-xs text-text-muted font-mono truncate">{{ job.id.slice(0, 24) }}…</p>
+                <p class="text-xs text-text-primary truncate" dir="auto" :title="job.input_file">{{ baseName(job.input_file) }}</p>
                 <p v-if="job.message" class="text-xs text-text-secondary truncate">{{ job.message }}</p>
               </div>
               <button

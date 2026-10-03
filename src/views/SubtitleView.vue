@@ -1,12 +1,16 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
-import { open, save } from "@tauri-apps/plugin-dialog";
-import { invoke } from "@tauri-apps/api/core";
+import { open, save } from "../utils/dialog";
+import { apiInvoke } from "../api/client";
+import { startAndWait } from "../api/jobs";
+import { baseName, dirOf, fileStem, joinPath, planSubtitleFilenames } from "../utils/subtitleNaming";
+import { useToastStore } from "../stores/toastStore";
 import { useSubtitleStore } from "../stores/subtitleStore";
 import { useAppStore } from "../stores/appStore";
 
 const { t } = useI18n();
+const toastStore = useToastStore();
 import TrackTable from "../components/TrackTable.vue";
 import {
   FolderOpen,
@@ -102,10 +106,11 @@ function clearFiles() {
 
 async function extractTrack(track: { id: number; language: string; track_name?: string }) {
   if (!activeFile.value) return;
-  const ext = ".srt";
-  const lang = track.language || "und";
-  const name = track.track_name || `track_${track.id}`;
-  const suggested = `${name}_${lang}${ext}`;
+  // `{video}.{lang}[.sdh|.forced].srt` next to the video: the same convention
+  // batch extraction uses, so media servers pick the file up and extracting
+  // from several episodes never collides.
+  const plan = planSubtitleFilenames(fileStem(activeFile.value), subtitleTracks.value);
+  const suggested = joinPath(dirOf(activeFile.value), plan.get(track.id) ?? `track_${track.id}.srt`);
 
   const outputPath = await save({
     defaultPath: suggested,
@@ -122,13 +127,9 @@ async function batchExtractAllSubtitles() {
   batchLoading.value = true;
   for (const file of selectedFiles.value) {
     await subtitleStore.loadTracks(file);
+    const plan = planSubtitleFilenames(fileStem(file), subtitleTracks.value);
     for (const track of subtitleTracks.value) {
-      const lastSlash = Math.max(file.lastIndexOf("/"), file.lastIndexOf("\\"));
-      const dir = file.substring(0, lastSlash + 1);
-      const base = file.substring(lastSlash + 1).replace(/\.[^.]+$/, "");
-      const lang = track.language || "und";
-      const name = track.track_name || `track_${track.id}`;
-      const output = `${dir}${base}_${name}_${lang}.srt`;
+      const output = joinPath(dirOf(file), plan.get(track.id) ?? `track_${track.id}.srt`);
       await subtitleStore.extractTrack(track.id, output);
     }
   }
@@ -161,21 +162,28 @@ async function runMerge() {
 
   try {
     const output = await save({
-      defaultPath: "merged.mkv",
+      // Next to the video, e.g. "Show - S01E03.merged.mkv".
+      defaultPath: joinPath(dirOf(mergeVideoPath.value), `${fileStem(mergeVideoPath.value)}.merged.mkv`),
       filters: [{ name: "MKV", extensions: ["mkv"] }],
       title: t("subtitle.mergeSubtitle"),
     });
     if (output && typeof output === "string") {
-      await invoke("merge_subtitle_into_video", {
-        videoPath: mergeVideoPath.value,
-        subtitlePath: mergeSubtitlePath.value,
-        outputPath: output,
-        language: mergeLanguage.value || null,
-      });
-      mergeSuccess.value = true;
+      // The merge runs in the background; report its real outcome rather than
+      // claiming success the moment it was accepted.
+      const result = await startAndWait(() =>
+        apiInvoke<string>("merge_subtitle_into_video", {
+          videoPath: mergeVideoPath.value,
+          subtitlePath: mergeSubtitlePath.value,
+          outputPath: output,
+          language: mergeLanguage.value || null,
+        })
+      );
+      if (result.status === "completed") mergeSuccess.value = true;
+      else if (result.status === "cancelled") mergeError.value = t("toast.jobCancelled");
+      else mergeError.value = result.message || t("toast.jobFailed");
     }
   } catch (e) {
-    mergeError.value = String(e);
+    mergeError.value = e instanceof Error ? e.message : String(e);
   } finally {
     mergeLoading.value = false;
   }
@@ -198,21 +206,23 @@ async function runConvert() {
 
   try {
     const output = await save({
-      defaultPath: `output.${convertFormat.value}`,
+      // `Show.eng.srt` -> `Show.eng.ass`, in the same folder.
+      defaultPath: joinPath(dirOf(convertInputPath.value), `${fileStem(convertInputPath.value)}.${convertFormat.value}`),
       filters: [{ name: t("subtitle.subtitleFileLabel"), extensions: ["srt", "ass", "ssa", "vtt"] }],
       title: t("subtitle.convertFormat"),
     });
     if (output && typeof output === "string") {
-      await invoke("convert_subtitle_format", {
+      await apiInvoke("convert_subtitle_format", {
         input: convertInputPath.value,
         output,
         format: convertFormat.value,
       });
       convertOutputPath.value = output;
       convertSuccess.value = true;
+      toastStore.success(t("subtitle.convertDone"), baseName(output));
     }
   } catch (e) {
-    convertError.value = String(e);
+    convertError.value = e instanceof Error ? e.message : String(e);
   } finally {
     convertLoading.value = false;
   }
@@ -226,20 +236,58 @@ async function runShift() {
 
   try {
     const output = await save({
-      defaultPath: "shifted.srt",
+      // Same folder and name as the input: a retimed subtitle belongs next to
+      // its video under the name media servers expect (the dialog asks before
+      // replacing).
+      defaultPath: convertInputPath.value,
       filters: [{ name: "Subtitle files", extensions: ["srt", "ass", "ssa", "vtt"] }],
     });
     if (output && typeof output === "string") {
-      await invoke("shift_subtitle_timing", {
+      await apiInvoke("shift_subtitle_timing", {
         input: convertInputPath.value,
         output,
         milliseconds: shiftMs.value,
       });
       convertOutputPath.value = output;
       convertSuccess.value = true;
+      toastStore.success(t("subtitle.retimeDone"), baseName(output));
     }
   } catch (e) {
-    convertError.value = String(e);
+    convertError.value = e instanceof Error ? e.message : String(e);
+  } finally {
+    convertLoading.value = false;
+  }
+}
+
+// Frame rates the subtitle/video pair most often disagree on.
+const FPS_PRESETS = [23.976, 24, 25, 29.97, 30];
+const stretchFromFps = ref(25);
+const stretchToFps = ref(23.976);
+
+async function runStretch() {
+  if (!convertInputPath.value || stretchFromFps.value === stretchToFps.value) return;
+  convertLoading.value = true;
+  convertError.value = null;
+  convertSuccess.value = false;
+
+  try {
+    const output = await save({
+      defaultPath: convertInputPath.value,
+      filters: [{ name: "Subtitle files", extensions: ["srt", "ass", "ssa", "vtt"] }],
+    });
+    if (output && typeof output === "string") {
+      await apiInvoke("stretch_subtitle_timing", {
+        input: convertInputPath.value,
+        output,
+        fromFps: stretchFromFps.value,
+        toFps: stretchToFps.value,
+      });
+      convertOutputPath.value = output;
+      convertSuccess.value = true;
+      toastStore.success(t("subtitle.retimeDone"), baseName(output));
+    }
+  } catch (e) {
+    convertError.value = e instanceof Error ? e.message : String(e);
   } finally {
     convertLoading.value = false;
   }
@@ -459,7 +507,7 @@ onMounted(() => {
               <label class="block text-xs font-medium text-text-secondary mb-1.5">{{ t("subtitle.videoFile") }}</label>
               <button class="flex items-center gap-2 w-full px-4 py-2.5 rounded-lg bg-bg-secondary border border-border text-sm text-text-primary hover:bg-bg-hover transition-colors text-left" @click="pickMergeVideo">
                 <FileVideo class="w-4 h-4 text-text-muted" />
-                <span class="truncate">{{ mergeVideoPath || t("subtitle.selectVideoFile") }}</span>
+                <span class="truncate" dir="auto" :title="mergeVideoPath">{{ mergeVideoPath ? baseName(mergeVideoPath) : t("subtitle.selectVideoFile") }}</span>
               </button>
             </div>
 
@@ -467,7 +515,7 @@ onMounted(() => {
               <label class="block text-xs font-medium text-text-secondary mb-1.5">{{ t("subtitle.subtitleFile") }}</label>
               <button class="flex items-center gap-2 w-full px-4 py-2.5 rounded-lg bg-bg-secondary border border-border text-sm text-text-primary hover:bg-bg-hover transition-colors text-left" @click="pickMergeSubtitle">
                 <Merge class="w-4 h-4 text-text-muted" />
-                <span class="truncate">{{ mergeSubtitlePath || t("subtitle.selectSubtitleFile") }}</span>
+                <span class="truncate" dir="auto" :title="mergeSubtitlePath">{{ mergeSubtitlePath ? baseName(mergeSubtitlePath) : t("subtitle.selectSubtitleFile") }}</span>
               </button>
             </div>
 
@@ -505,15 +553,15 @@ onMounted(() => {
             <h2 class="text-sm font-semibold text-text-primary uppercase tracking-wide">{{ t("subtitle.convertFormat") }}</h2>
 
             <div>
-              <label class="block text-xs font-medium text-text-secondary mb-1.5">Subtitle file</label>
+              <label class="block text-xs font-medium text-text-secondary mb-1.5">{{ t("subtitle.subtitleFileLabel") }}</label>
               <button class="flex items-center gap-2 w-full px-4 py-2.5 rounded-lg bg-bg-secondary border border-border text-sm text-text-primary hover:bg-bg-hover transition-colors text-left" @click="pickConvertInput">
                 <ArrowLeftRight class="w-4 h-4 text-text-muted" />
-                <span class="truncate">{{ convertInputPath || "Select subtitle file..." }}</span>
+                <span class="truncate" dir="auto" :title="convertInputPath">{{ convertInputPath ? baseName(convertInputPath) : t("subtitle.selectSubtitleFile") }}</span>
               </button>
             </div>
 
             <div>
-              <label class="block text-xs font-medium text-text-secondary mb-1.5">Target format</label>
+              <label class="block text-xs font-medium text-text-secondary mb-1.5">{{ t("subtitle.targetFormat") }}</label>
               <select v-model="convertFormat" class="w-full px-4 py-2.5 rounded-lg bg-bg-secondary border border-border text-sm text-text-primary focus:outline-none focus:border-accent">
                 <option value="srt">SRT</option>
                 <option value="ass">ASS</option>
@@ -529,22 +577,22 @@ onMounted(() => {
             >
               <Loader2 v-if="convertLoading" class="w-4 h-4 animate-spin" />
               <ArrowLeftRight v-else class="w-4 h-4" />
-              Convert
+              {{ t("subtitle.convert") }}
             </button>
           </div>
 
           <div class="border-t border-border pt-6 space-y-4">
-            <h2 class="text-sm font-semibold text-text-primary uppercase tracking-wide">Retime / Shift</h2>
+            <h2 class="text-sm font-semibold text-text-primary uppercase tracking-wide">{{ t("subtitle.retimeShift") }}</h2>
 
             <div>
-              <label class="block text-xs font-medium text-text-secondary mb-1.5">Shift milliseconds</label>
+              <label class="block text-xs font-medium text-text-secondary mb-1.5">{{ t("subtitle.shiftMilliseconds") }}</label>
               <input
                 v-model.number="shiftMs"
                 type="number"
                 step="100"
                 class="w-full px-4 py-2.5 rounded-lg bg-bg-secondary border border-border text-sm text-text-primary focus:outline-none focus:border-accent"
               />
-              <p class="text-xs text-text-muted mt-1">Positive = forward, Negative = backward</p>
+              <p class="text-xs text-text-muted mt-1">{{ t("subtitle.shiftHint") }}</p>
             </div>
 
             <button
@@ -553,7 +601,54 @@ onMounted(() => {
               @click="runShift"
             >
               <Loader2 v-if="convertLoading" class="w-4 h-4 animate-spin" />
-              Shift Timing
+              {{ t("subtitle.shiftTiming") }}
+            </button>
+          </div>
+
+          <!-- Frame-rate drift: starts in sync, ends up seconds or minutes off -->
+          <div class="border-t border-border pt-6 space-y-4">
+            <div>
+              <h2 class="text-sm font-semibold text-text-primary uppercase tracking-wide">
+                {{ t("subtitle.fixDriftTitle") }}
+              </h2>
+              <p class="text-xs text-text-muted mt-1">{{ t("subtitle.fixDriftHint") }}</p>
+            </div>
+
+            <div class="grid grid-cols-2 gap-3">
+              <div>
+                <label class="block text-xs font-medium text-text-secondary mb-1.5" for="stretch-from">
+                  {{ t("subtitle.fpsFrom") }}
+                </label>
+                <select
+                  id="stretch-from"
+                  v-model.number="stretchFromFps"
+                  class="w-full px-4 py-2.5 rounded-lg bg-bg-secondary border border-border text-sm text-text-primary focus:outline-none focus:border-accent"
+                >
+                  <option v-for="fps in FPS_PRESETS" :key="fps" :value="fps">{{ fps }} fps</option>
+                </select>
+              </div>
+              <div>
+                <label class="block text-xs font-medium text-text-secondary mb-1.5" for="stretch-to">
+                  {{ t("subtitle.fpsTo") }}
+                </label>
+                <select
+                  id="stretch-to"
+                  v-model.number="stretchToFps"
+                  class="w-full px-4 py-2.5 rounded-lg bg-bg-secondary border border-border text-sm text-text-primary focus:outline-none focus:border-accent"
+                >
+                  <option v-for="fps in FPS_PRESETS" :key="fps" :value="fps">{{ fps }} fps</option>
+                </select>
+              </div>
+            </div>
+            <p v-if="stretchFromFps === stretchToFps" class="text-xs text-warning">{{ t("subtitle.fpsSame") }}</p>
+
+            <button
+              :disabled="!convertInputPath || convertLoading || stretchFromFps === stretchToFps"
+              class="w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-bg-tertiary text-text-primary text-sm font-medium hover:bg-bg-hover transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              @click="runStretch"
+            >
+              <Loader2 v-if="convertLoading" class="w-4 h-4 animate-spin" />
+              {{ t("subtitle.fixDriftButton") }}
             </button>
           </div>
 
@@ -563,7 +658,7 @@ onMounted(() => {
           </div>
           <div v-if="convertSuccess" class="flex items-start gap-3 px-4 py-3 rounded-lg bg-success/10 border border-success/20">
             <CheckCircle2 class="w-4 h-4 text-success shrink-0 mt-0.5" />
-            <p class="text-xs text-success">Operation completed. Saved to {{ convertOutputPath }}</p>
+            <p class="text-xs text-success">{{ t("subtitle.operationCompleted", { path: convertOutputPath }) }}</p>
           </div>
         </div>
       </template>

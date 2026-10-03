@@ -6,7 +6,8 @@ use axum::{
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 use std::collections::HashMap;
-use tower_http::cors::CorsLayer;
+use axum::http::{header::HeaderValue, request::Parts};
+use tower_http::cors::{AllowOrigin, CorsLayer};
 use tower_http::services::ServeDir;
 
 mod config;
@@ -53,11 +54,11 @@ async fn main() {
         .nest("/api", api_routes())
         .route("/ws", get(ws::ws_handler))
         .fallback_service(ServeDir::new("dist").append_index_html_on_directories(true))
-        .layer(CorsLayer::permissive())
+        .layer(cors_layer())
         .layer(DefaultBodyLimit::max(2 * 1024 * 1024 * 1024)) // 2 GB
         .with_state(state.clone());
 
-    let host = std::env::var("SUBFORGE_HOST").unwrap_or_else(|_| "0.0.0.0:8080".to_string());
+    let host = std::env::var("SUBFORGE_HOST").unwrap_or_else(|_| "127.0.0.1:8080".to_string());
     let addr: SocketAddr = host.parse().expect("Invalid SUBFORGE_HOST");
 
     println!("SubForge server listening on http://{}", addr);
@@ -78,6 +79,8 @@ fn api_routes() -> Router<AppState> {
         .route("/jobs/cancel", post(routes::jobs::cancel_job))
         .route("/jobs/pause", post(routes::jobs::pause_job))
         .route("/jobs/resume", post(routes::jobs::resume_job))
+        // ── Filesystem browsing (web file picker) ────────────────────────────
+        .route("/fs/list", get(routes::fs::list_dir))
         // ── Tool registry ────────────────────────────────────────────────────
         .route("/tools/registry", get(routes::tools::get_registry))
         // ── Config ───────────────────────────────────────────────────────────
@@ -93,6 +96,7 @@ fn api_routes() -> Router<AppState> {
         .route("/subtitle/remove", post(routes::subtitle::remove_subtitles))
         .route("/subtitle/convert", post(routes::subtitle::convert_format))
         .route("/subtitle/shift", post(routes::subtitle::shift_timing))
+        .route("/subtitle/stretch", post(routes::subtitle::stretch_timing))
         .route("/subtitle/meta", post(routes::subtitle::set_track_metadata))
         // ── Audio operations ─────────────────────────────────────────────────
         .route("/audio/tracks", post(routes::audio::list_audio_tracks))
@@ -156,4 +160,29 @@ fn api_routes() -> Router<AppState> {
             "/subtitle-sources/subsource/status",
             post(routes::subtitle_sources::check_subsource_status),
         )
+}
+
+/// The bundled frontend is served from this same origin, so cross-origin
+/// access is only needed for local dev servers. Anything that isn't a
+/// loopback origin is refused, which stops arbitrary websites from driving
+/// the API from a visitor's browser.
+fn cors_layer() -> CorsLayer {
+    CorsLayer::new()
+        .allow_origin(AllowOrigin::predicate(|origin: &HeaderValue, _: &Parts| {
+            let Ok(origin) = origin.to_str() else { return false };
+            let Some(rest) = origin
+                .strip_prefix("http://")
+                .or_else(|| origin.strip_prefix("https://"))
+            else {
+                return false;
+            };
+            let host = if rest.starts_with("[::1]") {
+                "[::1]"
+            } else {
+                rest.split(':').next().unwrap_or("")
+            };
+            matches!(host, "localhost" | "127.0.0.1" | "[::1]")
+        }))
+        .allow_methods(tower_http::cors::Any)
+        .allow_headers(tower_http::cors::Any)
 }

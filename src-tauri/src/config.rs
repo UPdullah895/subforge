@@ -9,6 +9,10 @@ fn default_target_langs() -> Vec<String> {
     vec!["ar".to_string()]
 }
 
+fn default_true() -> bool {
+    true
+}
+
 fn default_search_online_before_translate() -> bool {
     true
 }
@@ -43,6 +47,10 @@ pub struct AppConfig {
     pub libretranslate_base_url: Option<String>,
     #[serde(default = "default_search_online_before_translate")]
     pub search_online_before_translate: bool,
+    // Wrap right-to-left (Arabic/Hebrew/Persian) subtitle lines in an RTL
+    // embedding so players put punctuation on the correct side.
+    #[serde(default = "default_true")]
+    pub fix_rtl_punctuation: bool,
 }
 
 impl Default for AppConfig {
@@ -68,6 +76,7 @@ impl Default for AppConfig {
             ollama_base_url: None,
             libretranslate_base_url: None,
             search_online_before_translate: default_search_online_before_translate(),
+            fix_rtl_punctuation: true,
         }
     }
 }

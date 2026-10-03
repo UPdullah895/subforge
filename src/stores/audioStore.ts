@@ -1,7 +1,10 @@
 import { defineStore } from "pinia";
 import { apiInvoke } from "../api/client";
-import { ref } from "vue";
+import { reactive, ref } from "vue";
 import { JOB_STATUS, type JobStatus } from "../constants/jobStatus";
+import { useToastStore } from "./toastStore";
+import { i18n } from "../i18n";
+import { baseName } from "../utils/subtitleNaming";
 
 export interface AudioTrackInfo {
   id: number;
@@ -19,11 +22,24 @@ export interface AudioJob {
 }
 
 export const useAudioStore = defineStore("audio", () => {
+  const toast = useToastStore();
   const selectedFile = ref<string | null>(null);
   const tracks = ref<AudioTrackInfo[]>([]);
   const loading = ref(false);
   const error = ref<string | null>(null);
   const jobs = ref<AudioJob[]>([]);
+
+  function finish(job: AudioJob, outputPath: string) {
+    job.status = JOB_STATUS.COMPLETED;
+    job.message = `Saved to ${outputPath}`;
+    toast.success(i18n.global.t("toast.audioDone"), baseName(outputPath));
+  }
+
+  function fail(job: AudioJob, e: unknown) {
+    job.status = JOB_STATUS.FAILED;
+    job.message = e instanceof Error ? e.message : String(e);
+    toast.error(i18n.global.t("toast.audioFailed"), job.message);
+  }
 
   async function loadTracks(filePath: string) {
     loading.value = true;
@@ -35,7 +51,7 @@ export const useAudioStore = defineStore("audio", () => {
       tracks.value = result;
       selectedFile.value = filePath;
     } catch (e) {
-      error.value = String(e);
+      error.value = e instanceof Error ? e.message : String(e);
       tracks.value = [];
     } finally {
       loading.value = false;
@@ -47,11 +63,12 @@ export const useAudioStore = defineStore("audio", () => {
       error.value = "No file selected.";
       return;
     }
-    const job: AudioJob = {
+    // reactive(): the status/message mutated later must be seen by the UI.
+    const job: AudioJob = reactive<AudioJob>({
       id: `extract-${trackIndex}-${Date.now()}`,
       type: "extract",
       status: JOB_STATUS.RUNNING,
-    };
+    });
     jobs.value.push(job);
 
     try {
@@ -61,20 +78,19 @@ export const useAudioStore = defineStore("audio", () => {
         outputPath,
         format,
       });
-      job.status = JOB_STATUS.COMPLETED;
-      job.message = `Saved to ${outputPath}`;
+      finish(job, outputPath);
     } catch (e) {
-      job.status = JOB_STATUS.FAILED;
-      job.message = String(e);
+      fail(job, e);
     }
   }
 
   async function mergeAudio(videoPath: string, audioPath: string, outputPath: string) {
-    const job: AudioJob = {
+    // reactive(): the status/message mutated later must be seen by the UI.
+    const job: AudioJob = reactive<AudioJob>({
       id: `merge-${Date.now()}`,
       type: "merge",
       status: JOB_STATUS.RUNNING,
-    };
+    });
     jobs.value.push(job);
 
     try {
@@ -83,11 +99,9 @@ export const useAudioStore = defineStore("audio", () => {
         audioPath,
         outputPath,
       });
-      job.status = JOB_STATUS.COMPLETED;
-      job.message = `Saved to ${outputPath}`;
+      finish(job, outputPath);
     } catch (e) {
-      job.status = JOB_STATUS.FAILED;
-      job.message = String(e);
+      fail(job, e);
     }
   }
 
@@ -96,11 +110,12 @@ export const useAudioStore = defineStore("audio", () => {
       error.value = "No file selected.";
       return;
     }
-    const job: AudioJob = {
+    // reactive(): the status/message mutated later must be seen by the UI.
+    const job: AudioJob = reactive<AudioJob>({
       id: `remove-${Date.now()}`,
       type: "remove",
       status: JOB_STATUS.RUNNING,
-    };
+    });
     jobs.value.push(job);
 
     try {
@@ -108,11 +123,9 @@ export const useAudioStore = defineStore("audio", () => {
         filePath: selectedFile.value,
         outputPath,
       });
-      job.status = JOB_STATUS.COMPLETED;
-      job.message = `Saved to ${outputPath}`;
+      finish(job, outputPath);
     } catch (e) {
-      job.status = JOB_STATUS.FAILED;
-      job.message = String(e);
+      fail(job, e);
     }
   }
 

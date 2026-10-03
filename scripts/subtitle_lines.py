@@ -6,6 +6,7 @@ Uses pysubs2 for format-agnostic parsing.
 
 import argparse
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -30,7 +31,32 @@ def extract(input_path: str) -> None:
     print(json.dumps(lines))
 
 
-def rebuild(input_path: str, translated_json: str, output_path: str) -> None:
+# Arabic, Hebrew, Syriac, Thaana, N'Ko, Persian/Urdu extensions + presentation forms.
+_RTL_CHARS = re.compile("[\u0590-\u08FF\uFB1D-\uFDFF\uFE70-\uFEFF]")
+_LEADING_ASS_TAGS = re.compile(r"^(?:\{[^}]*\})*")
+_RLE, _PDF = "\u202b", "\u202c"
+
+
+def fix_rtl_line(line: str) -> str:
+    """Force right-to-left layout for one physical subtitle line.
+
+    Players that lay subtitles out left-to-right (or guess the base direction
+    from the first character) push trailing punctuation to the wrong end of an
+    Arabic/Hebrew/Persian line. Wrapping the line in a right-to-left embedding
+    (RLE ... PDF) fixes that without changing how the text looks elsewhere.
+    ASS override tags such as {\\an8} stay in front, outside the embedding.
+    """
+    if not _RTL_CHARS.search(line) or _RLE in line:
+        return line
+    prefix = _LEADING_ASS_TAGS.match(line).group(0)
+    return f"{prefix}{_RLE}{line[len(prefix):]}{_PDF}"
+
+
+def fix_rtl_text(text: str) -> str:
+    return "\n".join(fix_rtl_line(part) for part in text.split("\n"))
+
+
+def rebuild(input_path: str, translated_json: str, output_path: str, rtl_fix: bool = False) -> None:
     """Rebuild a subtitle file with translated text, preserving original timing."""
     subs = pysubs2.load(input_path)
 
@@ -39,7 +65,8 @@ def rebuild(input_path: str, translated_json: str, output_path: str) -> None:
 
     for i, line in enumerate(subs):
         if i < len(translations):
-            line.text = translations[i].replace("\n", "\\N")
+            text = fix_rtl_text(translations[i]) if rtl_fix else translations[i]
+            line.text = text.replace("\n", "\\N")
 
     subs.save(output_path)
     print(f"Rebuilt {output_path}")
@@ -56,13 +83,18 @@ def main() -> None:
     rebuild_parser.add_argument("input", help="Original subtitle file (for timing)")
     rebuild_parser.add_argument("translations", help="JSON file with translated strings")
     rebuild_parser.add_argument("output", help="Output subtitle file")
+    rebuild_parser.add_argument(
+        "--rtl-fix",
+        action="store_true",
+        help="Wrap right-to-left lines in an RTL embedding so punctuation lands on the correct side",
+    )
 
     args = parser.parse_args()
 
     if args.command == "extract":
         extract(args.input)
     elif args.command == "rebuild":
-        rebuild(args.input, args.translations, args.output)
+        rebuild(args.input, args.translations, args.output, rtl_fix=args.rtl_fix)
 
 
 if __name__ == "__main__":
