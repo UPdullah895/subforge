@@ -1,5 +1,7 @@
 {
   "app": {
+    "comingSoon": "قريباً",
+    "comingSoonHint": "هذه الميزة مخطط لها في إصدار قادم.",
     "title": "SubForge"
   },
   "nav": {
@@ -293,6 +295,8 @@
     "autoDetect": "الكشف التلقائي عن مثيل Ollama قيد التشغيل",
     "modelLabel": "النموذج",
     "noModels": "لم يتم العثور على نماذج. تأكد من أن Ollama قيد التشغيل.",
+    "autoDetectLanguage": "كشف تلقائي",
+    "detectingModels": "جارٍ البحث عن النماذج…",
     "libreSection": "LibreTranslate",
     "autoDetectLibre": "الكشف التلقائي عن مثيل LibreTranslate قيد التشغيل",
     "deeplSection": "DeepL",

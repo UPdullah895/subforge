@@ -97,8 +97,8 @@ onUnmounted(() => unlistenJobs?.());
           >
             <span class="text-2xl">🚧</span>
           </div>
-          <h2 class="text-lg font-medium text-text-primary">Coming Soon</h2>
-          <p class="text-sm text-text-secondary mt-1">This feature is planned for a future phase.</p>
+          <h2 class="text-lg font-medium text-text-primary">{{ t('app.comingSoon') }}</h2>
+          <p class="text-sm text-text-secondary mt-1">{{ t('app.comingSoonHint') }}</p>
         </div>
       </main>
     </div>

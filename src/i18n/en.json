@@ -1,5 +1,7 @@
 {
   "app": {
+    "comingSoon": "Coming soon",
+    "comingSoonHint": "This feature is planned for a future release.",
     "title": "SubForge"
   },
   "nav": {
@@ -293,6 +295,8 @@
     "autoDetect": "Auto-detect running Ollama instance",
     "modelLabel": "Model",
     "noModels": "No models found. Make sure Ollama is running.",
+    "autoDetectLanguage": "Auto-detect",
+    "detectingModels": "Looking for models…",
     "libreSection": "LibreTranslate",
     "autoDetectLibre": "Auto-detect running LibreTranslate instance",
     "deeplSection": "DeepL",

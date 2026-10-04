@@ -78,3 +78,19 @@ export const DEEPL_LANGS = new Set(["en", "ar", "es", "fr", "de", "ja", "ko", "z
 export function isDeeplSupported(code: string): boolean {
   return DEEPL_LANGS.has(code.toLowerCase());
 }
+
+/** Languages offered as translation source/target, in display order. */
+export const TRANSLATE_LANG_CODES = [
+  "en", "ar", "es", "fr", "de", "ja", "ko", "zh", "ru", "pt", "it", "tr", "hi", "fa", "ur",
+] as const;
+
+/** A language's name written in the interface language (e.g. "العربية" when the UI is Arabic). */
+export function localizedLanguageName(code: string, uiLocale: string): string {
+  try {
+    const name = new Intl.DisplayNames([uiLocale], { type: "language" }).of(code);
+    if (name && name !== code) return name;
+  } catch {
+    // Intl.DisplayNames unavailable or code malformed: fall through.
+  }
+  return englishName(code) ?? code;
+}
