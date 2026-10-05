@@ -31,7 +31,10 @@ jobs:
           cache-dependency-path: package-lock.json
 
       - name: Check version matches tag
-        run: node scripts/check-versions.mjs ${{ github.ref_name }}
+        shell: bash
+        env:
+          TAG: ${{ github.ref_name }}
+        run: node scripts/check-versions.mjs "$TAG"
 
       - name: Install Tauri Linux deps
         if: matrix.platform == 'ubuntu-22.04'
