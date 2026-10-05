@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=SubForge
+Comment=Subtitle and audio toolkit
+Exec=subforge
+Icon=subforge
+Terminal=false
+Categories=AudioVideo;Utility;
+StartupNotify=true

@@ -1,6 +1,10 @@
 [package]
 name = "subforge-server"
 version = "0.1.0"
+description = "SubForge server: REST and WebSocket API for the SubForge subtitle toolkit"
+authors = ["UPdullah895"]
+license = "GPL-3.0-only"
+repository = "https://github.com/UPdullah895/subforge"
 edition = "2021"
 
 [dependencies]
