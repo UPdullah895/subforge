@@ -32,5 +32,6 @@ uuid = { version = "1", features = ["v4"] }
 reqwest = { version = "0.12", features = ["json"] }
 keyring = { version = "3", features = ["apple-native", "windows-native", "sync-secret-service"] }
 subforge-metadata = { path = "../crates/subforge-metadata" }
+subforge-deps = { path = "../crates/subforge-deps", features = ["tokio"] }
 subforge-subtitle-sources = { path = "../crates/subforge-subtitle-sources" }
 

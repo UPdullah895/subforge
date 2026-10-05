@@ -1,3 +1,4 @@
+use subforge_deps::HideWindow;
 use super::{which, ToolInfo};
 use crate::config::AppConfig;
 use serde::{Deserialize, Serialize};
@@ -101,7 +102,7 @@ pub fn discover_mkvmerge() -> ToolInfo {
     let path = which("mkvmerge");
     let available = path.is_some();
     let version = path.as_ref().and_then(|p| {
-        Command::new(p)
+        Command::new(p).hide_window()
             .args(["--version"])
             .output()
             .ok()
@@ -124,7 +125,7 @@ pub fn discover_mkvextract() -> ToolInfo {
     let path = which("mkvextract");
     let available = path.is_some();
     let version = path.as_ref().and_then(|p| {
-        Command::new(p)
+        Command::new(p).hide_window()
             .args(["--version"])
             .output()
             .ok()
@@ -168,7 +169,7 @@ pub fn get_mkvextract_path() -> Result<PathBuf, MkvError> {
 pub fn enumerate_tracks(file_path: &str) -> Result<MkvInfo, MkvError> {
     let mkvmerge = get_mkvmerge_path()?;
 
-    let output = Command::new(&mkvmerge)
+    let output = Command::new(&mkvmerge).hide_window()
         .args(["-J", file_path])
         .output()?;
 
@@ -191,7 +192,7 @@ pub fn extract_subtitle_track(
 ) -> Result<String, MkvError> {
     let mkvextract = get_mkvextract_path()?;
 
-    let output = Command::new(&mkvextract)
+    let output = Command::new(&mkvextract).hide_window()
         .args(["tracks", file_path, &format!("{}:{}", track_id, output_path)])
         .output()?;
 
@@ -371,7 +372,7 @@ pub fn merge_subtitles(
         args.push(sub.path.clone());
     }
 
-    let output = Command::new(&mkvmerge).args(&args).output()?;
+    let output = Command::new(&mkvmerge).hide_window().args(&args).output()?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr).to_string();
@@ -422,7 +423,7 @@ pub fn remove_tracks(
     }
 
     args.push(video_path.to_string());
-    let output = Command::new(&mkvmerge).args(&args).output()?;
+    let output = Command::new(&mkvmerge).hide_window().args(&args).output()?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr).to_string();
@@ -434,7 +435,7 @@ pub fn remove_tracks(
 
 pub fn remove_all_subtitles(video_path: &str, output_path: &str) -> Result<(), MkvError> {
     let mkvmerge = get_mkvmerge_path()?;
-    let output = Command::new(&mkvmerge)
+    let output = Command::new(&mkvmerge).hide_window()
         .args(["-o", output_path, "--no-subtitles", video_path])
         .output()?;
 
@@ -448,7 +449,7 @@ pub fn remove_all_subtitles(video_path: &str, output_path: &str) -> Result<(), M
 
 pub fn remove_all_audio(video_path: &str, output_path: &str) -> Result<(), MkvError> {
     let mkvmerge = get_mkvmerge_path()?;
-    let output = Command::new(&mkvmerge)
+    let output = Command::new(&mkvmerge).hide_window()
         .args(["-o", output_path, "--no-audio", video_path])
         .output()?;
 
@@ -515,7 +516,7 @@ pub async fn merge_subtitles_async(
         args.push(sub.path.clone());
     }
 
-    let mut child = tokio::process::Command::new(&mkvmerge)
+    let mut child = tokio::process::Command::new(&mkvmerge).hide_window()
         .args(&args)
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())

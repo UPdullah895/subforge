@@ -5,7 +5,7 @@ pub mod jobs;
 pub mod tools;
 
 use commands::{
-    audio as audio_cmds, batch as batch_cmds, jobs as jobs_cmds, providers as providers_cmds, rename as rename_cmds,
+    audio as audio_cmds, batch as batch_cmds, deps as deps_cmds, jobs as jobs_cmds, providers as providers_cmds, rename as rename_cmds,
     subtitle as subtitle_cmds, subtitle_sources as subtitle_sources_cmds, transcribe as transcribe_cmds, translate as translate_cmds,
 };
 use credentials::{CredentialStore, KeyringCredentialStore};
@@ -49,6 +49,8 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
+            deps_cmds::check_dependencies,
+            deps_cmds::install_dependency,
             subtitle_cmds::enumerate_tracks,
             subtitle_cmds::extract_subtitle,
             subtitle_cmds::extract_all_subtitles,

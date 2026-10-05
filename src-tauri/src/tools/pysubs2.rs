@@ -1,3 +1,4 @@
+use subforge_deps::HideWindow;
 use std::path::PathBuf;
 use std::process::Command;
 use thiserror::Error;
@@ -24,7 +25,7 @@ pub fn convert_format(
     let python = get_python()?;
     let script = super::script_path("subtitle_ops.py");
 
-    let output_cmd = Command::new(&python)
+    let output_cmd = Command::new(&python).hide_window()
         .args([
             &script,
             "convert",
@@ -51,7 +52,7 @@ pub fn shift_subtitles(
     let python = get_python()?;
     let script = super::script_path("subtitle_ops.py");
 
-    let output_cmd = Command::new(&python)
+    let output_cmd = Command::new(&python).hide_window()
         .args([
             &script,
             "shift",
@@ -79,7 +80,7 @@ pub fn stretch_framerate(
     let python = get_python()?;
     let script = super::script_path("subtitle_ops.py");
 
-    let output_cmd = Command::new(&python)
+    let output_cmd = Command::new(&python).hide_window()
         .args([
             &script,
             "stretch",

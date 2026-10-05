@@ -1,3 +1,4 @@
+use subforge_deps::HideWindow;
 use crate::jobs::{Job, JobStatus, JobType, SharedJobQueue};
 use crate::tools::whisper::{self, TranscribeOptions, WhisperInfo};
 use serde::{Deserialize, Serialize};
@@ -76,7 +77,7 @@ pub async fn transcribe_audio(
     let job_id_clone = job_id.clone();
 
     tokio::spawn(async move {
-        let mut child = match Command::new(&python)
+        let mut child = match Command::new(&python).hide_window()
             .args(&args)
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())

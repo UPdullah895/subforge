@@ -1,3 +1,4 @@
+use subforge_deps::HideWindow;
 use crate::tools::mkvtoolnix::{self, Track};
 use crate::tools::pysubs2;
 use crate::tools::ToolRegistry;
@@ -239,7 +240,7 @@ pub async fn set_track_metadata(request: SetTrackMetaRequest) -> Result<(), Stri
         args.push(format!("flag-forced={}", if forced { 1 } else { 0 }));
     }
 
-    let output = std::process::Command::new(&mkvpropedit)
+    let output = std::process::Command::new(&mkvpropedit).hide_window()
         .args(&args)
         .output()
         .map_err(|e| e.to_string())?;

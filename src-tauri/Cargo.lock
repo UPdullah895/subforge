@@ -3560,6 +3560,7 @@ dependencies = [
  "reqwest 0.12.28",
  "serde",
  "serde_json",
+ "subforge-deps",
  "subforge-metadata",
  "subforge-subtitle-sources",
  "tauri",
@@ -3570,6 +3571,16 @@ dependencies = [
  "tokio",
  "uuid",
  "walkdir",
+]
+
+[[package]]
+name = "subforge-deps"
+version = "0.1.0"
+dependencies = [
+ "dirs",
+ "serde",
+ "thiserror 2.0.18",
+ "tokio",
 ]
 
 [[package]]
