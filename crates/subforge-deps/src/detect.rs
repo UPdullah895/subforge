@@ -238,13 +238,13 @@ mod tests {
 
     #[test]
     fn absolute_only_filters_relative_and_empty() {
-        let dirs = vec![
-            PathBuf::from(""),
-            PathBuf::from("relative/bin"),
-            PathBuf::from("/usr/bin"),
-        ];
+        #[cfg(windows)]
+        let abs = PathBuf::from("C:\\Windows");
+        #[cfg(not(windows))]
+        let abs = PathBuf::from("/usr/bin");
+        let dirs = vec![PathBuf::from(""), PathBuf::from("relative/bin"), abs.clone()];
         let result = absolute_only(dirs);
-        assert_eq!(result, vec![PathBuf::from("/usr/bin")]);
+        assert_eq!(result, vec![abs]);
     }
 
     #[cfg(unix)]
