@@ -20,6 +20,7 @@ impl SearchEnv {
         let mut dirs: Vec<PathBuf> = std::env::var_os("PATH")
             .map(|p| std::env::split_paths(&p).collect())
             .unwrap_or_default();
+        dirs = absolute_only(dirs);
         dirs.extend(well_known_dirs(os));
         Self { dirs, os }
     }
@@ -27,6 +28,11 @@ impl SearchEnv {
 
 fn env_path(name: &str) -> Option<PathBuf> {
     std::env::var_os(name).map(PathBuf::from)
+}
+
+/// Filter to keep only absolute paths, removing relative and empty entries.
+fn absolute_only(dirs: Vec<PathBuf>) -> Vec<PathBuf> {
+    dirs.into_iter().filter(|d| d.is_absolute()).collect()
 }
 
 fn well_known_dirs(os: Os) -> Vec<PathBuf> {
@@ -70,7 +76,7 @@ fn python_dirs_in(root: &Path) -> Vec<PathBuf> {
 
 pub fn find_executable(name: &str, env: &SearchEnv) -> Option<PathBuf> {
     let candidates: Vec<String> = if env.os == Os::Windows {
-        vec![format!("{name}.exe"), name.to_string()]
+        vec![format!("{name}.exe")]
     } else {
         vec![name.to_string()]
     };
@@ -230,6 +236,17 @@ mod tests {
         );
     }
 
+    #[test]
+    fn absolute_only_filters_relative_and_empty() {
+        let dirs = vec![
+            PathBuf::from(""),
+            PathBuf::from("relative/bin"),
+            PathBuf::from("/usr/bin"),
+        ];
+        let result = absolute_only(dirs);
+        assert_eq!(result, vec![PathBuf::from("/usr/bin")]);
+    }
+
     #[cfg(unix)]
     mod unix {
         use super::*;
@@ -261,6 +278,14 @@ mod tests {
             let script = make_script(tmp.path(), "ffmpeg.exe", "echo hi");
             let env = SearchEnv { dirs: vec![tmp.path().to_path_buf()], os: Os::Windows };
             assert_eq!(find_executable("ffmpeg", &env), Some(script));
+        }
+
+        #[test]
+        fn windows_lookup_rejects_bare_name() {
+            let tmp = tempdir().unwrap();
+            make_script(tmp.path(), "ffmpeg", "echo hi");
+            let env = SearchEnv { dirs: vec![tmp.path().to_path_buf()], os: Os::Windows };
+            assert_eq!(find_executable("ffmpeg", &env), None);
         }
 
         #[test]
