@@ -54,6 +54,7 @@ export const useDepsStore = defineStore("deps", () => {
   }
 
   async function install(id: string): Promise<boolean> {
+    if (installing.value !== null) return false;
     installing.value = id;
     logs.value[id] = [];
     delete errors.value[id];
@@ -69,11 +70,12 @@ export const useDepsStore = defineStore("deps", () => {
     }
   }
 
+  // Required items only: large optional packages are installed one by one on request.
   // Re-evaluates after every install: installing Python unlocks the pip packages.
   async function installAll() {
     const tried = new Set<string>();
     for (;;) {
-      const next = missing.value.find((i) => i.can_auto_install && !tried.has(i.id));
+      const next = missingRequired.value.find((i) => i.can_auto_install && !tried.has(i.id));
       if (!next) return;
       tried.add(next.id);
       if (!(await install(next.id))) return;

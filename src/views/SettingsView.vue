@@ -7,6 +7,7 @@ import { useTranslateStore } from "../stores/translateStore";
 import { useSubtitleSourcesStore } from "../stores/subtitleSourcesStore";
 import { apiInvoke } from "../api/client";
 import SetupInstructions from "../components/SetupInstructions.vue";
+import DependenciesPanel from "../components/DependenciesPanel.vue";
 import {
   Palette,
   Languages,
@@ -308,6 +309,8 @@ onMounted(() => {
           </label>
         </div>
       </section>
+
+      <DependenciesPanel />
 
       <!-- Tool Paths -->
       <section class="space-y-3">

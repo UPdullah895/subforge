@@ -8,6 +8,9 @@ import { apiListen } from "./api/events";
 import { baseName } from "./utils/subtitleNaming";
 import TitleBar from "./components/TitleBar.vue";
 import ToastHost from "./components/ToastHost.vue";
+import { useDepsStore } from "./stores/depsStore";
+import DependencyDialog from "./components/DependencyDialog.vue";
+import DependencyBanner from "./components/DependencyBanner.vue";
 import WebFilePicker from "./components/WebFilePicker.vue";
 import ResizeHandles from "./components/ResizeHandles.vue";
 import AppSidebar from "./components/AppSidebar.vue";
@@ -45,6 +48,8 @@ watch(
 );
 
 const toastStore = useToastStore();
+const depsStore = useDepsStore();
+let unlistenDeps: (() => void) | null = null;
 let unlistenJobs: (() => void) | null = null;
 
 interface JobCompletedPayload {
@@ -56,6 +61,8 @@ interface JobCompletedPayload {
 
 onMounted(async () => {
   appStore.loadConfig();
+  depsStore.check();
+  depsStore.listen().then((u) => (unlistenDeps = u)).catch(() => {});
   // Background jobs finish off-screen (the result often sits below the fold
   // or on another tab), so surface every outcome as a toast.
   try {
@@ -73,7 +80,10 @@ onMounted(async () => {
   }
 });
 
-onUnmounted(() => unlistenJobs?.());
+onUnmounted(() => {
+  unlistenJobs?.();
+  unlistenDeps?.();
+});
 </script>
 
 <template>
@@ -82,6 +92,8 @@ onUnmounted(() => unlistenJobs?.());
     <WebFilePicker />
     <ToastHost />
     <TitleBar />
+    <DependencyBanner />
+    <DependencyDialog />
     <div class="flex flex-1 min-h-0">
       <AppSidebar :current="currentView" @navigate="currentView = $event" />
       <main class="flex-1 min-w-0 overflow-hidden">

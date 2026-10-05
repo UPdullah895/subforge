@@ -421,5 +421,42 @@
     "extractedTo": "Saved next to the video in {dir}",
     "audioDone": "Audio saved",
     "audioFailed": "Audio operation failed"
+  },
+  "deps": {
+    "title": "Required Programs",
+    "intro": "SubForge needs a few free programs to do its job. Anything missing is listed below. Click Install and SubForge will set it up for you, or use the download link.",
+    "checking": "Checking your system…",
+    "allGood": "Everything SubForge needs is installed.",
+    "required": "Required",
+    "optional": "Optional",
+    "state": {
+      "ok": "Installed",
+      "missing": "Missing",
+      "outdated": "Too old"
+    },
+    "install": "Install",
+    "installing": "Installing…",
+    "installAll": "Install all missing",
+    "recheck": "Re-check",
+    "later": "Continue anyway",
+    "copy": "Copy command",
+    "copied": "Copied",
+    "download": "Download page",
+    "command": "Or run this in a terminal:",
+    "manualHint": "This needs administrator rights, and no graphical password prompt (pkexec) was found. Run the command above in a terminal.",
+    "needPython": "Install Python first, then this can be installed automatically.",
+    "details": "Details",
+    "bannerText": "Some required programs are missing, so parts of SubForge will not work.",
+    "fixNow": "Fix now",
+    "purpose": {
+      "mkvmerge": "Merging subtitle and audio tracks into MKV files",
+      "mkvextract": "Extracting subtitle and audio tracks from MKV files",
+      "mkvpropedit": "Editing track names, languages and flags without remuxing",
+      "ffmpeg": "Extracting, converting and merging audio",
+      "ffprobe": "Reading audio track information",
+      "python": "Running the subtitle conversion, translation and transcription helpers",
+      "pysubs2": "Converting and retiming subtitle formats (SRT, ASS, VTT)",
+      "faster_whisper": "Speech-to-text transcription"
+    }
   }
 }

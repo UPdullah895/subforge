@@ -147,6 +147,40 @@ describe("depsStore", () => {
     expect(installs).toHaveLength(1);
   });
 
+  it("installAll skips optional items", async () => {
+    vi.mocked(apiInvoke)
+      .mockResolvedValueOnce(
+        report([
+          item({ id: "faster_whisper", severity: "optional", state: "missing", can_auto_install: true }),
+          item({ id: "ffmpeg", state: "missing", can_auto_install: true }),
+        ])
+      )
+      .mockResolvedValueOnce(
+        report([
+          item({ id: "faster_whisper", severity: "optional", state: "missing", can_auto_install: true }),
+          item({ id: "ffmpeg", state: "ok" }),
+        ])
+      );
+    const s = useDepsStore();
+    await s.check();
+    await s.installAll();
+    const installs = vi.mocked(apiInvoke).mock.calls.filter((c) => c[0] === "install_dependency");
+    expect(installs.map((c) => (c[1] as { id: string }).id)).toEqual(["ffmpeg"]);
+  });
+
+  it("install ignores a call while another install is running", async () => {
+    let resolveFirst: (r: DepReport) => void = () => {};
+    vi.mocked(apiInvoke).mockReturnValueOnce(new Promise<DepReport>((r) => (resolveFirst = r)));
+    const s = useDepsStore();
+    const first = s.install("ffmpeg");
+    expect(s.installing).toBe("ffmpeg");
+    expect(await s.install("mkvmerge")).toBe(false);
+    expect(apiInvoke).toHaveBeenCalledTimes(1);
+    resolveFirst(report([item({ id: "ffmpeg", state: "ok" })]));
+    expect(await first).toBe(true);
+    expect(s.installing).toBeNull();
+  });
+
   it("listen appends installer output to the per-dependency log", async () => {
     let handler: (p: { job_id: string; message?: string }) => void = () => {};
     vi.mocked(apiListen).mockImplementation(async (_event, h) => {
