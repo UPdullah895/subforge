@@ -4,6 +4,7 @@ use crate::hide::HideWindow;
 use crate::model::DepId;
 use crate::platform::{Os, PackageManager, SystemPackage};
 use std::io::{BufRead, BufReader, Read};
+use std::path::Path;
 use std::process::{Command, Stdio};
 use std::sync::mpsc;
 use std::thread::{self, JoinHandle};
@@ -19,12 +20,32 @@ pub enum InstallError {
     PythonTooOld,
     #[error("Could not start the installer: {0}")]
     Spawn(String),
-    #[error("The installer step failed (exit code {code:?}): {command}")]
+    #[error("The installer step failed ({}): {command}", describe_code(*code))]
     StepFailed { command: String, code: Option<i32> },
+    #[error("Authorisation was cancelled or denied. Run the command shown in the dialog in a terminal instead.")]
+    AuthorizationDenied,
     #[error("This needs administrator rights and no graphical password prompt (pkexec) was found. Run this in a terminal: {0}")]
     NeedsManualInstall(String),
     #[error("'{0}' is not a Python package")]
     NotAPipPackage(String),
+}
+
+fn describe_code(code: Option<i32>) -> String {
+    match code {
+        Some(c) => format!("exit code {c}"),
+        None => "unknown exit code".to_string(),
+    }
+}
+
+/// pkexec exits 126 when the user dismisses the prompt / is not authorised and
+/// 127 when authorisation could not be obtained; report those as a denial.
+fn classify_failure(program: &str, command: String, code: Option<i32>) -> InstallError {
+    let is_pkexec = Path::new(program).file_name().is_some_and(|n| n == "pkexec");
+    if is_pkexec && matches!(code, Some(126 | 127)) {
+        InstallError::AuthorizationDenied
+    } else {
+        InstallError::StepFailed { command, code }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -215,7 +236,7 @@ fn run_step(step: &[String], on_line: &mut impl FnMut(&str)) -> Result<(), Insta
     if status.success() {
         Ok(())
     } else {
-        Err(InstallError::StepFailed { command: step.join(" "), code: status.code() })
+        Err(classify_failure(program, step.join(" "), status.code()))
     }
 }
 
@@ -281,6 +302,26 @@ mod tests {
     fn pip_plan_requires_python() {
         let err = plan_for(DepId::Pysubs2, &ctx(Os::Linux, Some(PackageManager::Pacman), true)).unwrap_err();
         assert!(matches!(err, InstallError::PythonRequired));
+    }
+
+    #[test]
+    fn classify_failure_maps_pkexec_denial() {
+        let c = |prog: &str, code| classify_failure(prog, "cmd".into(), code);
+        assert!(matches!(c("pkexec", Some(126)), InstallError::AuthorizationDenied));
+        assert!(matches!(c("pkexec", Some(127)), InstallError::AuthorizationDenied));
+        assert!(matches!(c("pkexec", Some(1)), InstallError::StepFailed { .. }));
+        assert!(matches!(c("sh", Some(126)), InstallError::StepFailed { .. }));
+        assert!(matches!(c("pkexec", None), InstallError::StepFailed { .. }));
+    }
+
+    #[test]
+    fn step_failed_message_shows_plain_exit_code() {
+        let e = InstallError::StepFailed { command: "x".into(), code: Some(3) };
+        let msg = e.to_string();
+        assert!(msg.contains("exit code 3"), "{msg}");
+        assert!(!msg.contains("Some"), "{msg}");
+        let e = InstallError::StepFailed { command: "x".into(), code: None };
+        assert!(e.to_string().contains("unknown exit code"));
     }
 
     #[cfg(unix)]
