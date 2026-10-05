@@ -1,0 +1,5 @@
+# Tests that write and exec #!/bin/sh scripts race with ETXTBSY ("Text file busy"):
+# a concurrently forked child can briefly inherit the open write fd. Run tests
+# single-threaded so script-exec tests (detect/install/check) are reliable.
+[env]
+RUST_TEST_THREADS = "1"
