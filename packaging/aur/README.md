@@ -5,6 +5,13 @@
 | `subforge` | Builds from the tagged GitHub source (needs `cargo`, `nodejs`, `npm`). |
 | `subforge-bin` | Repackages the `.deb` from the GitHub release (fast install). |
 
+## Before submitting
+
+- Review the [Arch Rust package guidelines](https://wiki.archlinux.org/title/Rust_package_guidelines)
+  (consider `RUSTUP_TOOLCHAIN=stable` and a `--frozen` build after `prepare()`).
+- Run `namcap PKGBUILD` and `namcap` on the built package.
+- Build in a clean chroot (`extra-x86_64-build`).
+
 ## Publishing (maintainer steps)
 
 1. Push the git tag `vX.Y.Z` and wait for the Release workflow to publish the assets.

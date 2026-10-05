@@ -28,7 +28,7 @@ yay -S subforge       # builds from source
 ### Other Linux
 Download the `.AppImage` (any distro), `.deb` (Debian/Ubuntu) or `.rpm` (Fedora/openSUSE) from the Releases page.
 ```bash
-chmod +x SubForge_*.AppImage && ./SubForge_*.AppImage
+chmod +x subforge_*.AppImage && ./subforge_*.AppImage
 ```
 
 ### macOS
@@ -82,7 +82,7 @@ py -3 -m venv --system-site-packages $env:LOCALAPPDATA\subforge\venv; & $env:LOC
 Run `cargo run --example check` inside `crates/subforge-deps` to print the same dependency report in your terminal.
 
 ### Server mode
-`subforge-server` shows the same dependency dialog in the web UI. Because installing software on a server is sensitive, the Install button is **disabled by default**; set `SUBFORGE_ALLOW_INSTALL=1` to enable it.
+`subforge-server` shows the same dependency dialog in the web UI. Because installing software on a server is sensitive, without `SUBFORGE_ALLOW_INSTALL=1` the server refuses installs and returns a message containing the command to run on the server yourself; set `SUBFORGE_ALLOW_INSTALL=1` to let the Install button run it.
 
 ---
 
@@ -245,7 +245,7 @@ npm run tauri dev
 Click **Re-check** after installing. On Windows, if you installed a tool in a custom location, add its folder to `PATH` and restart SubForge. Run `cargo run --example check` in `crates/subforge-deps` to see exactly what SubForge detects.
 
 ### Windows: installed tool not found right after `winget install`
-Close and reopen SubForge — new `PATH` entries are only picked up by new processes.
+SubForge also looks in the standard install folders (WinGet links, Program Files, Python), so a fresh install should be found after **Re-check**. A restart is only needed for tools installed in custom locations: add their folder to `PATH` and reopen SubForge, because new `PATH` entries are only picked up by new processes.
 
 ---
 

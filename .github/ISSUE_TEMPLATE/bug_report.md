@@ -14,6 +14,6 @@ labels: bug
 **Environment**
 - SubForge version / install method (AUR, AppImage, .msi, source):
 - OS and version:
-- Output of `cargo run --example check` in `crates/subforge-deps` (shows detected tools), if relevant:
+- A screenshot of Settings → Required Programs:
 
 **Logs / screenshots**

@@ -9,6 +9,7 @@ license=('GPL-3.0-only')
 depends=('webkit2gtk-4.1' 'gtk3' 'mkvtoolnix-cli' 'ffmpeg' 'python')
 makedepends=('cargo' 'nodejs' 'npm')
 optdepends=('python-pysubs2: subtitle conversion (SubForge installs it for you on first run if missing)'
+            'python-faster-whisper: speech-to-text transcription (SubForge can also install it for you)'
             'ollama: local LLM subtitle translation')
 source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
 sha256sums=('SKIP') # replace with the real sum: run `updpkgsums` after the v$pkgver tag exists

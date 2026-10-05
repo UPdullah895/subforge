@@ -67,7 +67,7 @@ jobs:
           releaseBody: |
             ## Install
             - **Windows:** run the `.msi` or `-setup.exe`.
-            - **Linux:** `.AppImage` (any distro), `.deb`, `.rpm`, or the AUR packages `subforge` / `subforge-bin`.
+            - **Linux:** `.AppImage` (any distro), `.deb` or `.rpm`.
 
             SubForge needs MKVToolNix, FFmpeg and Python — it checks on first launch and can install them for you.
             See the [README](https://github.com/UPdullah895/subforge#readme) for details.
