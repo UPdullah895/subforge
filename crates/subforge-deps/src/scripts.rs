@@ -5,11 +5,16 @@ use std::path::{Path, PathBuf};
 /// macOS bundles. Returns `None` when nothing matches so callers can keep their
 /// dev-mode fallbacks.
 pub fn locate_script(name: &str) -> Option<PathBuf> {
-    let override_dir = std::env::var_os("SUBFORGE_SCRIPTS_DIR").map(PathBuf::from);
+    let override_dir = override_dir_from(std::env::var_os("SUBFORGE_SCRIPTS_DIR"));
     let exe_dir = std::env::current_exe()
         .ok()
         .and_then(|e| e.parent().map(Path::to_path_buf));
     locate_script_in(name, override_dir.as_deref(), exe_dir.as_deref())
+}
+
+/// An empty `SUBFORGE_SCRIPTS_DIR` must not resolve scripts against the cwd.
+fn override_dir_from(value: Option<std::ffi::OsString>) -> Option<PathBuf> {
+    value.map(PathBuf::from).filter(|d| !d.as_os_str().is_empty())
 }
 
 pub fn locate_script_in(
@@ -69,6 +74,13 @@ mod tests {
         touch(&exe_dir.join("scripts").join("subtitle_lines.py"));
         let found = locate_script_in("subtitle_lines.py", Some(&custom), Some(&exe_dir)).unwrap();
         assert!(found.starts_with(&custom));
+    }
+
+    #[test]
+    fn empty_override_is_ignored() {
+        assert_eq!(override_dir_from(None), None);
+        assert_eq!(override_dir_from(Some("".into())), None);
+        assert_eq!(override_dir_from(Some("/x".into())), Some(PathBuf::from("/x")));
     }
 
     #[test]
