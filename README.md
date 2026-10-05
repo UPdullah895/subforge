@@ -8,17 +8,68 @@ SubForge is a free, cross-platform desktop application for subtitle manipulation
 
 ---
 
-## Download
+## Install
 
-Prebuilt installers for **Linux** and **Windows** are published on the [Releases page](https://github.com/UPdullah895/subforge/releases) for every tagged version:
+### Windows
+Download the `.msi` or `-setup.exe` from the [Releases page](https://github.com/UPdullah895/subforge/releases) and run it.
+Windows SmartScreen may warn about an unrecognised publisher — choose **More info → Run anyway**.
 
-| Platform | Formats |
-|---|---|
-| Linux | `.AppImage`, `.deb`, `.rpm` |
-| Windows | `.msi`, `.exe` (NSIS installer) |
-| macOS | Not currently published — build from source (see below); best-effort support only |
+### Arch Linux / CachyOS / Manjaro (AUR)
+```bash
+yay -S subforge-bin   # prebuilt, fast
+yay -S subforge       # builds from source
+```
 
-No setup needed to run a downloaded build — just install and launch. Building from source has a couple of extra prerequisites (below).
+### Other Linux
+Download the `.AppImage` (any distro), `.deb` (Debian/Ubuntu) or `.rpm` (Fedora/openSUSE) from the Releases page.
+```bash
+chmod +x SubForge_*.AppImage && ./SubForge_*.AppImage
+```
+
+### macOS
+Not published. Build from source (below); support is best-effort.
+
+---
+
+## First launch: what SubForge needs
+
+SubForge relies on a few free programs. **On startup it checks for them and tells you exactly what is missing** — with an **Install** button, the exact command to copy, and a link to the official download page. You can also review them any time under **Settings → Required Programs**.
+
+| Program | Needed for | Required? | Where to get it |
+|---|---|---|---|
+| MKVToolNix (`mkvmerge`, `mkvextract`) | Reading, extracting and merging tracks | Yes | [mkvtoolnix.download](https://mkvtoolnix.download/downloads.html) |
+| FFmpeg (`ffmpeg`, `ffprobe`) | Audio extraction, conversion, merging | Yes | [ffmpeg.org](https://ffmpeg.org/download.html) |
+| Python 3.9+ | Subtitle, translation and transcription helpers | Yes | [python.org](https://www.python.org/downloads/) |
+| `pysubs2` (Python package) | Subtitle format conversion and retiming | Yes | installed for you |
+| `faster-whisper` (Python package) | Speech-to-text | Optional | installed for you |
+| `mkvpropedit` (MKVToolNix) | Editing track names/flags in place | Optional | comes with MKVToolNix |
+
+**How the one-click install works**
+- **Windows:** uses `winget` for MKVToolNix, FFmpeg and Python.
+- **Linux:** uses your package manager (`pacman`, `apt`, `dnf`, `zypper`) through a graphical password prompt (`pkexec`). If `pkexec` is not available, SubForge shows the `sudo` command to run yourself.
+- **macOS:** uses Homebrew if installed.
+- **Python packages** go into a private environment (`~/.local/share/subforge/venv`, or `%LOCALAPPDATA%\subforge\venv` on Windows), so your system Python is never modified.
+
+Prefer to do it by hand?
+```bash
+# Arch / CachyOS
+sudo pacman -S mkvtoolnix-cli ffmpeg python
+# Debian / Ubuntu
+sudo apt install mkvtoolnix ffmpeg python3 python3-venv python3-pip
+# Fedora
+sudo dnf install mkvtoolnix ffmpeg-free python3 python3-pip
+# Windows (PowerShell)
+winget install MoritzBunkus.MKVToolNix Gyan.FFmpeg Python.Python.3.12
+# Python packages (any OS)
+pip install --user pysubs2 faster-whisper
+```
+
+Run `cargo run --example check` inside `crates/subforge-deps` to print the same dependency report in your terminal.
+
+### Server mode
+`subforge-server` shows the same dependency dialog in the web UI. Because installing software on a server is sensitive, the Install button is **disabled by default**; set `SUBFORGE_ALLOW_INSTALL=1` to enable it.
+
+---
 
 ---
 
@@ -63,87 +114,30 @@ No setup needed to run a downloaded build — just install and launch. Building 
 
 ---
 
-## Prerequisites (building from source)
+## Build from source
 
-- [Node.js](https://nodejs.org/) 18+
-- [Rust](https://rustup.rs/)
-- [MKVToolNix](https://mkvtoolnix.download/) (`mkvmerge` + `mkvextract`)
-- [FFmpeg](https://ffmpeg.org/) (required for audio extraction/merge)
-- Optional: set `SUBFORGE_SUBSOURCE_API_KEY` in the environment at build time (a Subsource API key created from your Subsource profile) to enable Subsource subtitle search. Without it, the build succeeds and everything else works normally — Subsource search is just silently disabled (falls through to translation).
-
-### Install MKVToolNix
-
-**Arch Linux / CachyOS:**
-```bash
-sudo pacman -S mkvtoolnix-cli
-```
-
-**Ubuntu / Debian:**
-```bash
-sudo apt-get install mkvtoolnix
-```
-
-**Fedora:**
-```bash
-sudo dnf install mkvtoolnix
-```
-
-**macOS:**
-```bash
-brew install mkvtoolnix ffmpeg
-```
-
-### Install pysubs2 (for subtitle conversion)
-```bash
-pip install pysubs2 faster-whisper
-```
-
-Optional (for speaker diarization):
-```bash
-pip install whisper-diarization pyannote.audio
-```
-
----
-
-## Development
+Prerequisites: [Node.js](https://nodejs.org/) 18+, [Rust](https://rustup.rs/), the Tauri system libraries for your OS ([guide](https://tauri.app/start/prerequisites/)), plus the programs in the table above.
 
 ```bash
-# Clone the repo
 git clone https://github.com/UPdullah895/subforge.git
 cd subforge
-
-# Install frontend dependencies
 npm install
-
-# Run the Tauri dev server (opens a native window)
-npm run tauri dev
-
-# On Wayland (if you see a Wayland protocol error):
-npm run tauri:dev:wayland
-
-# Or build for production
-npm run tauri build
+npm run tauri dev        # development window
+npm run tauri build      # installers in src-tauri/target/release/bundle
 ```
+On Wayland, if you see a protocol error, use `npm run tauri:dev:wayland`.
 
-### Desktop Launcher (Linux)
+Optional: set `SUBFORGE_SUBSOURCE_API_KEY` at build time to enable Subsource subtitle search. Without it everything else works and Subsource search is silently skipped.
 
-Two options:
-
-**Quick, no-install:** double-click [`SubForge.desktop`](SubForge.desktop) at the repo root directly in your file manager. If it doesn't run on first double-click, right-click it once → "Allow Launching" (varies slightly by desktop environment).
-
-**Proper app-menu entry:**
+### Linux app-menu entry (development checkouts)
 ```bash
 ./scripts/install-desktop-launcher.sh
 ```
-This copies the icon and registers a launcher in your application menu. Both launchers auto-detect a release binary (after `npm run tauri build`) and fall back to `npm run tauri:dev` for development.
+This registers a launcher that runs a release build if present, otherwise `npm run tauri:dev`. You can also run `./scripts/launch-subforge.sh` (desktop) or `./scripts/launch-subforge.sh --server` (server mode) directly.
 
-You can also run the launcher script directly:
-```bash
-./scripts/launch-subforge.sh           # Desktop mode
-./scripts/launch-subforge.sh --server  # Server mode
-```
+---
 
-### Project Structure
+## Project Structure
 
 ```
 subforge/
@@ -159,6 +153,7 @@ subforge/
 ├── server/                  # Standalone Axum REST + WebSocket server (Rust)
 │   └── src/routes/
 ├── crates/                  # Shared Rust crates used by both backends
+│   ├── subforge-deps/          # Dependency detection + one-click install
 │   ├── subforge-metadata/     # TMDB/TVmaze rename matching, filename parsing
 │   └── subforge-subtitle-sources/  # OpenSubtitles/Subsource clients + fallback orchestration
 ├── scripts/                 # Launcher scripts, pysubs2/whisper CLI wrappers
@@ -206,7 +201,7 @@ subforge/
 
 ## License
 
-GPL-3.0 — see the project plan for full licensing rationale.
+GPL-3.0-only — see [LICENSE](LICENSE).
 
 ---
 
@@ -232,6 +227,12 @@ export WEBKIT_DISABLE_DMABUF_RENDERER=1
 export WEBKIT_DISABLE_COMPOSITING_MODE=1
 npm run tauri dev
 ```
+
+### "Required Programs" keeps showing something as missing
+Click **Re-check** after installing. On Windows, if you installed a tool in a custom location, add its folder to `PATH` and restart SubForge. Run `cargo run --example check` in `crates/subforge-deps` to see exactly what SubForge detects.
+
+### Windows: installed tool not found right after `winget install`
+Close and reopen SubForge — new `PATH` entries are only picked up by new processes.
 
 ---
 
