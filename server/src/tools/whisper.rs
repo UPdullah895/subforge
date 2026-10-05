@@ -1,3 +1,4 @@
+use subforge_deps::HideWindow;
 use std::path::PathBuf;
 use std::process::Command;
 use thiserror::Error;
@@ -40,7 +41,7 @@ pub fn get_whisper_info() -> Result<WhisperInfo, WhisperError> {
     let python = get_python()?;
     let script = super::script_path("transcribe.py");
 
-    let output = Command::new(&python)
+    let output = Command::new(&python).hide_window()
         .args([&script, "info"])
         .output()?;
 
@@ -54,7 +55,7 @@ pub fn list_models(cache_dir: Option<String>) -> Result<Vec<String>, WhisperErro
     let script = super::script_path("transcribe.py");
     let cache = cache_dir.map(PathBuf::from).unwrap_or_else(default_cache_dir);
 
-    let output = Command::new(&python)
+    let output = Command::new(&python).hide_window()
         .args([
             &script,
             "list-models",
@@ -74,7 +75,7 @@ pub fn download_model(model: &str, cache_dir: Option<String>) -> Result<(), Whis
     let script = super::script_path("transcribe.py");
     let cache = cache_dir.map(PathBuf::from).unwrap_or_else(default_cache_dir);
 
-    let output = Command::new(&python)
+    let output = Command::new(&python).hide_window()
         .args([
             &script,
             "download",

@@ -1,3 +1,4 @@
+use subforge_deps::HideWindow;
 use super::{which, ToolInfo};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -79,7 +80,7 @@ pub fn discover_ffmpeg() -> ToolInfo {
     let path = which("ffmpeg");
     let available = path.is_some();
     let version = path.as_ref().and_then(|p| {
-        Command::new(p)
+        Command::new(p).hide_window()
             .args(["-version"])
             .output()
             .ok()
@@ -102,7 +103,7 @@ pub fn discover_ffprobe() -> ToolInfo {
     let path = which("ffprobe");
     let available = path.is_some();
     let version = path.as_ref().and_then(|p| {
-        Command::new(p)
+        Command::new(p).hide_window()
             .args(["-version"])
             .output()
             .ok()
@@ -146,7 +147,7 @@ pub fn get_ffprobe_path() -> Result<PathBuf, FfmpegError> {
 pub fn probe_audio_tracks(video_path: &str) -> Result<Vec<FfprobeStream>, FfmpegError> {
     let ffprobe = get_ffprobe_path()?;
 
-    let output = Command::new(&ffprobe)
+    let output = Command::new(&ffprobe).hide_window()
         .args([
             "-v", "error",
             "-select_streams", "a",
@@ -213,7 +214,7 @@ pub fn extract_audio(
     args.extend(codec_args.into_iter().map(String::from));
     args.push(output_path.to_string());
 
-    let output = Command::new(&ffmpeg).args(&args).output()?;
+    let output = Command::new(&ffmpeg).hide_window().args(&args).output()?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr).to_string();
@@ -230,7 +231,7 @@ pub fn merge_audio(
 ) -> Result<(), FfmpegError> {
     let ffmpeg = get_ffmpeg_path()?;
 
-    let output = Command::new(&ffmpeg)
+    let output = Command::new(&ffmpeg).hide_window()
         .args([
             "-y",
             "-nostdin",

@@ -1,3 +1,4 @@
+use subforge_deps::HideWindow;
 use crate::tools::whisper;
 use crate::{jobs, AppState};
 use axum::{extract::Json, extract::State, http::StatusCode};
@@ -138,7 +139,7 @@ pub async fn transcribe_audio(
 
         let args = whisper::build_transcribe_args(&options);
 
-        let mut child = match Command::new(&python)
+        let mut child = match Command::new(&python).hide_window()
             .args(&args)
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())

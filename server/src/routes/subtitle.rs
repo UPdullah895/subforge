@@ -1,3 +1,4 @@
+use subforge_deps::HideWindow;
 use crate::error::blocking;
 use crate::tools::mkvtoolnix;
 use crate::{AppState, jobs};
@@ -311,7 +312,7 @@ pub async fn set_track_metadata(
         args.push(format!("flag-forced={}", if forced { 1 } else { 0 }));
     }
 
-    let output = blocking(move || std::process::Command::new(&mkvpropedit).args(&args).output())
+    let output = blocking(move || std::process::Command::new(&mkvpropedit).hide_window().args(&args).output())
         .await?
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 

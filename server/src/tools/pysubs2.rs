@@ -1,3 +1,4 @@
+use subforge_deps::HideWindow;
 use std::path::PathBuf;
 use std::process::Command;
 use thiserror::Error;
@@ -12,22 +13,8 @@ pub enum Pysubs2Error {
     Io(#[from] std::io::Error),
 }
 
-fn find_python() -> Option<PathBuf> {
-    for cmd in ["python3", "python"] {
-        if let Ok(paths) = std::env::var("PATH") {
-            for dir in paths.split(':') {
-                let full = PathBuf::from(dir).join(cmd);
-                if full.is_file() {
-                    return Some(full);
-                }
-            }
-        }
-    }
-    None
-}
-
 fn get_python() -> Result<PathBuf, Pysubs2Error> {
-    find_python().ok_or(Pysubs2Error::PythonNotFound)
+    super::find_python().ok_or(Pysubs2Error::PythonNotFound)
 }
 
 pub fn convert_format(
@@ -38,7 +25,7 @@ pub fn convert_format(
     let python = get_python()?;
     let script = super::script_path("subtitle_ops.py");
 
-    let output_cmd = Command::new(&python)
+    let output_cmd = Command::new(&python).hide_window()
         .args([
             &script,
             "convert",
@@ -65,7 +52,7 @@ pub fn shift_subtitles(
     let python = get_python()?;
     let script = super::script_path("subtitle_ops.py");
 
-    let output_cmd = Command::new(&python)
+    let output_cmd = Command::new(&python).hide_window()
         .args([
             &script,
             "shift",
@@ -93,7 +80,7 @@ pub fn stretch_framerate(
     let python = get_python()?;
     let script = super::script_path("subtitle_ops.py");
 
-    let output_cmd = Command::new(&python)
+    let output_cmd = Command::new(&python).hide_window()
         .args([
             &script,
             "stretch",

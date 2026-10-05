@@ -21,6 +21,10 @@ pub fn err400(msg: impl ToString) -> AppError {
     AppError(StatusCode::BAD_REQUEST, msg.to_string())
 }
 
+pub fn err403(msg: impl ToString) -> AppError {
+    AppError(StatusCode::FORBIDDEN, msg.to_string())
+}
+
 pub fn err503(msg: impl ToString) -> AppError {
     AppError(StatusCode::SERVICE_UNAVAILABLE, msg.to_string())
 }

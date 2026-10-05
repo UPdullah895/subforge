@@ -1,3 +1,4 @@
+use subforge_deps::HideWindow;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::process::Command;
@@ -52,7 +53,7 @@ pub fn extract_lines(input_path: &str) -> Result<Vec<SubtitleLine>, TranslateErr
     let python = get_python()?;
     let script = super::script_path("subtitle_lines.py");
 
-    let output = Command::new(&python)
+    let output = Command::new(&python).hide_window()
         .args([&script, "extract", input_path])
         .output()?;
 
@@ -85,7 +86,7 @@ pub fn rebuild_lines(
     let python = get_python()?;
     let script = super::script_path("subtitle_lines.py");
 
-    let output = Command::new(&python)
+    let output = Command::new(&python).hide_window()
         .args(rebuild_args(&script, original_path, translations_json, output_path))
         .output()?;
 
