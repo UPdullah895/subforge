@@ -3,10 +3,10 @@ use crate::detect::{probe_python, python_has_venv, venv_python_path};
 use crate::hide::HideWindow;
 use crate::model::DepId;
 use crate::platform::{Os, PackageManager, SystemPackage};
-use std::io::{BufRead, BufReader};
+use std::io::{BufRead, BufReader, Read};
 use std::process::{Command, Stdio};
 use std::sync::mpsc;
-use std::thread;
+use std::thread::{self, JoinHandle};
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -21,6 +21,10 @@ pub enum InstallError {
     Spawn(String),
     #[error("The installer step failed (exit code {code:?}): {command}")]
     StepFailed { command: String, code: Option<i32> },
+    #[error("This needs administrator rights and no graphical password prompt (pkexec) was found. Run this in a terminal: {0}")]
+    NeedsManualInstall(String),
+    #[error("'{0}' is not a Python package")]
+    NotAPipPackage(String),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -59,8 +63,9 @@ fn system_plan(id: DepId, pkg: SystemPackage, ctx: &Context) -> Result<InstallPl
 }
 
 fn pip_plan(id: DepId, ctx: &Context) -> Result<InstallPlan, InstallError> {
-    // Allowlist: only ids with a pip name reach this function by construction.
-    let pip_name = id.pip_name().expect("pip_plan called for a non-pip dependency");
+    let pip_name = id
+        .pip_name()
+        .ok_or_else(|| InstallError::NotAPipPackage(id.as_str().to_string()))?;
     let python = ctx.find_python().ok_or(InstallError::PythonRequired)?;
     if !python.meets_minimum() {
         return Err(InstallError::PythonTooOld);
@@ -142,11 +147,37 @@ fn finalize(id: DepId, cmds: Vec<Cmd>, ctx: &Context) -> InstallPlan {
 /// Runs every step, passing each output line (stdout and stderr) to `on_line`.
 /// Stops at the first failing step.
 pub fn run_plan(plan: &InstallPlan, mut on_line: impl FnMut(&str)) -> Result<(), InstallError> {
+    if !plan.auto_runnable {
+        return Err(InstallError::NeedsManualInstall(plan.display_command.clone()));
+    }
     for step in &plan.steps {
         on_line(&format!("$ {}", step.join(" ")));
         run_step(step, &mut on_line)?;
     }
     Ok(())
+}
+
+/// Forwards lines from `r` to `tx`, decoding lossily so non-UTF-8 output never
+/// stops the drain (which would leave the child writing to a closed pipe).
+fn spawn_reader(r: impl Read + Send + 'static, tx: mpsc::Sender<String>) -> JoinHandle<()> {
+    thread::spawn(move || {
+        let mut reader = BufReader::new(r);
+        let mut buf = Vec::new();
+        loop {
+            buf.clear();
+            match reader.read_until(b'\n', &mut buf) {
+                Ok(0) | Err(_) => break,
+                Ok(_) => {
+                    while matches!(buf.last(), Some(b'\n' | b'\r')) {
+                        buf.pop();
+                    }
+                    if tx.send(String::from_utf8_lossy(&buf).into_owned()).is_err() {
+                        break;
+                    }
+                }
+            }
+        }
+    })
 }
 
 fn run_step(step: &[String], on_line: &mut impl FnMut(&str)) -> Result<(), InstallError> {
@@ -166,24 +197,10 @@ fn run_step(step: &[String], on_line: &mut impl FnMut(&str)) -> Result<(), Insta
     let (tx, rx) = mpsc::channel::<String>();
     let mut readers = Vec::new();
     if let Some(out) = child.stdout.take() {
-        let tx = tx.clone();
-        readers.push(thread::spawn(move || {
-            for line in BufReader::new(out).lines().map_while(Result::ok) {
-                if tx.send(line).is_err() {
-                    break;
-                }
-            }
-        }));
+        readers.push(spawn_reader(out, tx.clone()));
     }
     if let Some(err) = child.stderr.take() {
-        let tx = tx.clone();
-        readers.push(thread::spawn(move || {
-            for line in BufReader::new(err).lines().map_while(Result::ok) {
-                if tx.send(line).is_err() {
-                    break;
-                }
-            }
-        }));
+        readers.push(spawn_reader(err, tx.clone()));
     }
     drop(tx);
 
@@ -347,6 +364,84 @@ mod tests {
                 auto_runnable: true,
             };
             assert!(matches!(run_plan(&plan, |_| {}).unwrap_err(), InstallError::Spawn(_)));
+        }
+
+        #[test]
+        fn run_plan_survives_non_utf8_output() {
+            let plan = InstallPlan {
+                dep: DepId::Ffmpeg,
+                steps: vec![vec!["sh".into(), "-c".into(), "printf 'bad\\377byte\\nsecond-line\\n'".into()]],
+                display_command: String::new(),
+                auto_runnable: true,
+            };
+            let mut lines = Vec::new();
+            run_plan(&plan, |l| lines.push(l.to_string())).unwrap();
+            assert!(lines.iter().any(|l| l.contains("bad")));
+            assert!(lines.iter().any(|l| l == "second-line"));
+        }
+
+        #[test]
+        fn run_plan_refuses_non_auto_runnable_plans() {
+            let tmp = tempdir().unwrap();
+            let marker = tmp.path().join("marker");
+            let plan = InstallPlan {
+                dep: DepId::Ffmpeg,
+                steps: vec![vec!["touch".into(), marker.to_string_lossy().into_owned()]],
+                display_command: "sudo apt-get install -y ffmpeg".into(),
+                auto_runnable: false,
+            };
+            let err = run_plan(&plan, |_| {}).unwrap_err();
+            assert!(matches!(err, InstallError::NeedsManualInstall(_)));
+            assert!(!marker.exists());
+        }
+
+        fn apt_ctx(tmp: &std::path::Path, pkexec: bool) -> Context {
+            let sys = tmp.join("sys");
+            make_script(&sys, "python3", "case \"$*\" in *ensurepip*) exit 1;; esac; echo 3.11");
+            Context {
+                os: Os::Linux,
+                env: SearchEnv { dirs: vec![sys], os: Os::Linux },
+                venv_dir: tmp.join("venv"),
+                package_manager: Some(PackageManager::Apt),
+                has_pkexec: pkexec,
+            }
+        }
+
+        #[test]
+        fn apt_without_venv_module_adds_python3_venv_step() {
+            let tmp = tempdir().unwrap();
+            let plan = plan_for(DepId::Pysubs2, &apt_ctx(tmp.path(), true)).unwrap();
+            assert_eq!(plan.steps[0], vec!["pkexec", "apt-get", "install", "-y", "python3-venv"]);
+            assert!(plan.display_command.starts_with("sudo apt-get install -y python3-venv"));
+            assert!(plan.auto_runnable);
+        }
+
+        #[test]
+        fn apt_venv_step_without_pkexec_is_not_auto_runnable() {
+            let tmp = tempdir().unwrap();
+            let plan = plan_for(DepId::Pysubs2, &apt_ctx(tmp.path(), false)).unwrap();
+            assert!(!plan.auto_runnable);
+        }
+
+        #[test]
+        fn broken_venv_dir_is_recreated_with_clear() {
+            let tmp = tempdir().unwrap();
+            let c = ctx_with_python(tmp.path(), "3.11", Some(PackageManager::Pacman));
+            std::fs::create_dir_all(&c.venv_dir).unwrap();
+            let plan = plan_for(DepId::Pysubs2, &c).unwrap();
+            let step = &plan.steps[0];
+            let clear = step.iter().position(|a| a == "--clear").expect("--clear present");
+            assert_eq!(step[clear + 1], c.venv_dir.to_string_lossy());
+        }
+
+        #[test]
+        fn healthy_venv_only_runs_pip() {
+            let tmp = tempdir().unwrap();
+            let c = ctx_with_python(tmp.path(), "3.11", Some(PackageManager::Pacman));
+            make_script(&c.venv_dir.join("bin"), "python", "echo 3.12");
+            let plan = plan_for(DepId::Pysubs2, &c).unwrap();
+            assert_eq!(plan.steps.len(), 1);
+            assert!(!plan.steps[0].iter().any(|a| a == "venv"));
         }
     }
 }
