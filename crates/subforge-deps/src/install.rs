@@ -26,6 +26,8 @@ pub enum InstallError {
     AuthorizationDenied,
     #[error("This needs administrator rights and no graphical password prompt (pkexec) was found. Run this in a terminal: {0}")]
     NeedsManualInstall(String),
+    #[error("The folder {0} already exists and is not a Python environment, so SubForge will not touch it. Move or delete it, then try again.")]
+    VenvDirNotEmpty(String),
     #[error("'{0}' is not a Python package")]
     NotAPipPackage(String),
 }
@@ -97,6 +99,15 @@ fn pip_plan(id: DepId, ctx: &Context) -> Result<InstallPlan, InstallError> {
     let mut cmds = Vec::new();
 
     if !venv_ok {
+        // Only ever `--clear` a directory that really is a venv we are repairing.
+        let mut clear = false;
+        if ctx.venv_dir.exists() {
+            if ctx.venv_dir.join("pyvenv.cfg").is_file() {
+                clear = true; // repair a venv whose interpreter vanished
+            } else if dir_is_non_empty(&ctx.venv_dir) {
+                return Err(InstallError::VenvDirNotEmpty(ctx.venv_dir.display().to_string()));
+            }
+        }
         // Debian/Ubuntu ship `venv` in a separate package.
         if ctx.package_manager == Some(PackageManager::Apt) && !python_has_venv(&python.path) {
             cmds.push(Cmd {
@@ -110,8 +121,8 @@ fn pip_plan(id: DepId, ctx: &Context) -> Result<InstallPlan, InstallError> {
             "venv".into(),
             "--system-site-packages".into(),
         ];
-        if ctx.venv_dir.exists() {
-            argv.push("--clear".into()); // repair a venv whose interpreter vanished
+        if clear {
+            argv.push("--clear".into());
         }
         argv.push(ctx.venv_dir.to_string_lossy().into_owned());
         cmds.push(Cmd { argv, elevated: false });
@@ -129,6 +140,11 @@ fn pip_plan(id: DepId, ctx: &Context) -> Result<InstallPlan, InstallError> {
         elevated: false,
     });
     Ok(finalize(id, cmds, ctx))
+}
+
+fn dir_is_non_empty(dir: &Path) -> bool {
+    // An unreadable directory is treated as non-empty: do not touch it.
+    std::fs::read_dir(dir).map(|mut d| d.next().is_some()).unwrap_or(true)
 }
 
 fn quote(arg: &str) -> String {
@@ -150,7 +166,13 @@ fn finalize(id: DepId, cmds: Vec<Cmd>, ctx: &Context) -> InstallPlan {
             shown.push(format!("sudo {line}"));
             if ctx.has_pkexec {
                 let mut argv = vec!["pkexec".to_string()];
-                argv.extend(cmd.argv);
+                let mut rest = cmd.argv.into_iter();
+                if let Some(program) = rest.next() {
+                    // pkexec runs with a minimal PATH; give it the absolute program.
+                    let resolved = ctx.find_executable(&program);
+                    argv.push(resolved.map(|p| p.to_string_lossy().into_owned()).unwrap_or(program));
+                }
+                argv.extend(rest);
                 steps.push(argv);
             } else {
                 auto_runnable = false;
@@ -469,10 +491,50 @@ mod tests {
             let tmp = tempdir().unwrap();
             let c = ctx_with_python(tmp.path(), "3.11", Some(PackageManager::Pacman));
             std::fs::create_dir_all(&c.venv_dir).unwrap();
+            std::fs::write(c.venv_dir.join("pyvenv.cfg"), "home = /usr/bin\n").unwrap();
             let plan = plan_for(DepId::Pysubs2, &c).unwrap();
             let step = &plan.steps[0];
             let clear = step.iter().position(|a| a == "--clear").expect("--clear present");
             assert_eq!(step[clear + 1], c.venv_dir.to_string_lossy());
+        }
+
+        #[test]
+        fn non_venv_non_empty_dir_is_never_cleared() {
+            let tmp = tempdir().unwrap();
+            let c = ctx_with_python(tmp.path(), "3.11", Some(PackageManager::Pacman));
+            std::fs::create_dir_all(&c.venv_dir).unwrap();
+            std::fs::write(c.venv_dir.join("precious.txt"), "data").unwrap();
+            let err = plan_for(DepId::Pysubs2, &c).unwrap_err();
+            assert!(matches!(err, InstallError::VenvDirNotEmpty(_)), "{err:?}");
+            assert!(err.to_string().contains("will not touch it"));
+        }
+
+        #[test]
+        fn empty_existing_dir_needs_no_clear() {
+            let tmp = tempdir().unwrap();
+            let c = ctx_with_python(tmp.path(), "3.11", Some(PackageManager::Pacman));
+            std::fs::create_dir_all(&c.venv_dir).unwrap();
+            let plan = plan_for(DepId::Pysubs2, &c).unwrap();
+            assert!(!plan.steps[0].iter().any(|a| a == "--clear"));
+            assert!(plan.steps[0].iter().any(|a| a == "venv"));
+        }
+
+        #[test]
+        fn pkexec_step_uses_absolute_package_manager_path() {
+            let tmp = tempdir().unwrap();
+            let bin = tmp.path().join("bin");
+            let pacman = make_script(&bin, "pacman", "exit 0");
+            let c = Context {
+                os: Os::Linux,
+                env: SearchEnv { dirs: vec![bin], os: Os::Linux },
+                venv_dir: tmp.path().join("venv"),
+                package_manager: Some(PackageManager::Pacman),
+                has_pkexec: true,
+            };
+            let plan = plan_for(DepId::Mkvmerge, &c).unwrap();
+            assert_eq!(plan.steps[0][0], "pkexec");
+            assert_eq!(plan.steps[0][1], pacman.to_string_lossy());
+            assert!(plan.display_command.starts_with("sudo pacman "));
         }
 
         #[test]
