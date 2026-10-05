@@ -1,7 +1,7 @@
 # Maintainer: UPdullah895 <abdullahbomozh@gmail.com>
 pkgname=subforge-bin
 _pkgname=subforge
-pkgver=0.1.0
+pkgver=0.2.0
 pkgrel=1
 pkgdesc='Subtitle and audio toolkit (prebuilt release)'
 arch=('x86_64')
