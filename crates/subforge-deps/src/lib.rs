@@ -17,3 +17,5 @@ pub use detect::{
 };
 pub mod context;
 pub use context::{default_venv_dir, Context};
+pub mod install;
+pub use install::{plan_for, run_plan, InstallError, InstallPlan};
