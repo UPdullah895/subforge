@@ -12,8 +12,10 @@ You also need MKVToolNix, FFmpeg and Python (see the README); SubForge will tell
 
 ## Before opening a PR
 ```bash
-npm run lint && npx vue-tsc --noEmit && npm test
-(cd crates/subforge-deps && cargo test)
+npm run check:versions && npm run lint && npx vue-tsc --noEmit && npm test
+(cd crates/subforge-deps && cargo test --features tokio)
+(cd crates/subforge-metadata && cargo test)
+(cd crates/subforge-subtitle-sources && cargo test)
 (cd src-tauri && cargo test)
 (cd server && cargo test)
 ```

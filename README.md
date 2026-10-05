@@ -15,10 +15,15 @@ Download the `.msi` or `-setup.exe` from the [Releases page](https://github.com/
 Windows SmartScreen may warn about an unrecognised publisher — choose **More info → Run anyway**.
 
 ### Arch Linux / CachyOS / Manjaro (AUR)
-```bash
+AUR packages (`subforge-bin` prebuilt, `subforge` from source) are being set up and are not on the AUR yet. Until they appear, use the AppImage or `.deb` from the [Releases page](https://github.com/UPdullah895/subforge/releases) (see "Other Linux" below), or [build from source](#build-from-source).
+
+<!--
+MAINTAINER: after submitting the AUR packages (see packaging/aur/README.md),
+replace the paragraph above with:
+
 yay -S subforge-bin   # prebuilt, fast
 yay -S subforge       # builds from source
-```
+-->
 
 ### Other Linux
 Download the `.AppImage` (any distro), `.deb` (Debian/Ubuntu) or `.rpm` (Fedora/openSUSE) from the Releases page.
@@ -48,7 +53,7 @@ SubForge relies on a few free programs. **On startup it checks for them and tell
 - **Windows:** uses `winget` for MKVToolNix, FFmpeg and Python.
 - **Linux:** uses your package manager (`pacman`, `apt`, `dnf`, `zypper`) through a graphical password prompt (`pkexec`). If `pkexec` is not available, SubForge shows the `sudo` command to run yourself.
 - **macOS:** uses Homebrew if installed.
-- **Python packages** go into a private environment (`~/.local/share/subforge/venv`, or `%LOCALAPPDATA%\subforge\venv` on Windows), so your system Python is never modified.
+- **Python packages** go into a private environment (`~/.local/share/subforge/venv`, or `%LOCALAPPDATA%\subforge\venv` on Windows, `~/Library/Application Support/subforge/venv` on macOS), so your system Python is never modified.
 
 Prefer to do it by hand?
 ```bash
@@ -60,16 +65,24 @@ sudo apt install mkvtoolnix ffmpeg python3 python3-venv python3-pip
 sudo dnf install mkvtoolnix ffmpeg-free python3 python3-pip
 # Windows (PowerShell)
 winget install MoritzBunkus.MKVToolNix Gyan.FFmpeg Python.Python.3.12
-# Python packages (any OS)
-pip install --user pysubs2 faster-whisper
+```
+
+The simplest way to get the Python packages (`pysubs2`, `faster-whisper`) is the **Install** button in SubForge, which uses its private environment. To do it by hand, create the same environment SubForge uses (a plain `pip install` into system Python fails on modern distros with `externally-managed-environment`):
+```bash
+# Linux
+python3 -m venv --system-site-packages ~/.local/share/subforge/venv && ~/.local/share/subforge/venv/bin/pip install pysubs2 faster-whisper
+# macOS (data directory is ~/Library/Application Support, not ~/.local/share)
+python3 -m venv --system-site-packages "$HOME/Library/Application Support/subforge/venv" && "$HOME/Library/Application Support/subforge/venv/bin/pip" install pysubs2 faster-whisper
+```
+```powershell
+# Windows (PowerShell)
+py -3 -m venv --system-site-packages $env:LOCALAPPDATA\subforge\venv; & $env:LOCALAPPDATA\subforge\venv\Scripts\pip install pysubs2 faster-whisper
 ```
 
 Run `cargo run --example check` inside `crates/subforge-deps` to print the same dependency report in your terminal.
 
 ### Server mode
 `subforge-server` shows the same dependency dialog in the web UI. Because installing software on a server is sensitive, the Install button is **disabled by default**; set `SUBFORGE_ALLOW_INSTALL=1` to enable it.
-
----
 
 ---
 
@@ -81,7 +94,7 @@ Run `cargo run --example check` inside `crates/subforge-deps` to print the same 
 - **Subtitle merge** — mux external SRT/ASS/VTT files into MKV containers.
 - **Audio extraction/merge** — extract, transcode (AAC, MP3, OPUS, FLAC), and remux audio via FFmpeg.
 - **Subtitle format conversion & retiming** — convert between SRT/ASS/SSA/VTT, shift timestamps via pysubs2.
-- **Tool discovery** — automatically detects `mkvmerge`, `mkvextract`, and `ffmpeg` on startup.
+- **Dependency check** — on startup, checks for MKVToolNix, FFmpeg (including ffprobe), Python and `pysubs2`, and offers to install anything that is missing.
 
 ### Batch operations
 - **Batch directory scan** — recursively scan directories for video files and preview tracks for each.
