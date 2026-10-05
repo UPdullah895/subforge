@@ -75,15 +75,22 @@ fn python_dirs_in(root: &Path) -> Vec<PathBuf> {
 }
 
 pub fn find_executable(name: &str, env: &SearchEnv) -> Option<PathBuf> {
-    let candidates: Vec<String> = if env.os == Os::Windows {
-        vec![format!("{name}.exe")]
-    } else {
-        vec![name.to_string()]
-    };
-    env.dirs
-        .iter()
-        .flat_map(|dir| candidates.iter().map(move |c| dir.join(c)))
-        .find(|p| is_executable(p))
+    find_executables(name, env).into_iter().next()
+}
+
+/// Every executable called `name` across the search dirs, in search order,
+/// without duplicates. Callers that must verify a candidate (e.g. Python,
+/// where the Windows Store stub shadows real installs) try each in turn.
+pub fn find_executables(name: &str, env: &SearchEnv) -> Vec<PathBuf> {
+    let file = if env.os == Os::Windows { format!("{name}.exe") } else { name.to_string() };
+    let mut found: Vec<PathBuf> = Vec::new();
+    for dir in &env.dirs {
+        let p = dir.join(&file);
+        if is_executable(&p) && !found.contains(&p) {
+            found.push(p);
+        }
+    }
+    found
 }
 
 #[cfg(unix)]
@@ -172,7 +179,7 @@ pub fn find_python(env: &SearchEnv, venv_dir: &Path) -> Option<PythonInfo> {
     };
     names
         .iter()
-        .filter_map(|n| find_executable(n, env))
+        .flat_map(|n| find_executables(n, env))
         .find_map(|p| probe_python(&p))
 }
 
@@ -337,6 +344,45 @@ mod tests {
             make_script(&sys, "python3", "echo 3.10");
             let found = find_python(&env_with(&sys), &tmp.path().join("no-venv")).unwrap();
             assert_eq!((found.major, found.minor), (3, 10));
+        }
+
+        #[test]
+        fn find_executables_returns_every_match_in_order() {
+            let tmp = tempdir().unwrap();
+            let a = make_script(&tmp.path().join("a"), "python.exe", "exit 9");
+            let b = make_script(&tmp.path().join("b"), "python.exe", "echo 3.12");
+            let env = SearchEnv {
+                dirs: vec![tmp.path().join("a"), tmp.path().join("b"), tmp.path().join("a")],
+                os: Os::Windows,
+            };
+            assert_eq!(find_executables("python", &env), vec![a.clone(), b]);
+            assert_eq!(find_executable("python", &env), Some(a));
+        }
+
+        #[test]
+        fn find_python_skips_broken_stub_and_uses_later_install() {
+            let tmp = tempdir().unwrap();
+            make_script(&tmp.path().join("stub"), "python.exe", "exit 9");
+            let good = make_script(&tmp.path().join("real"), "python.exe", "echo 3.12");
+            let env = SearchEnv {
+                dirs: vec![tmp.path().join("stub"), tmp.path().join("real")],
+                os: Os::Windows,
+            };
+            let found = find_python(&env, &tmp.path().join("no-venv")).unwrap();
+            assert_eq!((found.major, found.minor), (3, 12));
+            assert_eq!(found.path, good);
+        }
+
+        #[test]
+        fn python_dirs_in_keeps_only_python3_folders() {
+            let tmp = tempdir().unwrap();
+            for d in ["Python311", "Python312", "Other"] {
+                std::fs::create_dir_all(tmp.path().join(d)).unwrap();
+            }
+            let mut got = python_dirs_in(tmp.path());
+            got.sort();
+            assert_eq!(got, vec![tmp.path().join("Python311"), tmp.path().join("Python312")]);
+            assert!(python_dirs_in(&tmp.path().join("missing")).is_empty());
         }
 
         #[test]

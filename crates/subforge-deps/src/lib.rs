@@ -12,7 +12,7 @@ pub(crate) mod testutil;
 pub mod detect;
 
 pub use detect::{
-    find_executable, find_python, parse_major_minor, probe_python, python_has_venv,
+    find_executable, find_executables, find_python, parse_major_minor, probe_python, python_has_venv,
     python_package_version, tool_version, venv_python_path, PythonInfo, SearchEnv, MIN_PYTHON,
 };
 pub mod context;
