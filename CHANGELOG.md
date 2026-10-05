@@ -11,7 +11,7 @@ All notable changes to this project are documented here. Format based on
 - Startup dependency check with install guidance (MKVToolNix, FFmpeg, Python, pysubs2, faster-whisper).
 - One-click install via winget (Windows), the system package manager through pkexec (Linux), Homebrew (macOS), and a private virtualenv for Python packages.
 - "Required Programs" panel in Settings and a banner when something required is missing.
-- AUR packages `subforge` and `subforge-bin`; `.deb`/`.rpm` now declare their dependencies.
+- AUR package recipes `subforge` and `subforge-bin` (in `packaging/aur/`); `.deb`/`.rpm` now declare their dependencies.
 - Windows CI jobs.
 
 ### Changed

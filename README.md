@@ -79,7 +79,7 @@ python3 -m venv --system-site-packages "$HOME/Library/Application Support/subfor
 py -3 -m venv --system-site-packages $env:LOCALAPPDATA\subforge\venv; & $env:LOCALAPPDATA\subforge\venv\Scripts\pip install pysubs2 faster-whisper
 ```
 
-Run `cargo run --example check` inside `crates/subforge-deps` to print the same dependency report in your terminal.
+Developers can print the same dependency report in a terminal with `cargo run --example check` inside `crates/subforge-deps`.
 
 ### Server mode
 `subforge-server` shows the same dependency dialog in the web UI. Because installing software on a server is sensitive, without `SUBFORGE_ALLOW_INSTALL=1` the server refuses installs and returns a message containing the command to run on the server yourself; set `SUBFORGE_ALLOW_INSTALL=1` to let the Install button run it.
@@ -242,7 +242,7 @@ npm run tauri dev
 ```
 
 ### "Required Programs" keeps showing something as missing
-Click **Re-check** after installing. On Windows, if you installed a tool in a custom location, add its folder to `PATH` and restart SubForge. Run `cargo run --example check` in `crates/subforge-deps` to see exactly what SubForge detects.
+Click **Re-check** after installing. On Windows, if you installed a tool in a custom location, add its folder to `PATH` and restart SubForge. The **Required Programs** list shows the exact path and version SubForge found for each tool (developers can also run `cargo run --example check` in `crates/subforge-deps`).
 
 ### Windows: installed tool not found right after `winget install`
 SubForge also looks in the standard install folders (WinGet links, Program Files, Python), so a fresh install should be found after **Re-check**. A restart is only needed for tools installed in custom locations: add their folder to `PATH` and reopen SubForge, because new `PATH` entries are only picked up by new processes.
