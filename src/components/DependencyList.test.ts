@@ -56,6 +56,24 @@ describe("DependencyList", () => {
     expect(w.text()).toContain("Install Python first");
   });
 
+  it("does not show the package-manager hint for pip packages", () => {
+    const w = mountList([item({ id: "pysubs2", state: "missing", can_auto_install: false })]);
+    expect(w.text()).toContain("Install Python first");
+    expect(w.text()).not.toContain("No supported package manager");
+  });
+
+  it("explains a missing package manager for system tools, not Python-first", () => {
+    const w = mountList([item({ id: "ffmpeg", state: "missing", can_auto_install: false })]);
+    expect(w.text()).toContain("No supported package manager");
+    expect(w.text()).not.toContain("Install Python first");
+  });
+
+  it("explains a missing package manager for Python itself", () => {
+    const w = mountList([item({ id: "python", state: "missing", can_auto_install: false })]);
+    expect(w.text()).toContain("No supported package manager");
+    expect(w.text()).not.toContain("Install Python first");
+  });
+
   it("disables buttons while any install runs and labels the active one", () => {
     const items = [
       item({ id: "ffmpeg", state: "missing", can_auto_install: true }),

@@ -445,6 +445,7 @@
     "command": "Or run this in a terminal:",
     "manualHint": "This needs administrator rights, and no graphical password prompt (pkexec) was found. Run the command above in a terminal.",
     "needPython": "Install Python first, then this can be installed automatically.",
+    "noPackageManager": "No supported package manager was found on this system. Use the download page below to install it manually.",
     "details": "Details",
     "bannerText": "Some required programs are missing, so parts of SubForge will not work.",
     "fixNow": "Fix now",
