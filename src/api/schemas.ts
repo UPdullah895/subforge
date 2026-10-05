@@ -12,6 +12,25 @@ const ToolInfoSchema = z.looseObject({
   version: z.string().nullish(),
 });
 
+const DepStatusSchema = z.looseObject({
+  id: z.string(),
+  label: z.string(),
+  severity: z.enum(["required", "optional"]),
+  state: z.enum(["ok", "missing", "outdated"]),
+  path: z.string().nullish(),
+  version: z.string().nullish(),
+  purpose: z.string(),
+  download_url: z.string(),
+  install_command: z.string().nullish(),
+  can_auto_install: z.boolean(),
+});
+
+const DepReportSchema = z.looseObject({
+  os: z.string(),
+  items: z.array(DepStatusSchema),
+  has_missing_required: z.boolean(),
+});
+
 export const commandSchemas: Record<string, z.ZodTypeAny> = {
   enumerate_tracks: z.array(
     z.looseObject({
@@ -59,6 +78,9 @@ export const commandSchemas: Record<string, z.ZodTypeAny> = {
     ffmpeg: ToolInfoSchema,
     ffprobe: ToolInfoSchema,
   }),
+
+  check_dependencies: DepReportSchema,
+  install_dependency: DepReportSchema,
 
   load_config: z.looseObject({
     theme: z.string(),
