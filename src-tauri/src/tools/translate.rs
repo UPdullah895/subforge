@@ -241,6 +241,20 @@ pub async fn translate_openai(
     translate_resilient(lines, |chunk| translate_openai_batch(api_key, model, chunk, source, target)).await
 }
 
+/// Request body for Ollama's OpenAI-compatible chat endpoint.
+///
+/// Reasoning is switched off: "thinking" models (e.g. gemma4) otherwise emit
+/// thousands of hidden reasoning tokens per batch, which on a single-slot local
+/// server pushes a 25-line batch past the client timeout with no progress.
+fn ollama_chat_body(model: &str, prompt: &str) -> serde_json::Value {
+    serde_json::json!({
+        "model": model,
+        "messages": [{"role": "user", "content": prompt}],
+        "temperature": 0.3,
+        "reasoning_effort": "none",
+    })
+}
+
 async fn translate_ollama_batch(
     host: &str,
     model: &str,
@@ -269,11 +283,7 @@ Do not add explanations or markdown formatting.\n\nLines:\n{texts}\n\nReturn for
         target,
     );
 
-    let body = serde_json::json!({
-        "model": model,
-        "messages": [{"role": "user", "content": prompt}],
-        "temperature": 0.3,
-    });
+    let body = ollama_chat_body(model, &prompt);
 
     let resp = send_checked(client.post(&url).json(&body)).await?;
     if !resp.status().is_success() {
@@ -713,5 +723,18 @@ mod resilient_tests {
         let input = lines(4);
         let res = translate_resilient(&input, |_| async { Err(TranslateError::ConnectFailed) }).await;
         assert!(matches!(res, Err(TranslateError::ConnectFailed)));
+    }
+}
+
+#[cfg(test)]
+mod ollama_body_tests {
+    use super::ollama_chat_body;
+
+    #[test]
+    fn disables_reasoning_so_batches_do_not_stall() {
+        let b = ollama_chat_body("gemma4:12b", "hi");
+        assert_eq!(b["reasoning_effort"], "none");
+        assert_eq!(b["model"], "gemma4:12b");
+        assert_eq!(b["messages"][0]["content"], "hi");
     }
 }
