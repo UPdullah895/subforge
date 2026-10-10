@@ -238,6 +238,17 @@ pub async fn translate_openai(
     translate_resilient(lines, |chunk| translate_openai_batch(api_key, model, chunk, source, target)).await
 }
 
+/// Error text for a failed provider call. Always names the HTTP status, since
+/// several providers (and proxies) reject requests with an empty body.
+fn api_error_message(provider: &str, status: reqwest::StatusCode, body: &str) -> String {
+    let body = body.trim();
+    if body.is_empty() {
+        format!("{provider} error: HTTP {status} (empty response)")
+    } else {
+        format!("{provider} error: HTTP {status}: {body}")
+    }
+}
+
 /// Request body for Ollama's OpenAI-compatible chat endpoint.
 ///
 /// Reasoning is switched off: "thinking" models (e.g. gemma4) otherwise emit
@@ -282,8 +293,9 @@ Do not add explanations or markdown formatting.\n\nLines:\n{texts}\n\nReturn for
 
     let resp = send_checked(client.post(&url).json(&body)).await?;
     if !resp.status().is_success() {
+        let status = resp.status();
         let text = resp.text().await.unwrap_or_default();
-        return Err(TranslateError::Api(format!("Ollama API error: {}", text)));
+        return Err(TranslateError::Api(api_error_message("Ollama", status, &text)));
     }
 
     let body_text = resp.text().await.map_err(|e| TranslateError::Http(e))?;
@@ -352,8 +364,9 @@ pub async fn translate_libretranslate(
 
         let resp = client.post(&url).json(&body).send().await?;
         if !resp.status().is_success() {
+            let status = resp.status();
             let text = resp.text().await.unwrap_or_default();
-            return Err(TranslateError::Api(format!("LibreTranslate error: {}", text)));
+            return Err(TranslateError::Api(api_error_message("LibreTranslate", status, &text)));
         }
 
         let json_resp: serde_json::Value = resp.json().await?;
@@ -411,8 +424,9 @@ pub async fn translate_deepl(
         .await?;
 
     if !resp.status().is_success() {
+        let status = resp.status();
         let text = resp.text().await.unwrap_or_default();
-        return Err(TranslateError::Api(format!("DeepL error: {}", text)));
+        return Err(TranslateError::Api(api_error_message("DeepL", status, &text)));
     }
 
     let json_resp: serde_json::Value = resp.json().await?;
@@ -464,8 +478,9 @@ No markdown, no explanations.\n\n{texts}\n\nReturn: [\"...\", \"...\"]",
         .await?;
 
     if !resp.status().is_success() {
+        let status = resp.status();
         let text = resp.text().await.unwrap_or_default();
-        return Err(TranslateError::Api(format!("OpenAI error: {}", text)));
+        return Err(TranslateError::Api(api_error_message("OpenAI", status, &text)));
     }
 
     let json_resp: serde_json::Value = resp.json().await?;
@@ -508,8 +523,9 @@ pub async fn translate_google(
 
     let resp = client.post(&url).json(&body).send().await?;
     if !resp.status().is_success() {
+        let status = resp.status();
         let text = resp.text().await.unwrap_or_default();
-        return Err(TranslateError::Api(format!("Google Translate error: {}", text)));
+        return Err(TranslateError::Api(api_error_message("Google Translate", status, &text)));
     }
 
     let json_resp: serde_json::Value = resp.json().await?;
@@ -685,7 +701,13 @@ mod resilient_tests {
 
 #[cfg(test)]
 mod ollama_body_tests {
-    use super::ollama_chat_body;
+    use super::{api_error_message, ollama_chat_body};
+
+    #[test]
+    fn api_error_includes_status_even_when_body_is_empty() {
+        let m = api_error_message("DeepL", reqwest::StatusCode::FORBIDDEN, "");
+        assert!(m.contains("403") && m.contains("DeepL"), "{m}");
+    }
 
     #[test]
     fn disables_reasoning_so_batches_do_not_stall() {
