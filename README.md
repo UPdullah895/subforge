@@ -1,6 +1,7 @@
 # SubForge
 
 [![CI](https://github.com/UPdullah895/subforge/actions/workflows/ci.yml/badge.svg)](https://github.com/UPdullah895/subforge/actions/workflows/ci.yml)
+[![E2E](https://github.com/UPdullah895/subforge/actions/workflows/e2e.yml/badge.svg)](https://github.com/UPdullah895/subforge/actions/workflows/e2e.yml)
 
 > Open-source subtitle & audio toolkit — built with Tauri 2, Vue 3, and Rust.
 
@@ -11,7 +12,7 @@ SubForge is a free, cross-platform desktop application for subtitle manipulation
 ## Install
 
 ### Windows
-Download the `.msi` or `-setup.exe` from the [Releases page](https://github.com/UPdullah895/subforge/releases) and run it.
+Download the `.msi` or `-setup.exe` from the [Releases page](https://github.com/UPdullah895/subforge/releases) and run it. Nothing else needs to be installed: FFmpeg and MKVToolNix come with the installer, and no Python is required.
 Windows SmartScreen may warn about an unrecognised publisher — choose **More info → Run anyway**.
 
 ### Arch Linux / CachyOS / Manjaro (AUR)
@@ -26,7 +27,7 @@ yay -S subforge       # builds from source
 -->
 
 ### Other Linux
-Download the `.AppImage` (any distro), `.deb` (Debian/Ubuntu) or `.rpm` (Fedora/openSUSE) from the Releases page.
+Download the `.AppImage` (any distro), `.deb` (Debian/Ubuntu) or `.rpm` (Fedora/openSUSE) from the Releases page. The AppImage needs nothing else installed (FFmpeg and MKVToolNix are inside it); the `.deb` and `.rpm` install them as dependencies.
 ```bash
 chmod +x subforge_*.AppImage && ./subforge_*.AppImage
 ```
@@ -90,7 +91,7 @@ Developers can print the same dependency report in a terminal with `cargo run --
 - **Batch extraction, merge, and translation** — apply an operation across many files with a live job monitor.
 
 ### Speech-to-text
-- **Built-in whisper.cpp transcription** — transcribe audio/video to SRT or VTT with GGML models (tiny → large-v3-turbo) that you download once from the Speech to Text page (with progress and cancel), plus language auto-detection. Runs on the CPU; no Python needed.
+- **Built-in whisper.cpp transcription** — transcribe audio/video to SRT or VTT with GGML models (tiny → large-v3-turbo) that you download once from the Speech to Text page (with progress and cancel), plus language auto-detection. Uses the GPU through Vulkan when one is available (Device: Auto / CPU / GPU) and the CPU otherwise; no Python needed.
 
 ### Translation
 - **Ollama (local LLM), LibreTranslate, DeepL, OpenAI, Google Translate** — batched, context-aware subtitle translation with automatic engine detection where applicable.
@@ -127,6 +128,8 @@ npm run tauri dev        # development window
 npm run tauri build      # installers in src-tauri/target/release/bundle
 ```
 On Wayland, if you see a protocol error, use `npm run tauri:dev:wayland`.
+
+GPU speech-to-text is the optional `gpu-vulkan` feature (`npm run tauri build -- --features gpu-vulkan`, as the releases are built). It needs the Vulkan headers and `glslc` (the [Vulkan SDK](https://vulkan.lunarg.com/), or e.g. `vulkan-headers` and `shaderc` on Arch).
 
 To bundle FFmpeg and MKVToolNix the way the release installers do (Windows installer and AppImage), fetch the pinned, checksum-verified copies first with `node scripts/fetch-bundled-tools.mjs windows-x64` (or `linux-x64`); versions live in `packaging/bundled-tools.json` and the licences in `THIRD_PARTY_NOTICES.md`. Without this step a Windows build bundles no tools and uses the system ones, and an AppImage build fails (it needs the fetched files); `.deb`/`.rpm` never bundle them. `node scripts/fetch-bundled-tools.mjs --sources <dir>` downloads the corresponding GPL/LGPL source archives that each release attaches.
 

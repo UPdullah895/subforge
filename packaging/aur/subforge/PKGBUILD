@@ -1,6 +1,6 @@
 # Maintainer: UPdullah895 <abdullahbomozh@gmail.com>
 pkgname=subforge
-pkgver=0.2.0
+pkgver=0.3.0
 pkgrel=1
 pkgdesc='Subtitle and audio toolkit: extract, merge, transcribe and translate subtitles'
 arch=('x86_64' 'aarch64')

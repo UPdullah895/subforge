@@ -67,6 +67,16 @@ jobs:
       - name: Install frontend deps
         run: npm ci
 
+      - name: Set the bundled-tool download cache
+        shell: bash
+        run: echo "SUBFORGE_TOOLS_CACHE=$RUNNER_TEMP/tools-cache" >> "$GITHUB_ENV"
+
+      - name: Cache bundled-tool downloads
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/tools-cache
+          key: bundled-tools-${{ runner.os }}-${{ hashFiles('packaging/bundled-tools.json') }}
+
       # FFmpeg, MKVToolNix and the Vulkan loader for the Windows installer and the AppImage
       # (pinned + sha256-verified in packaging/bundled-tools.json; deb/rpm use system packages).
       - name: Fetch bundled tools
