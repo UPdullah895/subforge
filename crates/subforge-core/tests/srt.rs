@@ -105,15 +105,75 @@ fn srt_accepts_dot_millisecond_separator() {
     assert_eq!(doc.cues[0].end_ms, 2_250);
 }
 
+/// (start, end, text) of every cue, for comparing with pysubs2.
+fn cue_tuples(name: &str) -> Vec<(i64, i64, String)> {
+    SubtitleDoc::load(&fixture(name))
+        .unwrap()
+        .cues
+        .into_iter()
+        .map(|c| (c.start_ms, c.end_ms, c.text))
+        .collect()
+}
+
+fn owned(v: &[(i64, i64, &str)]) -> Vec<(i64, i64, String)> {
+    v.iter().map(|&(s, e, t)| (s, e, t.to_string())).collect()
+}
+
+// Expected values are pysubs2 1.9.0's `pysubs2.load(...)` output for the same file.
 #[test]
-fn srt_bad_timing_reports_line() {
-    let src = "1\n00:00:01,000 --> 00:00:02,000\nok\n\n2\nnot a timing\ntext\n";
-    let err = SubtitleDoc::parse(src.as_bytes(), None).unwrap_err();
-    match &err {
-        SubtitleError::Parse { line, .. } => assert_eq!(*line, 5),
-        other => panic!("unexpected error: {other:?}"),
+fn srt_blank_line_inside_cue_text_is_kept_like_pysubs2() {
+    assert_eq!(
+        cue_tuples("blank_inside.srt"),
+        owned(&[
+            (1000, 2500, "First line\\N\\Nafter a blank line"),
+            (3000, 4000, "Second cue"),
+            (5000, 6000, "{\\i1}Third{\\i0}\\N\\N   \\Nstill third"),
+        ])
+    );
+}
+
+#[test]
+fn srt_stray_lines_join_the_previous_cue_like_pysubs2() {
+    assert_eq!(
+        cue_tuples("stray.srt"),
+        owned(&[
+            (1000, 2000, "Hello\\N\\Nstray note between cues"),
+            (3000, 4000, "World\\N2a"),
+            (5000, 6000, "No index here"),
+            (7000, 8000, ""),
+            (9000, 10000, "Last"),
+        ])
+    );
+}
+
+#[test]
+fn srt_save_of_irregular_files_keeps_every_cue() {
+    for name in ["blank_inside.srt", "stray.srt"] {
+        let doc = SubtitleDoc::parse(&fixture_bytes(name), Some(Format::Srt)).unwrap();
+        let again = SubtitleDoc::parse(&doc.to_bytes(), Some(Format::Srt)).unwrap();
+        let tuples = |d: &SubtitleDoc| -> Vec<(i64, i64, String)> {
+            d.cues
+                .iter()
+                .map(|c| (c.start_ms, c.end_ms, c.text.clone()))
+                .collect()
+        };
+        assert_eq!(tuples(&again), tuples(&doc), "{name}");
     }
-    assert!(err.to_string().contains("line 5"), "{err}");
+}
+
+#[test]
+fn srt_text_after_a_cue_that_is_not_a_timing_joins_that_cue() {
+    // pysubs2 keeps loading such files; it used to be rejected outright.
+    let src = "1\n00:00:01,000 --> 00:00:02,000\nok\n\n2\nnot a timing\ntext\n";
+    let doc = SubtitleDoc::parse(src.as_bytes(), None).unwrap();
+    assert_eq!(doc.cues.len(), 1);
+    assert_eq!(doc.cues[0].text, "ok\\N\\N2\\Nnot a timing\\Ntext");
+}
+
+#[test]
+fn srt_without_any_timing_line_is_an_error() {
+    let err = SubtitleDoc::parse(b"just some text\nmore\n", None).unwrap_err();
+    assert!(matches!(err, SubtitleError::Parse { line: 1, .. }), "{err}");
 }
 
 #[test]

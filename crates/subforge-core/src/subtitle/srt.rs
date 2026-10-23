@@ -28,44 +28,74 @@ fn parse_timing(line: &str) -> Option<(i64, i64)> {
     Some((t(1, 2, 3, 4)?, t(5, 6, 7, 8)?))
 }
 
+fn is_blank(line: &str) -> bool {
+    line.trim().is_empty()
+}
+
+/// A cue number line such as `12`.
+fn is_index(line: &str) -> bool {
+    let t = line.trim();
+    !t.is_empty() && t.chars().all(|c| c.is_ascii_digit())
+}
+
 /// Parse SRT text (already decoded, any line ending) into cues.
+///
+/// Like pysubs2, timing lines delimit cues: a cue's text runs up to the next
+/// timing line, minus the trailing cue number in front of it. So a blank line
+/// inside cue text is kept (as `\N\N`) and stray lines between cues join the
+/// previous cue. Lines before the first timing line are ignored.
 pub(crate) fn parse(text: &str) -> Result<(Vec<Cue>, FormatExtras), SubtitleError> {
     let norm = text.replace("\r\n", "\n").replace('\r', "\n");
     let trailing_newlines = norm.len() - norm.trim_end_matches('\n').len();
     let lines: Vec<&str> = norm.split('\n').collect();
 
-    let mut cues = Vec::new();
-    let mut i = 0;
-    while i < lines.len() {
-        let line = lines[i].trim();
-        if line.is_empty() {
-            i += 1;
-            continue;
-        }
-        let start = i;
-        let timing_idx = if parse_timing(line).is_some() {
-            i
-        } else if line.chars().all(|c| c.is_ascii_digit())
-            && lines.get(i + 1).is_some_and(|l| parse_timing(l).is_some())
-        {
-            i + 1
-        } else {
+    let timings: Vec<(usize, (i64, i64))> = lines
+        .iter()
+        .enumerate()
+        .filter_map(|(i, l)| parse_timing(l).map(|t| (i, t)))
+        .collect();
+    if timings.is_empty() {
+        if let Some(first) = lines.iter().position(|l| !is_blank(l)) {
             return Err(SubtitleError::Parse {
                 path: None,
-                line: i + 1,
+                line: first + 1,
                 msg: "expected a cue timing line such as 00:00:01,000 --> 00:00:02,000".into(),
             });
-        };
-        let (start_ms, end_ms) = parse_timing(lines[timing_idx]).expect("checked above");
-        let mut end = timing_idx + 1;
-        while end < lines.len() && !lines[end].trim().is_empty() {
-            end += 1;
         }
-        let body = lines[timing_idx + 1..end].join("\n");
-        let mut cue = Cue::new(start_ms, end_ms, html_to_ass(&body));
-        cue.keep_original(lines[start..end].join("\n"), Format::Srt);
+    }
+
+    let mut cues = Vec::with_capacity(timings.len());
+    for (k, &(t, (start_ms, end_ms))) in timings.iter().enumerate() {
+        let next = timings.get(k + 1).map_or(lines.len(), |&(n, _)| n);
+        let first = t + 1;
+        let trim_blank_tail = |mut end: usize| {
+            while end > first && is_blank(lines[end - 1]) {
+                end -= 1;
+            }
+            end
+        };
+        let mut end = trim_blank_tail(next);
+        // Drop the following cue's number: it sits on its own line after the
+        // text, or alone after blank lines (an empty cue).
+        if end > first && is_index(lines[end - 1]) {
+            let has_text = lines[first..end - 1].iter().any(|l| !is_blank(l));
+            if has_text || end - 1 > first {
+                end = trim_blank_tail(end - 1);
+            }
+        }
+        let mut text_start = first;
+        while text_start < end && is_blank(lines[text_start]) {
+            text_start += 1;
+        }
+        let body = lines[text_start..end].join("\n");
+        let raw_start = if t > 0 && is_index(lines[t - 1]) {
+            t - 1
+        } else {
+            t
+        };
+        let mut cue = Cue::new(start_ms, end_ms, html_to_ass(body.trim()));
+        cue.keep_original(lines[raw_start..end].join("\n"), Format::Srt);
         cues.push(cue);
-        i = end;
     }
     Ok((cues, FormatExtras::Srt { trailing_newlines }))
 }
