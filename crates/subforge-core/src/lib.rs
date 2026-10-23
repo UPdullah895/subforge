@@ -5,5 +5,6 @@ pub mod progress;
 pub mod subtitle;
 pub mod tools;
 pub mod translate;
+pub mod whisper;
 
 pub use progress::{CancellationToken, ProgressFn};
