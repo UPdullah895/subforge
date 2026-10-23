@@ -114,6 +114,8 @@ enum CueExtra {
     Vtt {
         id: Option<String>,
         settings: String,
+        /// Opening tag text of a leading voice span, such as `v Mary`.
+        voice: Option<String>,
     },
 }
 

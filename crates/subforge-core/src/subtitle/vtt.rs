@@ -3,6 +3,11 @@
 //! `NOTE`, `STYLE` and `REGION` blocks are not kept. A cue keeps its identifier line and its
 //! cue settings (`align:start ...`), so editing the times or text does not lose them; an
 //! untouched cue is written back verbatim.
+//!
+//! A leading voice tag (`<v Speaker>` / `<v.class Speaker>`) is stored with the cue and
+//! re-emitted around the text when an edited cue is regenerated. The other inline tags (`<c>`,
+//! `<lang>`, ruby, inline timestamps) are dropped from the text at parse time, so they are lost
+//! once the cue is edited (or converted); `<i>`, `<b>` and `<u>` are kept.
 
 use std::sync::OnceLock;
 
@@ -82,7 +87,11 @@ pub(crate) fn parse(text: &str) -> Result<(Vec<Cue>, FormatExtras), SubtitleErro
         let body = lines[timing_idx + 1..end].join("\n");
         let mut cue = Cue::new(start_ms, end_ms, vtt_to_ass(&body));
         cue.keep_original(lines[start..end].join("\n"), Format::Vtt);
-        cue.extra = CueExtra::Vtt { id, settings };
+        cue.extra = CueExtra::Vtt {
+            id,
+            settings,
+            voice: leading_voice(&body),
+        };
         cues.push(cue);
     }
     Ok((
@@ -92,6 +101,22 @@ pub(crate) fn parse(text: &str) -> Result<(Vec<Cue>, FormatExtras), SubtitleErro
             trailing_newlines,
         },
     ))
+}
+
+/// The opening tag text (without `<` `>`) of a voice span that starts the cue, e.g. `v Mary`.
+fn leading_voice(body: &str) -> Option<String> {
+    let rest = body.trim_start().strip_prefix('<')?;
+    let inner = &rest[..rest.find('>')?];
+    let after_v = inner.strip_prefix('v')?;
+    after_v
+        .starts_with([' ', '\t', '.'])
+        .then(|| inner.to_owned())
+}
+
+fn is_timestamp(tag: &str) -> bool {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    RE.get_or_init(|| Regex::new(r"^\d+:\d+(:\d+)?\.\d+$").expect("static regex"))
+        .is_match(tag.trim())
 }
 
 /// WebVTT cue text to internal (ASS-convention) text.
@@ -110,14 +135,26 @@ fn strip_vtt_tags(s: &str) -> String {
             rest = after;
             break;
         };
+        if after[1..e].contains('<') {
+            // A stray `<` (as in "I <3 you"): literal text, the real tag comes later.
+            out.push('<');
+            rest = &after[1..];
+            continue;
+        }
         let inner = after[1..e].trim_start_matches('/');
         let name: String = inner
             .chars()
             .take_while(|c| !c.is_whitespace() && *c != '.')
             .collect();
         let vtt_only = matches!(name.as_str(), "c" | "v" | "lang" | "ruby" | "rt" | "rp")
-            || name.starts_with(|c: char| c.is_ascii_digit());
-        if !vtt_only {
+            || is_timestamp(inner);
+        if vtt_only {
+            // dropped, text kept
+        } else if matches!(name.as_str(), "i" | "b" | "u") && inner.len() > name.len() {
+            // `<i.foo>` is italic with a class: keep it as plain `<i>`.
+            let slash = if after[1..].starts_with('/') { "/" } else { "" };
+            out.push_str(&format!("<{slash}{name}>"));
+        } else {
             out.push_str(&after[..=e]);
         }
         rest = &after[e + 1..];
@@ -195,9 +232,13 @@ pub(crate) fn write(cues: &[Cue], header: &str, trailing_newlines: usize) -> Str
             if cue.comment {
                 return None;
             }
-            let (id, settings) = match &cue.extra {
-                CueExtra::Vtt { id, settings } => (id.as_deref(), settings.as_str()),
-                _ => (None, ""),
+            let (id, settings, voice) = match &cue.extra {
+                CueExtra::Vtt {
+                    id,
+                    settings,
+                    voice,
+                } => (id.as_deref(), settings.as_str(), voice.as_deref()),
+                _ => (None, "", None),
             };
             let mut block = String::new();
             if let Some(id) = id {
@@ -216,7 +257,10 @@ pub(crate) fn write(cues: &[Cue], header: &str, trailing_newlines: usize) -> Str
             let body = body_text(&cue.text);
             if !body.is_empty() {
                 block.push('\n');
-                block.push_str(&body);
+                match voice {
+                    Some(v) => block.push_str(&format!("<{v}>{body}</v>")),
+                    None => block.push_str(&body),
+                }
             }
             Some(block)
         })

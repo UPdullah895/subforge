@@ -229,3 +229,34 @@ fn file_helpers_convert_shift_stretch() {
         Err(SubtitleError::InvalidFps)
     ));
 }
+
+#[test]
+fn vtt_voice_tag_survives_edit() {
+    let src = b"WEBVTT\n\n00:00:01.000 --> 00:00:02.000\n<v Mary>old &amp; text</v>\n\n00:00:03.000 --> 00:00:04.000\n<v.loud Bob>hey</v>\n";
+    let mut doc = SubtitleDoc::parse(src, None).unwrap();
+    assert_eq!(doc.cues[0].text, "old & text");
+    doc.cues[0].text = "new text".into();
+    doc.cues[1].text = "yo\\Nthere".into();
+    let out = String::from_utf8(doc.to_bytes()).unwrap();
+    assert!(out.contains("<v Mary>new text</v>"), "{out}");
+    assert!(out.contains("<v.loud Bob>yo\nthere</v>"), "{out}");
+    let ass = String::from_utf8(doc.convert(Format::Ass).to_bytes()).unwrap();
+    assert!(!ass.contains("<v"));
+}
+
+#[test]
+fn vtt_lt_three_is_text() {
+    let src = b"WEBVTT\n\n00:00:01.000 --> 00:00:02.000\nI <3 you <00:00:01.500>so\n";
+    let doc = SubtitleDoc::parse(src, None).unwrap();
+    assert_eq!(doc.cues[0].text, "I <3 you so");
+}
+
+#[test]
+fn vtt_class_suffix_on_italic() {
+    let src = b"WEBVTT\n\n00:00:01.000 --> 00:00:02.000\n<i.foo>a</i> <b.bar>b</b> <u.baz>c</u>\n";
+    let doc = SubtitleDoc::parse(src, None).unwrap();
+    assert_eq!(
+        doc.cues[0].text,
+        "{\\i1}a{\\i0} {\\b1}b{\\b0} {\\u1}c{\\u0}"
+    );
+}
