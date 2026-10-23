@@ -144,7 +144,7 @@ fn apply_block(block: &str, out: &mut String, open: &mut Vec<char>) {
     }
 }
 
-fn has_drawing(s: &str) -> bool {
+pub(crate) fn has_drawing(s: &str) -> bool {
     let mut rest = s;
     while let Some(p) = rest.find('{') {
         let after = &rest[p + 1..];

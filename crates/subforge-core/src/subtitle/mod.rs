@@ -1,12 +1,14 @@
-//! Subtitle model and formats (SRT and ASS/SSA today; WebVTT is added by a later task).
+//! Subtitle model and formats: SRT, ASS/SSA and WebVTT, plus conversion, shift and stretch.
 
 mod ass;
 pub mod encoding;
 pub(crate) mod markup;
 mod srt;
+mod vtt;
 
 use std::io;
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 
 use serde::{Deserialize, Serialize};
 
@@ -108,6 +110,11 @@ enum CueExtra {
     None,
     /// Every field of the event line in `Format:` order (Start/End/Text are rebuilt on write).
     Ass { fields: Vec<String> },
+    /// WebVTT identifier line and the cue settings after the end time.
+    Vtt {
+        id: Option<String>,
+        settings: String,
+    },
 }
 
 impl Cue {
@@ -150,8 +157,15 @@ impl Cue {
 /// Format-specific document data needed to write the file back losslessly.
 #[derive(Debug, Clone)]
 pub(crate) enum FormatExtras {
-    Srt { trailing_newlines: usize },
+    Srt {
+        trailing_newlines: usize,
+    },
     Ass(ass::AssLayout),
+    Vtt {
+        /// The `WEBVTT` header block (usually just `WEBVTT`).
+        header: String,
+        trailing_newlines: usize,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -187,8 +201,10 @@ pub struct SubtitleDoc {
 /// that carry no signature of their own.
 fn detect_format(text: &str, hint: Option<Format>) -> Format {
     let head = text.trim_start();
-    if head.starts_with("WEBVTT") {
-        return Format::Vtt;
+    if let Some(rest) = head.strip_prefix("WEBVTT") {
+        if rest.is_empty() || rest.starts_with(char::is_whitespace) {
+            return Format::Vtt;
+        }
     }
     if head.starts_with("[Script Info]") {
         let lower = text.to_ascii_lowercase();
@@ -216,11 +232,18 @@ fn detect_format(text: &str, hint: Option<Format>) -> Format {
     }
 }
 
-/// A signature-less ASS/SSA body is recognisable by its section headers.
+/// A signature-less body that fits the hinted format: ASS/SSA by its `[Events]` section, WebVTT
+/// by a cue timing line with a dot fraction (comma fractions are SRT).
 fn looks_like_sections(head: &str, f: Format) -> bool {
+    static SRT_TIMING: OnceLock<regex::Regex> = OnceLock::new();
     match f {
         Format::Ass | Format::Ssa => head.contains("[Events]"),
-        _ => false,
+        Format::Vtt => {
+            let srt = SRT_TIMING
+                .get_or_init(|| regex::Regex::new(r"\d,\d{1,3}\s*-->").expect("static regex"));
+            head.contains("-->") && !srt.is_match(head)
+        }
+        Format::Srt => false,
     }
 }
 
@@ -234,11 +257,7 @@ impl SubtitleDoc {
         let (cues, extras) = match format {
             Format::Srt => srt::parse(&text)?,
             Format::Ass | Format::Ssa => ass::parse(&text, format == Format::Ssa)?,
-            other => {
-                return Err(SubtitleError::UnsupportedFormat(
-                    other.extension().to_string(),
-                ))
-            }
+            Format::Vtt => vtt::parse(&text)?,
         };
         Ok(SubtitleDoc {
             format,
@@ -288,7 +307,16 @@ impl SubtitleDoc {
                 };
                 ass::write(&self.cues, layout, self.format == Format::Ssa)
             }
-            Format::Vtt => unimplemented!("WebVTT writing is added in a later task"),
+            Format::Vtt => {
+                let (header, trailing) = match &self.extras {
+                    FormatExtras::Vtt {
+                        header,
+                        trailing_newlines,
+                    } => (header.as_str(), *trailing_newlines),
+                    _ => ("WEBVTT", 1),
+                };
+                vtt::write(&self.cues, header, trailing)
+            }
         };
         let text = match self.line_ending {
             LineEnding::Lf => text,
@@ -300,6 +328,61 @@ impl SubtitleDoc {
         }
         out.extend_from_slice(text.as_bytes());
         out
+    }
+
+    /// A copy of the document in `to`. Converting to SRT or WebVTT drops comment and drawing
+    /// cues (the writers turn the text into HTML-style markup); converting from SRT/WebVTT to
+    /// ASS/SSA produces a default header and a single `Default` style; ASS <-> SSA keeps the
+    /// styles and translates the format lines.
+    pub fn convert(&self, to: Format) -> SubtitleDoc {
+        let mut doc = self.clone();
+        if self.format == to {
+            return doc;
+        }
+        let is_ass = |f: Format| matches!(f, Format::Ass | Format::Ssa);
+        doc.format = to;
+        if matches!(to, Format::Srt | Format::Vtt) {
+            doc.cues
+                .retain(|c| !c.comment && !markup::has_drawing(&c.text));
+        }
+        if !(is_ass(self.format) && is_ass(to)) {
+            // Format-specific data does not carry over. For ASS/SSA targets any non-ASS
+            // extras make the writer build the default header.
+            doc.extras = match to {
+                Format::Vtt => FormatExtras::Vtt {
+                    header: "WEBVTT".to_owned(),
+                    trailing_newlines: 1,
+                },
+                _ => FormatExtras::Srt {
+                    trailing_newlines: 1,
+                },
+            };
+        }
+        doc
+    }
+
+    /// Move every cue by `ms` (negative moves earlier). Times are clamped at 0 and a cue never
+    /// ends before it starts.
+    pub fn shift(&mut self, ms: i64) {
+        for cue in &mut self.cues {
+            cue.start_ms = cue.start_ms.saturating_add(ms).max(0);
+            cue.end_ms = cue.end_ms.saturating_add(ms).max(cue.start_ms);
+        }
+    }
+
+    /// Multiply every time by `from_fps / to_fps` (rounded to the millisecond), e.g. to retime
+    /// subtitles made for 25 fps video onto a 23.976 fps cut.
+    pub fn stretch(&mut self, from_fps: f64, to_fps: f64) -> Result<(), SubtitleError> {
+        let valid = |f: f64| f.is_finite() && f > 0.0;
+        if !valid(from_fps) || !valid(to_fps) {
+            return Err(SubtitleError::InvalidFps);
+        }
+        let scale = |t: i64| (t as f64 * from_fps / to_fps).round() as i64;
+        for cue in &mut self.cues {
+            cue.start_ms = scale(cue.start_ms).max(0);
+            cue.end_ms = scale(cue.end_ms).max(cue.start_ms);
+        }
+        Ok(())
     }
 
     pub fn save(&self, path: &Path) -> Result<(), SubtitleError> {
@@ -318,4 +401,28 @@ pub fn parse(bytes: &[u8], hint: Option<Format>) -> Result<SubtitleDoc, Subtitle
 /// Free-function form of [`SubtitleDoc::load`].
 pub fn load(path: &Path) -> Result<SubtitleDoc, SubtitleError> {
     SubtitleDoc::load(path)
+}
+
+/// Load `input`, convert it to `to` and save it as UTF-8 at `output`.
+pub fn convert_file(input: &Path, output: &Path, to: Format) -> Result<(), SubtitleError> {
+    SubtitleDoc::load(input)?.convert(to).save(output)
+}
+
+/// Load `input`, shift every cue by `ms` and save it (same format, UTF-8) at `output`.
+pub fn shift_file(input: &Path, output: &Path, ms: i64) -> Result<(), SubtitleError> {
+    let mut doc = SubtitleDoc::load(input)?;
+    doc.shift(ms);
+    doc.save(output)
+}
+
+/// Load `input`, stretch its times from `from_fps` to `to_fps` and save it at `output`.
+pub fn stretch_file(
+    input: &Path,
+    output: &Path,
+    from_fps: f64,
+    to_fps: f64,
+) -> Result<(), SubtitleError> {
+    let mut doc = SubtitleDoc::load(input)?;
+    doc.stretch(from_fps, to_fps)?;
+    doc.save(output)
 }

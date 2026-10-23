@@ -297,14 +297,15 @@ fn format_line(format: &[String]) -> String {
     format!("Format: {}", names.join(", "))
 }
 
-/// Header and `[Events]` Format line for a document that was not read from an ASS/SSA file.
+/// Header and `[Events]` Format line for a document that was not read from an ASS/SSA file:
+/// the pysubs2 default style on a 384x288 canvas.
 fn default_prelude(ssa: bool) -> Vec<String> {
     let (script_type, styles_header, styles_format, style) = if ssa {
         (
             "v4.00",
             "[V4 Styles]",
             "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, TertiaryColour, BackColour, Bold, Italic, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, AlphaLevel, Encoding",
-            "Style: Default,Arial,20,16777215,65535,65535,0,0,0,1,2,2,2,30,30,30,0,0",
+            "Style: Default,Arial,20,16777215,255,0,0,0,0,1,2,2,2,10,10,10,0,1",
         )
     } else {
         (
@@ -317,6 +318,8 @@ fn default_prelude(ssa: bool) -> Vec<String> {
     vec![
         "[Script Info]".into(),
         format!("ScriptType: {script_type}"),
+        "PlayResX: 384".into(),
+        "PlayResY: 288".into(),
         String::new(),
         styles_header.into(),
         styles_format.into(),

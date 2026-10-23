@@ -223,10 +223,38 @@ fn content_detection_beats_hint_and_hint_resolves_ambiguity() {
         SubtitleDoc::parse(ass, Some(Format::Srt)).unwrap().format,
         Format::Ass
     );
-    // WebVTT is not implemented yet.
+    // A WEBVTT signature routes to the WebVTT parser.
     let vtt = b"WEBVTT\n\n00:00.000 --> 00:01.000\nx\n";
+    assert_eq!(SubtitleDoc::parse(vtt, None).unwrap().format, Format::Vtt);
+    // Without a signature the hint settles it: .ass with an [Events] section, .vtt with a
+    // dot-fraction cue timing line; anything else stays SRT.
+    let bare_ass =
+        b"[Events]\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n";
+    // Without the hint it is read as SRT, which this is not.
     assert!(matches!(
-        SubtitleDoc::parse(vtt, None),
-        Err(SubtitleError::UnsupportedFormat(_))
+        SubtitleDoc::parse(bare_ass, None),
+        Err(SubtitleError::Parse { .. })
     ));
+    assert_eq!(
+        SubtitleDoc::parse(bare_ass, Some(Format::Ass))
+            .unwrap()
+            .format,
+        Format::Ass
+    );
+    let bare_vtt = b"00:00:00.000 --> 00:00:01.000\nx\n";
+    assert_eq!(
+        SubtitleDoc::parse(bare_vtt, None).unwrap().format,
+        Format::Srt
+    );
+    assert_eq!(
+        SubtitleDoc::parse(bare_vtt, Some(Format::Vtt))
+            .unwrap()
+            .format,
+        Format::Vtt
+    );
+    // Comma-fraction timings are SRT even under a .vtt hint.
+    assert_eq!(
+        SubtitleDoc::parse(&srt, Some(Format::Vtt)).unwrap().format,
+        Format::Srt
+    );
 }
