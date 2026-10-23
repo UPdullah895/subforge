@@ -85,6 +85,16 @@ export const commandSchemas: Record<string, z.ZodTypeAny> = {
     ffprobe: ToolInfoSchema,
   }),
 
+  get_tool_status: z.array(
+    z.looseObject({
+      id: z.string(),
+      source: z.enum(["custom", "bundled", "system"]).nullable(),
+      path: z.string().nullish(),
+      version: z.string().nullish(),
+      error: z.string().nullish(),
+    })
+  ),
+
   check_dependencies: DepReportSchema,
   install_dependency: DepReportSchema,
 
@@ -92,6 +102,8 @@ export const commandSchemas: Record<string, z.ZodTypeAny> = {
     theme: z.string(),
     mkvmerge_path: z.string().nullish(),
     mkvextract_path: z.string().nullish(),
+    mkvpropedit_path: z.string().nullish(),
+    config_version: z.number().nullish(),
     ffmpeg_path: z.string().nullish(),
     ffprobe_path: z.string().nullish(),
     default_engine: z.string().nullish(),

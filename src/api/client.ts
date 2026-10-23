@@ -58,7 +58,7 @@ function restBody(cmd: string, args?: Record<string, unknown>): unknown {
 const KEEP_WRAPPED = new Set(["set_opensubtitles_credentials"]);
 
 // Commands whose REST route is a GET (the POST on the same path is "save").
-const GET_COMMANDS = new Set(["load_config", "get_tool_registry", "check_dependencies"]);
+const GET_COMMANDS = new Set(["load_config", "get_tool_registry", "get_tool_status", "check_dependencies"]);
 
 // Many handlers answer a bare `200 OK` with no body (the Tauri equivalents
 // return `()`); treat an empty body as "no value" instead of a JSON error.
@@ -135,6 +135,7 @@ function cmdToEndpoint(cmd: string): string {
     translate_subtitles: "/api/translate",
     run_translation_pipeline: "/api/translate/pipeline",
     get_tool_registry: "/api/tools/registry",
+    get_tool_status: "/api/tools/status",
     check_dependencies: "/api/deps",
     install_dependency: "/api/deps/install",
     load_config: "/api/config",

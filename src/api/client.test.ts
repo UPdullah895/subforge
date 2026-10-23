@@ -57,6 +57,18 @@ describe("apiInvoke (browser / REST mode)", () => {
     expect(lastCall().init).toBeUndefined();
   });
 
+  it("fetches get_tool_status with GET from /api/tools/status", async () => {
+    fetchMock.mockReturnValue(
+      respond(
+        '[{"id":"ffmpeg","source":"bundled","path":"/x","version":"7","error":null},{"id":"ffprobe","source":null,"path":null,"version":null,"error":null}]'
+      )
+    );
+    const rows = await apiInvoke<{ id: string }[]>("get_tool_status");
+    expect(lastCall().url).toBe("/api/tools/status");
+    expect(lastCall().init).toBeUndefined();
+    expect(rows.map((r) => r.id)).toEqual(["ffmpeg", "ffprobe"]);
+  });
+
   it("treats an empty 200 body as success, not a JSON error", async () => {
     fetchMock.mockReturnValue(respond(""));
     await expect(apiInvoke("extract_audio_track", { filePath: "x" })).resolves.toBeUndefined();

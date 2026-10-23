@@ -8,6 +8,7 @@ import { useSubtitleSourcesStore } from "../stores/subtitleSourcesStore";
 import { apiInvoke } from "../api/client";
 import SetupInstructions from "../components/SetupInstructions.vue";
 import DependenciesPanel from "../components/DependenciesPanel.vue";
+import ToolPathField from "../components/ToolPathField.vue";
 import {
   Palette,
   Languages,
@@ -106,22 +107,26 @@ async function pickOutputDir() {
   }
 }
 
+// Only refreshes what is shown; it never writes paths into the config (a
+// PATH-equal custom path would shadow the bundled tools).
 async function autoDetectTools() {
-  await appStore.discoverTools();
-  const registry = appStore.toolRegistry;
-  if (!registry || !appStore.config) return;
-  if (!appStore.config.mkvmerge_path && registry.mkvmerge.available && registry.mkvmerge.path) {
-    appStore.config.mkvmerge_path = registry.mkvmerge.path;
-  }
-  if (!appStore.config.mkvextract_path && registry.mkvextract.available && registry.mkvextract.path) {
-    appStore.config.mkvextract_path = registry.mkvextract.path;
-  }
-  if (!appStore.config.ffmpeg_path && registry.ffmpeg.available && registry.ffmpeg.path) {
-    appStore.config.ffmpeg_path = registry.ffmpeg.path;
-  }
-  if (!appStore.config.ffprobe_path && registry.ffprobe.available && registry.ffprobe.path) {
-    appStore.config.ffprobe_path = registry.ffprobe.path;
-  }
+  await appStore.loadToolStatus();
+}
+
+const TOOL_IDS = ["mkvmerge", "mkvextract", "mkvpropedit", "ffmpeg", "ffprobe"] as const;
+type ToolId = (typeof TOOL_IDS)[number];
+
+function statusFor(id: ToolId) {
+  return appStore.toolStatus.find((s) => s.id === id) ?? null;
+}
+
+function setToolPath(id: ToolId, value: string | undefined) {
+  if (appStore.config) appStore.config[`${id}_path` as const] = value;
+}
+
+async function onToolPathChange() {
+  await appStore.saveConfig();
+  await appStore.loadToolStatus();
 }
 
 async function saveSettings() {
@@ -165,6 +170,7 @@ function setupContentFor(id: ProviderId) {
 
 onMounted(() => {
   appStore.loadConfig();
+  appStore.loadToolStatus();
   subtitleSourcesStore.loadStatus();
 });
 </script>
@@ -331,42 +337,15 @@ onMounted(() => {
               {{ t("settings.autoDetect") }}
             </button>
           </div>
-          <div>
-            <label class="block text-xs font-medium text-text-secondary mb-1.5">{{ t("settings.mkvmerge") }}</label>
-            <input
-              v-model="appStore.config.mkvmerge_path"
-              type="text"
-              :placeholder="t('settings.mkvmergePlaceholder')"
-              class="w-full px-4 py-2.5 rounded-lg bg-bg-primary border border-border text-sm text-text-primary placeholder-text-muted focus:outline-none focus:border-accent"
-            />
-          </div>
-          <div>
-            <label class="block text-xs font-medium text-text-secondary mb-1.5">{{ t("settings.mkvextract") }}</label>
-            <input
-              v-model="appStore.config.mkvextract_path"
-              type="text"
-              :placeholder="t('settings.mkvextractPlaceholder')"
-              class="w-full px-4 py-2.5 rounded-lg bg-bg-primary border border-border text-sm text-text-primary placeholder-text-muted focus:outline-none focus:border-accent"
-            />
-          </div>
-          <div>
-            <label class="block text-xs font-medium text-text-secondary mb-1.5">{{ t("settings.ffmpeg") }}</label>
-            <input
-              v-model="appStore.config.ffmpeg_path"
-              type="text"
-              :placeholder="t('settings.ffmpegPlaceholder')"
-              class="w-full px-4 py-2.5 rounded-lg bg-bg-primary border border-border text-sm text-text-primary placeholder-text-muted focus:outline-none focus:border-accent"
-            />
-          </div>
-          <div>
-            <label class="block text-xs font-medium text-text-secondary mb-1.5">{{ t("settings.ffprobe") }}</label>
-            <input
-              v-model="appStore.config.ffprobe_path"
-              type="text"
-              :placeholder="t('settings.ffprobePlaceholder')"
-              class="w-full px-4 py-2.5 rounded-lg bg-bg-primary border border-border text-sm text-text-primary placeholder-text-muted focus:outline-none focus:border-accent"
-            />
-          </div>
+          <ToolPathField
+            v-for="id in TOOL_IDS"
+            :key="id"
+            :tool-id="id"
+            :model-value="appStore.config[`${id}_path` as const]"
+            :status="statusFor(id)"
+            @update:model-value="setToolPath(id, $event)"
+            @change="onToolPathChange"
+          />
         </div>
       </section>
 

@@ -49,4 +49,13 @@ describe("appStore", () => {
     await store.toggleTheme();
     expect(store.theme).toBe("dark");
   });
+
+  it("loadToolStatus stores the statuses from get_tool_status", async () => {
+    const rows = [{ id: "ffmpeg", source: "bundled", path: "/x", version: "7", error: null }];
+    vi.mocked(apiInvoke).mockResolvedValue(rows);
+    const store = useAppStore();
+    await store.loadToolStatus();
+    expect(apiInvoke).toHaveBeenCalledWith("get_tool_status");
+    expect(store.toolStatus).toEqual(rows);
+  });
 });

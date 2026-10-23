@@ -10,6 +10,8 @@ export interface AppConfig {
   language: Language;
   mkvmerge_path?: string;
   mkvextract_path?: string;
+  mkvpropedit_path?: string;
+  config_version?: number;
   ffmpeg_path?: string;
   ffprobe_path?: string;
   default_engine?: string;
@@ -36,6 +38,14 @@ export interface ToolInfo {
   available: boolean;
 }
 
+export interface ToolStatus {
+  id: "ffmpeg" | "ffprobe" | "mkvmerge" | "mkvextract" | "mkvpropedit";
+  source: "custom" | "bundled" | "system" | null;
+  path?: string | null;
+  version?: string | null;
+  error?: string | null;
+}
+
 export interface ToolRegistry {
   mkvmerge: ToolInfo;
   mkvextract: ToolInfo;
@@ -48,6 +58,7 @@ export const useAppStore = defineStore("app", () => {
   const language = ref<Language>("en");
   const sidebarCollapsed = ref(false);
   const toolRegistry = ref<ToolRegistry | null>(null);
+  const toolStatus = ref<ToolStatus[]>([]);
   const config = ref<AppConfig | null>(null);
   const error = ref<string | null>(null);
 
@@ -81,6 +92,14 @@ export const useAppStore = defineStore("app", () => {
     }
   }
 
+  async function loadToolStatus() {
+    try {
+      toolStatus.value = await apiInvoke<ToolStatus[]>("get_tool_status");
+    } catch (e) {
+      error.value = `Failed to detect tools: ${e instanceof Error ? e.message : String(e)}`;
+    }
+  }
+
   async function toggleTheme() {
     theme.value = theme.value === "dark" ? "light" : "dark";
     if (config.value) {
@@ -106,11 +125,13 @@ export const useAppStore = defineStore("app", () => {
     language,
     sidebarCollapsed,
     toolRegistry,
+    toolStatus,
     config,
     error,
     loadConfig,
     saveConfig,
     discoverTools,
+    loadToolStatus,
     toggleTheme,
     setLanguage,
     toggleSidebar,
