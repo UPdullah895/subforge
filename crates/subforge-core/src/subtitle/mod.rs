@@ -1,5 +1,6 @@
-//! Subtitle model and formats (SRT today; ASS/SSA and WebVTT are added by later tasks).
+//! Subtitle model and formats (SRT and ASS/SSA today; WebVTT is added by a later task).
 
+mod ass;
 pub mod encoding;
 pub(crate) mod markup;
 mod srt;
@@ -87,12 +88,13 @@ pub struct Cue {
     /// equal the originals the writer emits the block verbatim.
     original: Option<Original>,
     /// Format-specific data (filled in by the ASS and WebVTT parsers).
-    #[allow(dead_code)]
     extra: CueExtra,
 }
 
 #[derive(Debug, Clone)]
 struct Original {
+    /// The format `raw` is written in; only that format's writer may reuse it.
+    format: Format,
     raw: String,
     start_ms: i64,
     end_ms: i64,
@@ -101,10 +103,11 @@ struct Original {
 }
 
 #[derive(Debug, Clone, Default)]
-#[allow(dead_code)]
 enum CueExtra {
     #[default]
     None,
+    /// Every field of the event line in `Format:` order (Start/End/Text are rebuilt on write).
+    Ass { fields: Vec<String> },
 }
 
 impl Cue {
@@ -120,8 +123,9 @@ impl Cue {
     }
 
     /// Remember the source block so an unedited cue is written back byte-for-byte.
-    pub(crate) fn keep_original(&mut self, raw: String) {
+    pub(crate) fn keep_original(&mut self, raw: String, format: Format) {
         self.original = Some(Original {
+            format,
             raw,
             start_ms: self.start_ms,
             end_ms: self.end_ms,
@@ -130,10 +134,12 @@ impl Cue {
         });
     }
 
-    /// The source block, if the cue has not been edited since parsing.
-    pub(crate) fn unchanged_raw(&self) -> Option<&str> {
+    /// The source block, if the cue has not been edited since parsing and `format` is the
+    /// format it was parsed from.
+    pub(crate) fn unchanged_raw(&self, format: Format) -> Option<&str> {
         let o = self.original.as_ref()?;
-        (o.start_ms == self.start_ms
+        (o.format == format
+            && o.start_ms == self.start_ms
             && o.end_ms == self.end_ms
             && o.text == self.text
             && o.comment == self.comment)
@@ -143,9 +149,9 @@ impl Cue {
 
 /// Format-specific document data needed to write the file back losslessly.
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
 pub(crate) enum FormatExtras {
     Srt { trailing_newlines: usize },
+    Ass(ass::AssLayout),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -227,6 +233,7 @@ impl SubtitleDoc {
         let line_ending = LineEnding::detect(&text);
         let (cues, extras) = match format {
             Format::Srt => srt::parse(&text)?,
+            Format::Ass | Format::Ssa => ass::parse(&text, format == Format::Ssa)?,
             other => {
                 return Err(SubtitleError::UnsupportedFormat(
                     other.extension().to_string(),
@@ -261,12 +268,27 @@ impl SubtitleDoc {
         })
     }
 
-    /// Serialise as UTF-8 (with a BOM only if the source was UTF-8 with a BOM).
+    /// Serialise as UTF-8 in `self.format` (with a BOM only if the source was UTF-8 with a BOM).
+    ///
+    /// The format-specific extras are used only when they belong to `self.format`; otherwise
+    /// the document is written with defaults for that format.
     pub fn to_bytes(&self) -> Vec<u8> {
-        let text = match (&self.extras, self.format) {
-            (FormatExtras::Srt { trailing_newlines }, _) => {
-                srt::write(&self.cues, *trailing_newlines)
+        let text = match self.format {
+            Format::Srt => {
+                let trailing = match &self.extras {
+                    FormatExtras::Srt { trailing_newlines } => *trailing_newlines,
+                    _ => 1,
+                };
+                srt::write(&self.cues, trailing)
             }
+            Format::Ass | Format::Ssa => {
+                let layout = match &self.extras {
+                    FormatExtras::Ass(layout) => Some(layout),
+                    _ => None,
+                };
+                ass::write(&self.cues, layout, self.format == Format::Ssa)
+            }
+            Format::Vtt => unimplemented!("WebVTT writing is added in a later task"),
         };
         let text = match self.line_ending {
             LineEnding::Lf => text,

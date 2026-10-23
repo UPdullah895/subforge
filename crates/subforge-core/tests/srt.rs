@@ -124,7 +124,7 @@ fn load_error_names_file_and_line() {
     let err = SubtitleDoc::load(&path).unwrap_err();
     let msg = err.to_string();
     assert!(msg.contains("broken.srt"), "{msg}");
-    assert!(msg.contains("1"), "{msg}");
+    assert!(msg.contains("line 1:"), "{msg}");
 }
 
 #[test]
@@ -217,12 +217,13 @@ fn content_detection_beats_hint_and_hint_resolves_ambiguity() {
         SubtitleDoc::parse(&srt, Some(Format::Srt)).unwrap().format,
         Format::Srt
     );
-    // Signatures route to the (not yet implemented) parsers.
+    // Signatures route to their own parsers, whatever the hint says.
     let ass = b"[Script Info]\nScriptType: v4.00+\n";
-    assert!(matches!(
-        SubtitleDoc::parse(ass, None),
-        Err(SubtitleError::UnsupportedFormat(_))
-    ));
+    assert_eq!(
+        SubtitleDoc::parse(ass, Some(Format::Srt)).unwrap().format,
+        Format::Ass
+    );
+    // WebVTT is not implemented yet.
     let vtt = b"WEBVTT\n\n00:00.000 --> 00:01.000\nx\n";
     assert!(matches!(
         SubtitleDoc::parse(vtt, None),

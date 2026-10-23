@@ -5,7 +5,7 @@ use std::sync::OnceLock;
 use regex::Regex;
 
 use super::markup::{ass_to_html, html_to_ass};
-use super::{Cue, FormatExtras, SubtitleError};
+use super::{Cue, Format, FormatExtras, SubtitleError};
 
 fn timing_re() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
@@ -63,7 +63,7 @@ pub(crate) fn parse(text: &str) -> Result<(Vec<Cue>, FormatExtras), SubtitleErro
         }
         let body = lines[timing_idx + 1..end].join("\n");
         let mut cue = Cue::new(start_ms, end_ms, html_to_ass(&body));
-        cue.keep_original(lines[start..end].join("\n"));
+        cue.keep_original(lines[start..end].join("\n"), Format::Srt);
         cues.push(cue);
         i = end;
     }
@@ -75,7 +75,7 @@ pub(crate) fn write(cues: &[Cue], trailing_newlines: usize) -> String {
     let blocks: Vec<String> = cues
         .iter()
         .enumerate()
-        .map(|(n, cue)| match cue.unchanged_raw() {
+        .map(|(n, cue)| match cue.unchanged_raw(Format::Srt) {
             Some(raw) => raw.to_owned(),
             None => format!(
                 "{}\n{} --> {}\n{}",
