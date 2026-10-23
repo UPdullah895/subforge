@@ -1,0 +1,17 @@
+[package]
+name = "subforge-core"
+version = "0.1.0"
+edition = "2021"
+license = "GPL-3.0-only"
+description = "Subtitle model, parsing and writing shared by SubForge"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+thiserror = "2"
+encoding_rs = "0.8"
+chardetng = "0.1"
+regex = "1"
+tokio-util = "0.7"
+
+[dev-dependencies]
+tempfile = "3"

@@ -33,9 +33,12 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: |
+            crates/subforge-core
             crates/subforge-deps
             crates/subforge-metadata
             crates/subforge-subtitle-sources
+      - run: cargo test
+        working-directory: crates/subforge-core
       - run: cargo test --features tokio
         working-directory: crates/subforge-deps
       - run: cargo test
