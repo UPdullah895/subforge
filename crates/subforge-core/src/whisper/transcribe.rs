@@ -89,6 +89,7 @@ pub fn transcribe(
     };
     check()?;
     silence_engine_logs();
+    device::check_vulkan_runtime().map_err(|e| WhisperError::Engine(e.to_string()))?;
 
     let spec =
         spec_for(&opts.model).ok_or_else(|| WhisperError::UnknownModel(opts.model.clone()))?;

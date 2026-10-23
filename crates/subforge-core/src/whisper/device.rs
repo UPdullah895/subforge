@@ -38,6 +38,36 @@ pub(crate) fn ggml_init_lock() -> MutexGuard<'static, ()> {
     LOCK.lock().unwrap_or_else(|e| e.into_inner())
 }
 
+const VULKAN_RUNTIME_MISSING: &str = "The Vulkan runtime (vulkan-1.dll) is missing from this SubForge installation. Reinstall SubForge.";
+
+/// Pure decision behind [`check_vulkan_runtime`]: when the loader is `required`, it must be
+/// loadable, otherwise any ggml call would crash the process (see the build.rs files).
+fn runtime_check(required: bool, loadable: impl FnOnce() -> bool) -> Result<(), &'static str> {
+    if required && !loadable() {
+        Err(VULKAN_RUNTIME_MISSING)
+    } else {
+        Ok(())
+    }
+}
+
+/// Windows builds with `gpu-vulkan` delay-load `vulkan-1.dll`, but ggml touches Vulkan on EVERY
+/// model load (CPU included), and a missing DLL then raises an SEH exception that kills the
+/// process. Check the loader first (cached) so the user gets an error instead. Always `Ok` on
+/// other platforms and without the feature.
+pub(crate) fn check_vulkan_runtime() -> Result<(), &'static str> {
+    #[cfg(all(windows, feature = "gpu-vulkan"))]
+    {
+        static LOADABLE: OnceLock<bool> = OnceLock::new();
+        runtime_check(true, || {
+            *LOADABLE.get_or_init(|| unsafe { ash::Entry::load() }.is_ok())
+        })
+    }
+    #[cfg(not(all(windows, feature = "gpu-vulkan")))]
+    {
+        runtime_check(false, || true)
+    }
+}
+
 /// Name of the GPU whisper.cpp would use, or `None` (no GPU, no Vulkan runtime, or a build
 /// without `gpu-vulkan`). The result is computed once per process and cached, so a GPU or
 /// driver that appears later is not noticed until restart. Blocking on first use: call from
@@ -54,6 +84,9 @@ fn detect_gpu_uncached() -> Option<String> {
     // Vulkan calls first and only ask ggml when a physical device exists. `catch_unwind` only
     // covers Rust panics. A Vulkan failure during real device initialisation is likewise not
     // recoverable in-process.
+    if check_vulkan_runtime().is_err() {
+        return None;
+    }
     std::panic::catch_unwind(|| {
         // The loader's first-use ICD discovery races with ggml's own first use (seen as a
         // SIGSEGV inside libvulkan), so the probe takes the same lock as model loads.
@@ -179,14 +212,15 @@ pub(crate) fn backend_from_log(lines: &[String]) -> Backend {
     }
 }
 
-/// The most relevant GPU-related line of a log, for messages.
+/// The last line of a log that reports a GPU backend failure (whisper's own failure messages,
+/// not ordinary `Vulkan0 total size` lines), for messages.
 pub(crate) fn gpu_failure_line(lines: &[String]) -> Option<String> {
     lines
         .iter()
         .rev()
         .find(|l| {
             let l = l.to_ascii_lowercase();
-            l.contains("failed to initialize") || l.contains("vulkan") || l.contains("no gpu")
+            l.contains("failed to initialize") || l.contains("no gpu found")
         })
         .cloned()
 }
@@ -261,6 +295,26 @@ mod tests {
             .unwrap()
             .contains("failed to initialize"));
         assert_eq!(backend_from_log(&[]), Backend::Cpu);
+        let normal = vec![l(
+            "whisper_model_load:     Vulkan0 total size =    77.11 MB",
+        )];
+        assert_eq!(gpu_failure_line(&normal), None);
+        assert_eq!(
+            gpu_failure_line(&none).as_deref(),
+            Some("whisper_backend_init_gpu: no GPU found")
+        );
+    }
+
+    #[test]
+    fn runtime_check_decides_on_the_loader() {
+        // Not required (Linux, or a build without gpu-vulkan): the loader is never probed.
+        assert_eq!(runtime_check(false, || panic!("must not probe")), Ok(()));
+        assert_eq!(runtime_check(true, || true), Ok(()));
+        let err = runtime_check(true, || false).unwrap_err();
+        assert!(
+            err.contains("vulkan-1.dll") && err.contains("Reinstall"),
+            "{err}"
+        );
     }
 
     #[test]
