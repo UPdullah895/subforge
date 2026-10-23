@@ -7,18 +7,18 @@ use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
 
 #[tauri::command]
-pub fn get_whisper_info() -> Result<WhisperInfo, String> {
-    whisper::get_whisper_info().map_err(|e| e.to_string())
+pub async fn get_whisper_info() -> Result<WhisperInfo, String> {
+    super::blocking(|| whisper::get_whisper_info().map_err(|e| e.to_string())).await
 }
 
 #[tauri::command]
-pub fn list_whisper_models(cache_dir: Option<String>) -> Result<Vec<String>, String> {
-    whisper::list_models(cache_dir).map_err(|e| e.to_string())
+pub async fn list_whisper_models(cache_dir: Option<String>) -> Result<Vec<String>, String> {
+    super::blocking(move || whisper::list_models(cache_dir).map_err(|e| e.to_string())).await
 }
 
 #[tauri::command]
-pub fn download_whisper_model(model: String, cache_dir: Option<String>) -> Result<(), String> {
-    whisper::download_model(&model, cache_dir).map_err(|e| e.to_string())
+pub async fn download_whisper_model(model: String, cache_dir: Option<String>) -> Result<(), String> {
+    super::blocking(move || whisper::download_model(&model, cache_dir).map_err(|e| e.to_string())).await
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -8,6 +8,7 @@ use commands::{
     audio as audio_cmds, batch as batch_cmds, deps as deps_cmds, jobs as jobs_cmds, providers as providers_cmds, rename as rename_cmds,
     subtitle as subtitle_cmds, subtitle_sources as subtitle_sources_cmds, transcribe as transcribe_cmds, translate as translate_cmds,
 };
+use tauri::Manager;
 use credentials::{CredentialStore, KeyringCredentialStore};
 use jobs::{SharedJobQueue, JobControlRegistry};
 use std::sync::{Arc, Mutex};
@@ -46,6 +47,17 @@ pub fn run() {
         .manage(job_queue)
         .manage(job_controls)
         .manage(credential_store)
+        .setup(|app| {
+            config::migrate_saved_config();
+            // Tools shipped with the app (none are bundled yet).
+            if let Ok(resources) = app.path().resource_dir() {
+                let bin = resources.join("bin");
+                if bin.is_dir() {
+                    tools::set_bundled_dir(bin);
+                }
+            }
+            Ok(())
+        })
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
@@ -61,6 +73,7 @@ pub fn run() {
             subtitle_cmds::stretch_subtitle_timing,
             subtitle_cmds::set_track_metadata,
             subtitle_cmds::get_tool_registry,
+            subtitle_cmds::get_tool_status,
             subtitle_cmds::load_config,
             subtitle_cmds::save_config,
             audio_cmds::list_audio_tracks,

@@ -1,5 +1,8 @@
 use crate::jobs::{Job, JobStatus, JobType, SharedJobQueue};
-use crate::tools::mkvtoolnix::{self, ExternalSub, VideoFileInfo};
+use super::blocking;
+use crate::tools::tool_paths;
+use subforge_core::tools::mkvtoolnix::{self, ExternalSub, VideoFileInfo};
+use subforge_core::tools::ToolError;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::path::Path;
@@ -60,7 +63,14 @@ pub struct ScanOptions {
 }
 
 #[tauri::command]
-pub fn scan_directory(options: ScanOptions) -> Result<Vec<VideoFileInfo>, String> {
+pub async fn scan_directory(options: ScanOptions) -> Result<Vec<VideoFileInfo>, String> {
+    blocking(move || scan_directory_blocking(options, &tool_paths())).await
+}
+
+fn scan_directory_blocking(
+    options: ScanOptions,
+    paths: &subforge_core::tools::ToolPaths,
+) -> Result<Vec<VideoFileInfo>, String> {
     let exts: HashSet<String> = options
         .extensions
         .into_iter()
@@ -95,7 +105,7 @@ pub fn scan_directory(options: ScanOptions) -> Result<Vec<VideoFileInfo>, String
 
         let path_str = path.to_string_lossy().to_string();
 
-        match mkvtoolnix::enumerate_tracks(&path_str) {
+        match mkvtoolnix::enumerate_tracks(paths, &path_str) {
             Ok(info) => {
                 let subtitle_count = info.tracks.iter().filter(|t| t.track_type == "subtitles").count();
                 let audio_count = info.tracks.iter().filter(|t| t.track_type == "audio").count();
@@ -172,21 +182,30 @@ pub async fn batch_extract_subtitles(
 
         let app_clone = app.clone();
         let queue_clone = queue.inner().clone();
+        let paths = tool_paths();
 
         tokio::spawn(async move {
-            let result = if languages.is_empty() {
-                mkvtoolnix::extract_all_subtitles(&file, &output_dir)
-            } else {
-                mkvtoolnix::extract_subtitles_by_language(&file, &output_dir, &languages)
-            };
+            // mkvmerge/mkvextract are blocking process spawns: keep them off the runtime threads.
+            let result = tokio::task::spawn_blocking(move || {
+                if languages.is_empty() {
+                    mkvtoolnix::extract_all_subtitles(&paths, &file, &output_dir)
+                } else {
+                    mkvtoolnix::extract_subtitles_by_language(&paths, &file, &output_dir, &languages)
+                }
+            })
+            .await
+            .unwrap_or_else(|e| Err(ToolError::Io(std::io::Error::other(e))));
 
             let mut q = queue_clone.lock().unwrap();
-            if let Ok(extracted) = result {
-                q.update_status(&job_id, JobStatus::Completed);
-                q.update_progress(&job_id, 100.0, Some(format!("Extracted {} tracks", extracted.len())));
-            } else {
-                q.update_status(&job_id, JobStatus::Failed);
-                q.update_progress(&job_id, 0.0, Some("Extraction failed".to_string()));
+            match result {
+                Ok(extracted) => {
+                    q.update_status(&job_id, JobStatus::Completed);
+                    q.update_progress(&job_id, 100.0, Some(format!("Extracted {} tracks", extracted.len())));
+                }
+                Err(e) => {
+                    q.update_status(&job_id, JobStatus::Failed);
+                    q.update_progress(&job_id, 0.0, Some(format!("Extraction failed: {e}")));
+                }
             }
 
             let _ = app_clone.emit("job-completed", serde_json::json!({
@@ -289,6 +308,7 @@ pub async fn merge_external_subs(
         })
         .collect();
 
+    let paths = tool_paths();
     let orig_subs = request.subs.clone();
     let video_path_str = request.video_path.clone();
 
@@ -304,7 +324,7 @@ pub async fn merge_external_subs(
             q.update_status(&job_id_clone, JobStatus::Running);
         }
 
-        let result = mkvtoolnix::merge_subtitles_async(&video_path_str, &subs, &output_path, Some(&control), |pct| {
+        let result = mkvtoolnix::merge_subtitles_async(&paths, &video_path_str, &subs, &output_path, Some(control.token()), |pct| {
             let mut q = queue_clone.lock().unwrap();
             q.update_progress(&job_id_clone, pct, None);
             let _ = app_clone.emit("job-progress", serde_json::json!({
@@ -314,7 +334,7 @@ pub async fn merge_external_subs(
         }).await;
 
         if let Err(e) = result {
-            let cancelled = matches!(e, mkvtoolnix::MkvError::Cancelled);
+            let cancelled = matches!(e, ToolError::Cancelled);
             let msg = e.to_string();
             let mut q = queue_clone.lock().unwrap();
             q.update_status(&job_id_clone, if cancelled { JobStatus::Cancelled } else { JobStatus::Failed });

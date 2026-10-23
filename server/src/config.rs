@@ -17,6 +17,9 @@ fn default_search_online_before_translate() -> bool {
     true
 }
 
+/// Version written into freshly created configs; older files deserialise as 0.
+pub const CURRENT_CONFIG_VERSION: u32 = 1;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppConfig {
     pub theme: String,
@@ -30,6 +33,11 @@ pub struct AppConfig {
     pub mkvextract_path: Option<String>,
     pub ffmpeg_path: Option<String>,
     pub ffprobe_path: Option<String>,
+    #[serde(default)]
+    pub mkvpropedit_path: Option<String>,
+    /// Bumped by one-time config migrations (see src-tauri `config::migrate`).
+    #[serde(default)]
+    pub config_version: u32,
     pub default_engine: Option<String>,
     pub default_source_lang: Option<String>,
     pub default_target_lang: Option<String>,
@@ -65,6 +73,8 @@ impl Default for AppConfig {
             mkvextract_path: None,
             ffmpeg_path: None,
             ffprobe_path: None,
+            mkvpropedit_path: None,
+            config_version: CURRENT_CONFIG_VERSION,
             default_engine: Some("ollama".to_string()),
             default_source_lang: Some("en".to_string()),
             default_target_lang: Some("ar".to_string()),

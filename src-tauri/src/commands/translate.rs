@@ -1,6 +1,9 @@
 use crate::jobs::{Job, JobStatus, JobType, SharedJobQueue, JobControlRegistry};
-use crate::tools::mkvtoolnix;
-use crate::tools::translate;
+use crate::config::AppConfig;
+use crate::tools::tool_paths;
+use subforge_core::lines;
+use subforge_core::tools::mkvtoolnix;
+use subforge_core::translate;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
@@ -109,7 +112,7 @@ pub async fn translate_subtitles(
             "message": "Extracting lines...",
         }));
 
-        let lines = match translate::extract_lines(&req.input) {
+        let lines = match extract_lines_async(&req.input).await {
             Ok(l) => l,
             Err(e) => {
                 let mut q = queue_clone.lock().unwrap();
@@ -230,22 +233,6 @@ pub async fn translate_subtitles(
             translated.truncate(total);
         }
 
-        // Write translations to temp JSON
-        let temp_json = std::env::temp_dir()
-            .join(format!("subforge_translate_{}.json", &job_id_clone));
-        let temp_json_str = temp_json.to_string_lossy().to_string();
-        if let Err(e) = fs::write(&temp_json, serde_json::to_string(&translated).unwrap()) {
-            let mut q = queue_clone.lock().unwrap();
-            q.update_status(&job_id_clone, JobStatus::Failed);
-            q.update_progress(&job_id_clone, 0.0, Some(e.to_string()));
-            let _ = app_clone.emit("job-completed", serde_json::json!({
-                "job_id": job_id_clone,
-                "status": "failed",
-                "message": e.to_string(),
-            }));
-            return;
-        }
-
         // Rebuild subtitle file
         {
             let mut q = queue_clone.lock().unwrap();
@@ -257,8 +244,7 @@ pub async fn translate_subtitles(
             "message": "Rebuilding subtitle file...",
         }));
 
-        if let Err(e) = translate::rebuild_lines(&req.input, &temp_json_str, &req.output) {
-            let _ = fs::remove_file(&temp_json);
+        if let Err(e) = rebuild_lines_async(&req.input, translated, &req.output).await {
             let mut q = queue_clone.lock().unwrap();
             q.update_status(&job_id_clone, JobStatus::Failed);
             q.update_progress(&job_id_clone, 0.0, Some(e.to_string()));
@@ -271,8 +257,6 @@ pub async fn translate_subtitles(
             registry.remove(&job_id_clone);
             return;
         }
-
-        let _ = fs::remove_file(&temp_json);
 
         {
             let mut q = queue_clone.lock().unwrap();
@@ -309,6 +293,30 @@ pub struct PipelineRequest {
     pub hearing_impaired: bool,
     #[serde(default)]
     pub set_default_subtitle: bool,
+}
+
+async fn extract_lines_async(path: &str) -> Result<Vec<lines::SubtitleLine>, String> {
+    let path = PathBuf::from(path);
+    tokio::task::spawn_blocking(move || lines::extract_lines(&path).map_err(|e| e.to_string()))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+/// Rebuilds `original` with `translations` into `output` (in the original's
+/// format), applying the RTL punctuation fix when enabled in the config.
+async fn rebuild_lines_async(
+    original: &str,
+    translations: Vec<String>,
+    output: &str,
+) -> Result<(), String> {
+    let (original, output) = (PathBuf::from(original), PathBuf::from(output));
+    let rtl_fix = AppConfig::load().fix_rtl_punctuation;
+    tokio::task::spawn_blocking(move || {
+        lines::rebuild_lines(&original, &translations, &output, rtl_fix)
+            .map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 fn emit_stage(app: &AppHandle, job_id: &str, stage: &str, progress: i32, message: &str) {
@@ -354,6 +362,7 @@ pub async fn run_translation_pipeline(
     let controls_clone = controls.inner().clone();
     let job_id_clone = job_id.clone();
     let req = request;
+    let paths = tool_paths();
 
     tokio::spawn(async move {
         let control = Arc::new(crate::jobs::JobControl::new());
@@ -402,17 +411,27 @@ pub async fn run_translation_pipeline(
         // Stage 1: extract
         emit_stage(&app_clone, &job_id_clone, "extracting", 5, "Extracting subtitle track...");
         let extracted_path = std::env::temp_dir()
-            .join(format!("subforge_pipeline_{}_extracted.srt", &job_id_clone))
+            .join(format!("subforge_pipeline_{}_extracted.srt", job_id_clone))
             .to_string_lossy()
             .to_string();
 
-        if let Err(e) = mkvtoolnix::extract_subtitle_track(&req.video_path, req.track_id, &extracted_path) {
-            fail!(e.to_string());
+        let extract_result = {
+            let (paths, video, track_id, out) =
+                (paths.clone(), req.video_path.clone(), req.track_id, extracted_path.clone());
+            tokio::task::spawn_blocking(move || {
+                mkvtoolnix::extract_subtitle_track(&paths, &video, track_id, &out)
+            })
+            .await
+        };
+        match extract_result {
+            Ok(Ok(_)) => {}
+            Ok(Err(e)) => fail!(e.to_string()),
+            Err(e) => fail!(e.to_string()),
         }
 
         // Stage 2: translate
         emit_stage(&app_clone, &job_id_clone, "translating", 15, "Extracting lines...");
-        let lines = match translate::extract_lines(&extracted_path) {
+        let lines = match extract_lines_async(&extracted_path).await {
             Ok(l) => l,
             Err(e) => {
                 let _ = fs::remove_file(&extracted_path);
@@ -502,26 +521,17 @@ pub async fn run_translation_pipeline(
             translated.truncate(total);
         }
 
-        let temp_json = std::env::temp_dir().join(format!("subforge_pipeline_{}.json", &job_id_clone));
-        let temp_json_str = temp_json.to_string_lossy().to_string();
-        if let Err(e) = fs::write(&temp_json, serde_json::to_string(&translated).unwrap()) {
-            let _ = fs::remove_file(&extracted_path);
-            fail!(e.to_string());
-        }
-
         let translated_srt = video_dir
             .join(format!("{}.{}.srt", video_stem, req.target_lang))
             .to_string_lossy()
             .to_string();
 
         emit_stage(&app_clone, &job_id_clone, "translating", 82, "Rebuilding subtitle file...");
-        if let Err(e) = translate::rebuild_lines(&extracted_path, &temp_json_str, &translated_srt) {
+        if let Err(e) = rebuild_lines_async(&extracted_path, translated, &translated_srt).await {
             let _ = fs::remove_file(&extracted_path);
-            let _ = fs::remove_file(&temp_json);
-            fail!(e.to_string());
+            fail!(e);
         }
         let _ = fs::remove_file(&extracted_path);
-        let _ = fs::remove_file(&temp_json);
 
         // Stage 3: merge (optional)
         control.wait_if_paused().await;
@@ -555,7 +565,7 @@ pub async fn run_translation_pipeline(
                 hearing_impaired: req.hearing_impaired,
                 make_default: req.set_default_subtitle,
             };
-            if let Err(e) = mkvtoolnix::merge_subtitles_async(&req.video_path, &[sub_spec], &merged_path, Some(&control), |pct| {
+            if let Err(e) = mkvtoolnix::merge_subtitles_async(&paths, &req.video_path, &[sub_spec], &merged_path, Some(control.token()), |pct| {
                 let merge_pct = 90.0 + (pct * 0.1);
                 {
                     let mut q = queue_clone.lock().unwrap();
