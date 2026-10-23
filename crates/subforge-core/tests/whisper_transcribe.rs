@@ -70,6 +70,7 @@ fn transcribe_tiny_cpu_produces_srt() {
     require_model();
     let dir = tempfile::tempdir().unwrap();
     let out = dir.path().join("out put ملف.srt");
+    let started = Instant::now();
     let mut last = -1.0;
     let mut reports = 0;
     let mut cb = |p: f64, _: Option<&str>| {
@@ -85,6 +86,7 @@ fn transcribe_tiny_cpu_produces_srt() {
     )
     .unwrap();
     assert_eq!(outcome.device_used, "cpu");
+    eprintln!("cpu: device_used=cpu in {:?}", started.elapsed());
     assert!(outcome.segments >= 1);
     assert_eq!(last, 100.0);
     assert!(reports >= 3);
@@ -98,6 +100,51 @@ fn transcribe_tiny_cpu_produces_srt() {
         text.contains("fox") || text.contains("subforge"),
         "unexpected text: {text}"
     );
+}
+
+/// `Device::Auto` uses the GPU when there is one. Set `SUBFORGE_EXPECT_GPU=1` (and build with
+/// `--features gpu-vulkan`) on a machine with a Vulkan GPU to require it; elsewhere the run must
+/// still succeed on the CPU.
+#[test]
+#[ignore = "needs the tiny whisper model; set SUBFORGE_WHISPER_TEST=1"]
+fn transcribe_auto_uses_gpu_when_expected() {
+    require_model();
+    let dir = tempfile::tempdir().unwrap();
+    let out = dir.path().join("auto.srt");
+    let mut opts = options(out.clone(), model_cache());
+    opts.device = Device::Auto;
+    let started = Instant::now();
+    let outcome = transcribe(
+        &ToolPaths::default(),
+        &opts,
+        &mut |_, _| {},
+        CancellationToken::new(),
+    )
+    .unwrap();
+    eprintln!(
+        "auto: device_used={:?} in {:?}; engine_info={:?}",
+        outcome.device_used,
+        started.elapsed(),
+        engine_info()
+    );
+    if std::env::var("SUBFORGE_EXPECT_GPU").as_deref() == Ok("1") {
+        assert!(
+            outcome.device_used.starts_with("gpu"),
+            "expected a GPU run, got {:?}",
+            outcome.device_used
+        );
+        assert!(engine_info().devices.contains(&"gpu".to_string()));
+    } else {
+        assert!(
+            outcome.device_used == "cpu" || outcome.device_used.starts_with("gpu: "),
+            "{:?}",
+            outcome.device_used
+        );
+    }
+    let doc = SubtitleDoc::load(&out).unwrap();
+    assert_sane_timing(&doc);
+    let text = all_text(&doc);
+    assert!(text.contains("fox") || text.contains("subforge"), "{text}");
 }
 
 #[test]
@@ -295,9 +342,14 @@ fn transcribe_options_deserialise_from_request_json() {
 }
 
 #[test]
-fn engine_info_is_cpu_only_for_now() {
+fn engine_info_lists_devices() {
     let info = engine_info();
     assert!(info.engine.starts_with("whisper.cpp "), "{}", info.engine);
+    let mut expected = vec!["auto".to_string(), "cpu".to_string()];
+    if info.gpu.is_some() {
+        expected.push("gpu".to_string());
+    }
+    assert_eq!(info.devices, expected);
+    #[cfg(not(feature = "gpu-vulkan"))]
     assert_eq!(info.gpu, None);
-    assert_eq!(info.devices, vec!["auto".to_string(), "cpu".to_string()]);
 }

@@ -8,12 +8,14 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicI32, Ordering};
 use std::sync::mpsc::{self, RecvTimeoutError};
-use std::sync::{Arc, Once};
+use std::sync::{Arc, Mutex, Once};
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use subforge_deps::HideWindow;
-use whisper_rs::{FullParams, SamplingStrategy, WhisperContext, WhisperContextParameters};
+use whisper_rs::{
+    FullParams, SamplingStrategy, WhisperContext, WhisperContextParameters, WhisperState,
+};
 
 use super::device::{self, Device};
 use super::models::{list_downloaded, model_path, resolve_cache_dir, spec_for, WhisperError};
@@ -104,7 +106,8 @@ pub fn transcribe(
         None
     };
     let language = normalise_language(opts.language.as_deref())?;
-    let device_used = device::resolve(opts.device);
+    let (device, mut device_used) =
+        device::select_device(opts.device, gpu_for(opts.device).as_deref());
 
     progress(0.0, Some("Decoding audio"));
     let pcm = decode_audio(paths, &opts.input, &cancel)?;
@@ -112,17 +115,19 @@ pub fn transcribe(
 
     progress(PCT_LOAD, Some("Loading model"));
     let model_file = model_path(&cache, spec);
-    let mut ctx_params = WhisperContextParameters::default();
-    ctx_params.use_gpu(false);
-    let ctx = WhisperContext::new_with_params(&model_file, ctx_params).map_err(|e| {
-        WhisperError::Engine(format!(
-            "could not load the model {} ({e}). Delete it and download it again.",
-            model_file.display()
-        ))
-    })?;
-    let mut state = ctx
-        .create_state()
-        .map_err(|e| WhisperError::Engine(format!("could not start the engine ({e})")))?;
+    let (_ctx, mut state) = match load_engine(&model_file, device == Device::Gpu) {
+        Ok(loaded) => loaded,
+        Err(gpu_err) if device == Device::Gpu => {
+            // The GPU path failed at runtime (driver, out of memory, ...): retry on the CPU.
+            progress(
+                PCT_LOAD,
+                Some(&format!("GPU unavailable ({gpu_err}); using the CPU")),
+            );
+            device_used = "cpu".to_string();
+            load_engine(&model_file, false)?
+        }
+        Err(e) => return Err(e),
+    };
     check()?;
 
     let mut params = FullParams::new(SamplingStrategy::BeamSearch {
@@ -192,10 +197,40 @@ pub fn transcribe(
     progress(100.0, Some("Done"));
 
     Ok(TranscribeOutcome {
-        device_used: device_used.to_string(),
+        device_used,
         segments,
         detected_language,
     })
+}
+
+/// The GPU to offer `requested`; a CPU request never touches the GPU stack.
+fn gpu_for(requested: Device) -> Option<String> {
+    (requested != Device::Cpu)
+        .then(device::detect_gpu)
+        .flatten()
+}
+
+/// Loads the model and creates the inference state, on the GPU when `use_gpu`.
+fn load_engine(
+    model_file: &Path,
+    use_gpu: bool,
+) -> Result<(WhisperContext, WhisperState), WhisperError> {
+    // ggml's backend registry and Vulkan device setup are not safe to initialise from several
+    // threads at once (seen as a rare SIGSEGV with concurrent runs), so serialise model loads.
+    static LOAD: Mutex<()> = Mutex::new(());
+    let _guard = LOAD.lock().unwrap_or_else(|e| e.into_inner());
+    let mut ctx_params = WhisperContextParameters::default();
+    ctx_params.use_gpu(use_gpu);
+    let ctx = WhisperContext::new_with_params(model_file, ctx_params).map_err(|e| {
+        WhisperError::Engine(format!(
+            "could not load the model {} ({e}). Delete it and download it again.",
+            model_file.display()
+        ))
+    })?;
+    let state = ctx
+        .create_state()
+        .map_err(|e| WhisperError::Engine(format!("could not start the engine ({e})")))?;
+    Ok((ctx, state))
 }
 
 /// Runs `f` while forwarding whisper's 0-100 progress (written to `pct` by its callback) to

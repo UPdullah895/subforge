@@ -47,10 +47,10 @@
     ],
     "linux": {
       "deb": {
-        "depends": ["mkvtoolnix", "ffmpeg"]
+        "depends": ["mkvtoolnix", "ffmpeg", "libvulkan1"]
       },
       "rpm": {
-        "depends": ["mkvtoolnix", "(ffmpeg or ffmpeg-free)"]
+        "depends": ["mkvtoolnix", "(ffmpeg or ffmpeg-free)", "vulkan-loader"]
       }
     }
   }

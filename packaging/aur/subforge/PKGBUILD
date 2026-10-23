@@ -6,8 +6,8 @@ pkgdesc='Subtitle and audio toolkit: extract, merge, transcribe and translate su
 arch=('x86_64' 'aarch64')
 url='https://github.com/UPdullah895/subforge'
 license=('GPL-3.0-only')
-depends=('webkit2gtk-4.1' 'gtk3' 'mkvtoolnix-cli' 'ffmpeg')
-makedepends=('cargo' 'nodejs' 'npm')
+depends=('webkit2gtk-4.1' 'gtk3' 'mkvtoolnix-cli' 'ffmpeg' 'vulkan-icd-loader')
+makedepends=('cargo' 'nodejs' 'npm' 'cmake' 'clang' 'vulkan-headers' 'shaderc')
 optdepends=('ollama: local LLM subtitle translation')
 source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
 sha256sums=('SKIP') # replace with the real sum: run `updpkgsums` after the v$pkgver tag exists
@@ -21,7 +21,7 @@ prepare() {
 build() {
   cd "$pkgname-$pkgver"
   # No SUBFORGE_SUBSOURCE_API_KEY here: Subsource search is simply disabled.
-  npm run tauri -- build --no-bundle
+  npm run tauri -- build --no-bundle --features gpu-vulkan
 }
 
 package() {

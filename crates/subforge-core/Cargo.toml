@@ -5,6 +5,10 @@ edition = "2021"
 license = "GPL-3.0-only"
 description = "Subtitle model, parsing and writing shared by SubForge"
 
+[features]
+# GPU acceleration through whisper.cpp's Vulkan backend (needs the Vulkan SDK to build).
+gpu-vulkan = ["whisper-rs/vulkan", "dep:ash"]
+
 [dependencies]
 serde = { version = "1", features = ["derive"] }
 thiserror = "2"
@@ -24,6 +28,8 @@ subforge-metadata = { path = "../subforge-metadata" }
 # transcribe.rs (abort callback) before changing this version.
 whisper-rs = "=0.16.0"
 uuid = { version = "1", features = ["v4"] }
+# Loads the Vulkan loader at run time to probe for a usable GPU before ggml touches Vulkan.
+ash = { version = "0.38", default-features = false, features = ["loaded", "std"], optional = true }
 
 [dev-dependencies]
 tempfile = "3"

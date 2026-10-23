@@ -15,9 +15,9 @@ jobs:
       matrix:
         include:
           - platform: ubuntu-22.04
-            args: ''
+            args: '--features gpu-vulkan'
           - platform: windows-latest
-            args: ''
+            args: '--features gpu-vulkan'
 
     runs-on: ${{ matrix.platform }}
 
@@ -46,6 +46,17 @@ jobs:
             librsvg2-dev \
             libdbus-1-dev \
             patchelf
+
+      # whisper.cpp's Vulkan backend (cargo feature gpu-vulkan) needs the Vulkan headers and
+      # glslc to build; the SDK provides both and sets VULKAN_SDK. On Windows it also supplies the
+      # redistributable loader (vulkan-1.dll) that the bundle ships; see packaging/bundled-tools.json.
+      - name: Install Vulkan SDK
+        uses: jakoch/install-vulkan-sdk-action@v1
+        with:
+          vulkan_version: 1.4.304.1
+          install_runtime: false
+          cache: true
+          stripdown: true
 
       - uses: dtolnay/rust-toolchain@stable
 

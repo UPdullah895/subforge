@@ -7,6 +7,9 @@ license = "GPL-3.0-only"
 repository = "https://github.com/UPdullah895/subforge"
 edition = "2021"
 
+[features]
+gpu-vulkan = ["subforge-core/gpu-vulkan"]
+
 [dependencies]
 subforge-core = { path = "../crates/subforge-core" }
 subforge-deps = { path = "../crates/subforge-deps", features = ["tokio"] }
