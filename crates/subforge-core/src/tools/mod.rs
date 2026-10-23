@@ -147,7 +147,16 @@ impl ToolError {
     /// Builds a [`ToolError::Failed`] from the raw output text (may be empty).
     pub(crate) fn failed(tool: ToolId, status: &std::process::ExitStatus, details: String) -> Self {
         let details = details.trim().to_string();
-        let first = details.lines().map(str::trim).find(|l| !l.is_empty());
+        let mut lines = details
+            .lines()
+            .filter(|l| !l.trim().is_empty() && !is_banner_line(l))
+            .map(str::trim);
+        // ffmpeg prints the actual error last; the MKVToolNix tools print it first.
+        let first = if matches!(tool, ToolId::Ffmpeg | ToolId::Ffprobe) {
+            lines.next_back()
+        } else {
+            lines.next()
+        };
         let summary = match first {
             Some(l) => truncate(l, 300),
             None => format!("exited with {status}"),
@@ -158,6 +167,16 @@ impl ToolError {
             details,
         }
     }
+}
+
+/// ffmpeg/ffprobe start-up banner lines, which are never the reason for a failure.
+fn is_banner_line(l: &str) -> bool {
+    let t = l.trim_start();
+    t.starts_with("ffmpeg version")
+        || t.starts_with("ffprobe version")
+        || t.starts_with("built with")
+        || t.starts_with("configuration:")
+        || (l.starts_with(' ') && t.starts_with("lib"))
 }
 
 fn truncate(s: &str, max: usize) -> String {

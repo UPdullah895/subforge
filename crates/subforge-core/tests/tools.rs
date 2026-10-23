@@ -248,10 +248,7 @@ mod fake_mkv {
     }
 
     #[test]
-    fn missing_tool_surfaces_not_found() {
-        let paths = ToolPaths::default();
-        // No custom/bundled; the host PATH may have the real tool, so only check
-        // the invalid-custom branch deterministically.
+    fn invalid_custom_path_surfaces_through_wrappers() {
         let bad = ToolPaths {
             custom: HashMap::from([(ToolId::Ffprobe, PathBuf::from("/nope/ffprobe"))]),
             bundled_dir: None,
@@ -263,7 +260,140 @@ mod fake_mkv {
                 ..
             })
         ));
-        let _ = paths;
+    }
+
+    #[test]
+    fn ffmpeg_failure_summary_is_the_error_line_not_the_banner() {
+        let _g = serial();
+        let d = tempfile::tempdir().unwrap();
+        let log = d.path().join("args.txt");
+        let body = format!(
+            "for a in \"$@\"; do echo \"$a\" >> '{}'; done\n\
+             echo 'ffmpeg version 6.1 Copyright (c) 2000-2023 the FFmpeg developers' >&2\n\
+             echo '  built with gcc 13' >&2\n\
+             echo '  configuration: --enable-gpl' >&2\n\
+             echo '  libavutil      58. 29.100 / 58. 29.100' >&2\n\
+             echo 'input.mkv: No such file or directory' >&2\n\
+             exit 1",
+            log.display()
+        );
+        let paths = paths_with(d.path(), ToolId::Ffmpeg, &body);
+        let err = ffmpeg::merge_audio(&paths, "input.mkv", "a.aac", "out.mkv").unwrap_err();
+        match &err {
+            ToolError::Failed {
+                tool,
+                summary,
+                details,
+            } => {
+                assert_eq!(*tool, ToolId::Ffmpeg);
+                assert_eq!(summary, "input.mkv: No such file or directory");
+                assert!(details.contains("ffmpeg version"));
+            }
+            other => panic!("expected Failed, got {other:?}"),
+        }
+        assert_eq!(
+            err.to_string(),
+            "ffmpeg failed: input.mkv: No such file or directory"
+        );
+        let args = std::fs::read_to_string(&log).unwrap();
+        assert!(args.starts_with("-hide_banner\n-v\nerror\n"), "{args}");
+    }
+
+    /// Fake mkvmerge: answers `-J` with four tracks (0 video, 1 audio, 2 and 3
+    /// subtitles) and logs every other invocation's argv, one arg per line.
+    fn argv_logging_mkvmerge(d: &Path) -> (ToolPaths, PathBuf) {
+        let log = d.join("argv.txt");
+        let body = format!(
+            "if [ \"$1\" = \"-J\" ]; then echo '{}'; exit 0; fi\n\
+             : > '{log}'\n\
+             for a in \"$@\"; do echo \"$a\" >> '{log}'; done",
+            r#"{"tracks":[{"id":0,"type":"video","codec":"V"},{"id":1,"type":"audio","codec":"A"},{"id":2,"type":"subtitles","codec":"S"},{"id":3,"type":"subtitles","codec":"S"}]}"#,
+            log = log.display()
+        );
+        (paths_with(d, ToolId::Mkvmerge, &body), log)
+    }
+
+    fn logged(log: &Path) -> Vec<String> {
+        std::fs::read_to_string(log)
+            .unwrap()
+            .lines()
+            .map(String::from)
+            .collect()
+    }
+
+    #[test]
+    fn remove_tracks_builds_keep_lists() {
+        let _g = serial();
+        let d = tempfile::tempdir().unwrap();
+        let (paths, log) = argv_logging_mkvmerge(d.path());
+
+        mkvtoolnix::remove_tracks(&paths, "in.mkv", &[2], "out.mkv").unwrap();
+        assert_eq!(
+            logged(&log),
+            ["-o", "out.mkv", "--subtitle-tracks", "3", "in.mkv"]
+        );
+
+        // Removing every audio track uses --no-audio.
+        mkvtoolnix::remove_tracks(&paths, "in.mkv", &[1], "out.mkv").unwrap();
+        assert_eq!(logged(&log), ["-o", "out.mkv", "--no-audio", "in.mkv"]);
+
+        // Removing all subtitles uses --no-subtitles; both kinds combine.
+        mkvtoolnix::remove_tracks(&paths, "in.mkv", &[1, 2, 3], "out.mkv").unwrap();
+        assert_eq!(
+            logged(&log),
+            ["-o", "out.mkv", "--no-subtitles", "--no-audio", "in.mkv"]
+        );
+
+        // Ids of other types (video) or unknown ids are ignored.
+        mkvtoolnix::remove_tracks(&paths, "in.mkv", &[0, 9], "out.mkv").unwrap();
+        assert_eq!(logged(&log), ["-o", "out.mkv", "in.mkv"]);
+    }
+
+    #[test]
+    fn merge_args_flag_sdh_and_default() {
+        let _g = serial();
+        let d = tempfile::tempdir().unwrap();
+        let (paths, log) = argv_logging_mkvmerge(d.path());
+        let subs = [SubtitleMergeSpec {
+            path: "s.srt".into(),
+            language: Some("eng".into()),
+            track_name: Some("English SDH".into()),
+            hearing_impaired: true,
+            make_default: true,
+        }];
+
+        mkvtoolnix::merge_subtitles(&paths, "v.mkv", &subs, "out.mkv").unwrap();
+        assert_eq!(
+            logged(&log),
+            [
+                "-o",
+                "out.mkv",
+                "v.mkv",
+                "--language",
+                "0:eng",
+                "--track-name",
+                "0:English SDH",
+                "--default-track-flag",
+                "0:yes",
+                "--hearing-impaired-flag",
+                "0:yes",
+                "s.srt"
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn async_merge_args_start_with_gui_mode() {
+        let _g = serial();
+        let d = tempfile::tempdir().unwrap();
+        let (paths, log) = argv_logging_mkvmerge(d.path());
+        let subs = [SubtitleMergeSpec::new("s.srt".into(), Some("eng".into()))];
+        mkvtoolnix::merge_subtitles_async(&paths, "v.mkv", &subs, "out.mkv", None, |_| {})
+            .await
+            .unwrap();
+        let args = logged(&log);
+        assert_eq!(&args[..4], ["--gui-mode", "-o", "out.mkv", "v.mkv"]);
+        assert!(args.contains(&"0:no".to_string()), "{args:?}");
     }
 
     #[tokio::test]
@@ -356,17 +486,14 @@ fn tool_status_reports_error_for_invalid_custom_path() {
     assert!(m.error.as_deref().unwrap().contains("Fix or clear it"));
 }
 
-fn real_tools_enabled() -> bool {
-    std::env::var("SUBFORGE_REAL_TOOLS").as_deref() == Ok("1")
-}
-
 #[test]
 #[ignore = "needs real ffmpeg and mkvtoolnix; run with SUBFORGE_REAL_TOOLS=1 --include-ignored"]
 fn tools_handle_unicode_space_paths() {
-    if !real_tools_enabled() {
-        eprintln!("SUBFORGE_REAL_TOOLS != 1; skipping");
-        return;
-    }
+    assert_eq!(
+        std::env::var("SUBFORGE_REAL_TOOLS").as_deref(),
+        Ok("1"),
+        "this test needs real ffmpeg and MKVToolNix: set SUBFORGE_REAL_TOOLS=1"
+    );
     let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/media/sample.mkv");
     let tmp = tempfile::tempdir().unwrap();
     let dir = tmp.path().join("مجلد اختبار");

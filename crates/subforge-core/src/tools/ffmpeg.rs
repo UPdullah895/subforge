@@ -88,6 +88,9 @@ pub fn extract_audio(
         .and_then(|s| s.codec_name);
 
     let mut args: Vec<String> = vec![
+        "-hide_banner".to_string(),
+        "-v".to_string(),
+        "error".to_string(),
         "-y".to_string(),
         "-nostdin".to_string(),
         "-i".to_string(),
@@ -142,6 +145,9 @@ pub fn merge_audio(
     let output = Command::new(&ffmpeg.path)
         .hide_window()
         .args([
+            "-hide_banner",
+            "-v",
+            "error",
             "-y",
             "-nostdin",
             "-i",
