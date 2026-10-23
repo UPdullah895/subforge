@@ -133,6 +133,7 @@ async function saveSettings() {
   await appStore.saveConfig();
   saved.value = true;
   setTimeout(() => (saved.value = false), 2000);
+  await appStore.loadToolStatus();
 }
 
 function resetDefaults() {
@@ -148,9 +149,11 @@ function resetDefaults() {
     default_output_dir: undefined,
     mkvmerge_path: undefined,
     mkvextract_path: undefined,
+    mkvpropedit_path: undefined,
     ffmpeg_path: undefined,
     ffprobe_path: undefined,
   };
+  void appStore.loadToolStatus();
 }
 
 function setupContentFor(id: ProviderId) {

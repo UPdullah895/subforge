@@ -62,7 +62,7 @@ describe("ToolPathField", () => {
       mountField({ status: status(s) }).get('[data-testid="badge-ffmpeg"]').text();
     expect(badge({})).toBe("Bundled");
     expect(badge({ source: "custom" })).toBe("Custom");
-    expect(badge({ source: "system" })).toBe("System");
+    expect(badge({ source: "system", path: null })).toBe("System");
     expect(badge({ source: null })).toBe("Not found");
     expect(mountField({ status: status({}) }).text()).toContain("ffmpeg 7.1");
   });
@@ -80,6 +80,35 @@ describe("ToolPathField", () => {
     await w.get('[data-testid="reset-ffmpeg"]').trigger("click");
     expect(w.emitted("update:modelValue")).toEqual([[undefined]]);
     expect(w.emitted("change")).toHaveLength(1);
+  });
+
+  it("allows typing and commits the typed value on change", async () => {
+    const w = mountField({ modelValue: "/old" });
+    const input = w.get('[data-testid="input-ffmpeg"]');
+    expect(input.attributes("readonly")).toBeUndefined();
+    await input.setValue("/typed/ffmpeg");
+    expect(w.emitted("update:modelValue")).toEqual([["/typed/ffmpeg"]]);
+    expect(w.emitted("change")).toHaveLength(1);
+    expect(open).not.toHaveBeenCalled();
+  });
+
+  it("committing an emptied input resets to undefined", async () => {
+    const w = mountField({ modelValue: "/old" });
+    const input = w.get('[data-testid="input-ffmpeg"]');
+    await input.setValue("  ");
+    expect(w.emitted("update:modelValue")).toEqual([[undefined]]);
+  });
+
+  it("clicking a filled input does not open the picker", async () => {
+    const w = mountField({ modelValue: "/old" });
+    await w.get('[data-testid="input-ffmpeg"]').trigger("click");
+    expect(open).not.toHaveBeenCalled();
+  });
+
+  it("shows no badge until status has loaded, and the path next to System", () => {
+    expect(mountField({ status: null }).find('[data-testid="badge-ffmpeg"]').exists()).toBe(false);
+    const w = mountField({ status: status({ source: "system", path: "/usr/bin/ffmpeg" }) });
+    expect(w.get('[data-testid="badge-ffmpeg"]').text()).toBe("System (/usr/bin/ffmpeg)");
   });
 
   it("hides reset when no custom path is set", () => {
