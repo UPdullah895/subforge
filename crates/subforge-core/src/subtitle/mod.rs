@@ -250,6 +250,31 @@ fn looks_like_sections(head: &str, f: Format) -> bool {
 }
 
 impl SubtitleDoc {
+    /// A new document in `format` holding `cues`: UTF-8 without BOM, LF line endings and the
+    /// format's default header.
+    pub fn new(format: Format, cues: Vec<Cue>) -> SubtitleDoc {
+        let extras = match format {
+            Format::Vtt => FormatExtras::Vtt {
+                header: "WEBVTT".to_owned(),
+                trailing_newlines: 1,
+            },
+            // ASS/SSA: non-ASS extras make the writer build the default header.
+            _ => FormatExtras::Srt {
+                trailing_newlines: 1,
+            },
+        };
+        SubtitleDoc {
+            format,
+            encoding: DetectedEncoding {
+                name: encoding_rs::UTF_8.name(),
+                had_bom: false,
+            },
+            cues,
+            line_ending: LineEnding::Lf,
+            extras,
+        }
+    }
+
     /// Decode and parse `bytes`. The format is detected from the content; `hint` (usually from
     /// the file extension) only settles ambiguous content.
     pub fn parse(bytes: &[u8], hint: Option<Format>) -> Result<SubtitleDoc, SubtitleError> {

@@ -3,7 +3,7 @@ import pluginVue from "eslint-plugin-vue";
 import prettier from "eslint-config-prettier";
 
 export default tseslint.config(
-  { ignores: ["dist/", "src-tauri/", "server/", "node_modules/"] },
+  { ignores: ["dist/", "src-tauri/", "server/", "node_modules/", "target-shared/", "crates/*/target/"] },
 
   ...tseslint.configs.recommended,
 

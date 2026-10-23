@@ -124,7 +124,7 @@ pub enum WhisperError {
     Network { summary: String, details: String },
     #[error("Checksum mismatch for {file} \u{2014} the file was deleted; try again")]
     Checksum { file: String },
-    #[error("Download cancelled")]
+    #[error("Cancelled")]
     Cancelled,
     #[error("File error: {0}")]
     Io(#[from] io::Error),
@@ -132,6 +132,19 @@ pub enum WhisperError {
     Engine(String),
     #[error(transparent)]
     Tool(#[from] ToolError),
+    #[error(
+        "The whisper model '{model}' is not downloaded. Download it on the Transcribe page first."
+    )]
+    ModelNotDownloaded { model: String },
+    #[error(
+        "The voice activity (VAD) model {} is missing. Download a whisper model again (it fetches the VAD model too), or turn off the VAD filter.",
+        path.display()
+    )]
+    VadModelMissing { path: PathBuf },
+    #[error("No audio could be decoded from {}. Check that the file has an audio track.", path.display())]
+    NoAudio { path: PathBuf },
+    #[error("Could not write the subtitle file: {0}")]
+    Subtitle(#[from] crate::subtitle::SubtitleError),
 }
 
 impl WhisperError {

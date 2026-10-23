@@ -28,6 +28,7 @@ pub enum JobType {
     BatchOperation,
     Transcribe,
     Translate,
+    DownloadModel,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

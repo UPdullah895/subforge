@@ -26,6 +26,7 @@ pub struct AppState {
     pub job_queue: SharedJobQueue,
     pub event_sender: jobs::EventSender,
     pub job_controls: JobControlRegistry,
+    pub whisper_downloads: routes::transcribe::ActiveDownloads,
 }
 
 #[tokio::main]
@@ -50,6 +51,7 @@ async fn main() {
         job_queue,
         event_sender,
         job_controls,
+        whisper_downloads: Default::default(),
     };
 
     let app = Router::new()
@@ -122,6 +124,19 @@ fn api_routes() -> Router<AppState> {
         )
         .route("/transcribe/models", post(routes::transcribe::list_whisper_models))
         .route("/transcribe/download", post(routes::transcribe::download_whisper_model))
+        .route(
+            "/transcribe/catalog",
+            get(routes::transcribe::list_whisper_catalog)
+                .post(routes::transcribe::list_whisper_catalog),
+        )
+        .route(
+            "/transcribe/legacy-cache",
+            post(routes::transcribe::whisper_legacy_cache),
+        )
+        .route(
+            "/transcribe/legacy-cache/delete",
+            post(routes::transcribe::delete_whisper_legacy_cache),
+        )
         .route("/transcribe", post(routes::transcribe::transcribe_audio))
         // ── Translation ──────────────────────────────────────────────────────
         .route(

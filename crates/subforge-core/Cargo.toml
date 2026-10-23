@@ -19,6 +19,7 @@ serde_json = "1"
 tokio = { version = "1", features = ["process", "fs", "io-util", "time", "macros", "rt"] }
 subforge-deps = { path = "../subforge-deps", features = ["tokio"] }
 subforge-metadata = { path = "../subforge-metadata" }
+whisper-rs = "0.16"
 
 [dev-dependencies]
 tempfile = "3"

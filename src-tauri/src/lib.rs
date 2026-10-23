@@ -46,6 +46,7 @@ pub fn run() {
     tauri::Builder::default()
         .manage(job_queue)
         .manage(job_controls)
+        .manage(transcribe_cmds::ActiveDownloads::default())
         .manage(credential_store)
         .setup(|app| {
             config::migrate_saved_config();
@@ -86,6 +87,9 @@ pub fn run() {
             transcribe_cmds::get_whisper_info,
             transcribe_cmds::list_whisper_models,
             transcribe_cmds::download_whisper_model,
+            transcribe_cmds::list_whisper_catalog,
+            transcribe_cmds::whisper_legacy_cache,
+            transcribe_cmds::delete_whisper_legacy_cache,
             transcribe_cmds::transcribe_audio,
             translate_cmds::detect_ollama,
             translate_cmds::detect_libretranslate,

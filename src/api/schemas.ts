@@ -65,12 +65,18 @@ export const commandSchemas: Record<string, z.ZodTypeAny> = {
   }),
 
   get_whisper_info: z.looseObject({
-    faster_whisper_version: z.string(),
-    cuda_available: z.boolean(),
+    engine: z.string(),
+    gpu: z.string().nullish(),
     devices: z.array(z.string()),
   }),
 
   list_whisper_models: z.array(z.string()),
+
+  list_whisper_catalog: z.array(z.looseObject({ name: z.string(), size_mb: z.number() })),
+
+  download_whisper_model: z.string(),
+
+  whisper_legacy_cache: z.string().nullish(),
 
   get_tool_registry: z.looseObject({
     mkvmerge: ToolInfoSchema,

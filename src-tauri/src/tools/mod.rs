@@ -8,8 +8,6 @@ use std::path::PathBuf;
 use std::sync::OnceLock;
 use subforge_core::tools::{tool_status, ToolId, ToolPaths, ToolStatus};
 
-pub mod whisper;
-
 static BUNDLED_DIR: OnceLock<PathBuf> = OnceLock::new();
 
 /// Registers the directory holding the tools shipped with the app. Only the
@@ -47,38 +45,6 @@ pub fn tool_paths_from(cfg: &AppConfig, bundled_dir: Option<PathBuf>) -> ToolPat
         custom,
         bundled_dir,
     }
-}
-
-pub fn find_python() -> Option<PathBuf> {
-    subforge_deps::Context::from_process()
-        .find_python()
-        .map(|info| info.path)
-}
-
-pub fn script_path(name: &str) -> String {
-    if let Some(p) = subforge_deps::locate_script(name) {
-        return p.to_string_lossy().to_string();
-    }
-    // 1. Next to the binary — Linux/Windows packaged builds
-    if let Ok(exe) = std::env::current_exe() {
-        if let Some(dir) = exe.parent() {
-            let p = dir.join("scripts").join(name);
-            if p.exists() {
-                return p.to_string_lossy().to_string();
-            }
-            // 2. macOS .app bundle: exe is in Contents/MacOS, resources in Contents/Resources
-            if let Some(resources) = dir.parent().map(|d| d.join("Resources")) {
-                let p2 = resources.join("scripts").join(name);
-                if p2.exists() {
-                    return p2.to_string_lossy().to_string();
-                }
-            }
-        }
-    }
-    // 3. CWD fallback for dev mode (cargo tauri dev from project root)
-    std::env::current_dir()
-        .map(|d| d.join("scripts").join(name).to_string_lossy().to_string())
-        .unwrap_or_else(|_| format!("scripts/{}", name))
 }
 
 /// Shape of the `get_tool_registry` reply that the current frontend reads.
