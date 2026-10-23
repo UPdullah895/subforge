@@ -71,9 +71,9 @@ describe("DependencyDialog behavior", () => {
   }
 
   it("lists required items before optional ones", () => {
-    open([mk("faster_whisper", "optional", false), mk("ffmpeg", "required", false)]);
+    open([mk("mkvpropedit", "optional", false), mk("ffmpeg", "required", false)]);
     const a = document.body.querySelector('[data-testid="status-ffmpeg"]') as HTMLElement;
-    const b = document.body.querySelector('[data-testid="status-faster_whisper"]') as HTMLElement;
+    const b = document.body.querySelector('[data-testid="status-mkvpropedit"]') as HTMLElement;
     expect(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
@@ -83,7 +83,7 @@ describe("DependencyDialog behavior", () => {
   });
 
   it("hides Install all when only an optional item is auto-installable", () => {
-    open([mk("ffmpeg", "required", false), mk("faster_whisper", "optional", true)]);
+    open([mk("ffmpeg", "required", false), mk("mkvpropedit", "optional", true)]);
     expect(document.body.querySelector('[data-testid="deps-dialog"]')).not.toBeNull();
     expect(document.body.querySelector('[data-testid="deps-install-all"]')).toBeNull();
   });

@@ -6,11 +6,9 @@ pkgdesc='Subtitle and audio toolkit: extract, merge, transcribe and translate su
 arch=('x86_64' 'aarch64')
 url='https://github.com/UPdullah895/subforge'
 license=('GPL-3.0-only')
-depends=('webkit2gtk-4.1' 'gtk3' 'mkvtoolnix-cli' 'ffmpeg' 'python')
+depends=('webkit2gtk-4.1' 'gtk3' 'mkvtoolnix-cli' 'ffmpeg')
 makedepends=('cargo' 'nodejs' 'npm')
-optdepends=('python-pysubs2: subtitle conversion (SubForge installs it for you on first run if missing)'
-            'python-faster-whisper: speech-to-text transcription (SubForge can also install it for you)'
-            'ollama: local LLM subtitle translation')
+optdepends=('ollama: local LLM subtitle translation')
 source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
 sha256sums=('SKIP') # replace with the real sum: run `updpkgsums` after the v$pkgver tag exists
 
@@ -29,9 +27,6 @@ build() {
 package() {
   cd "$pkgname-$pkgver"
   install -Dm755 src-tauri/target/release/subforge "$pkgdir/usr/bin/subforge"
-  install -dm755 "$pkgdir/usr/lib/subforge/scripts"
-  install -m644 scripts/subtitle_ops.py scripts/subtitle_lines.py scripts/transcribe.py \
-    "$pkgdir/usr/lib/subforge/scripts/"
   install -Dm644 packaging/linux/subforge.desktop "$pkgdir/usr/share/applications/subforge.desktop"
   install -Dm644 src-tauri/icons/128x128.png "$pkgdir/usr/share/icons/hicolor/128x128/apps/subforge.png"
   install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"

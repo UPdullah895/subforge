@@ -35,7 +35,7 @@
     "copyright": "Copyright (c) UPdullah895. GPL-3.0-only.",
     "category": "Utility",
     "shortDescription": "Subtitle and audio toolkit",
-    "longDescription": "Extract, merge, convert, transcribe and translate subtitles and audio tracks. Uses MKVToolNix, FFmpeg and Python.",
+    "longDescription": "Extract, merge, convert, transcribe and translate subtitles and audio tracks. Uses MKVToolNix and FFmpeg.",
     "license": "GPL-3.0-only",
     "licenseFile": "../LICENSE",
     "icon": [
@@ -45,17 +45,12 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "resources": {
-      "../scripts/subtitle_ops.py": "scripts/subtitle_ops.py",
-      "../scripts/subtitle_lines.py": "scripts/subtitle_lines.py",
-      "../scripts/transcribe.py": "scripts/transcribe.py"
-    },
     "linux": {
       "deb": {
-        "depends": ["mkvtoolnix", "ffmpeg", "python3", "python3-venv"]
+        "depends": ["mkvtoolnix", "ffmpeg"]
       },
       "rpm": {
-        "depends": ["mkvtoolnix", "python3"]
+        "depends": ["mkvtoolnix", "ffmpeg"]
       }
     }
   }

@@ -12,9 +12,6 @@ defineProps<{
   errors: Record<string, string>;
 }>();
 
-// Ids installed through pip; they depend on Python being present first.
-const PIP_IDS = new Set(["pysubs2", "faster_whisper"]);
-
 const emit = defineEmits<{ (e: "install", id: string): void }>();
 
 const { t, te } = useI18n();
@@ -85,7 +82,7 @@ async function copy(item: DepStatus) {
           {{ t("deps.manualHint") }}
         </p>
         <p v-else-if="!item.install_command && !item.can_auto_install" class="text-xs text-text-muted">
-          {{ PIP_IDS.has(item.id) ? t("deps.needPython") : t("deps.noPackageManager") }}
+          {{ t("deps.noPackageManager") }}
         </p>
 
         <div class="flex flex-wrap items-center gap-2">

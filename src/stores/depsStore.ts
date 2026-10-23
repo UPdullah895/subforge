@@ -3,11 +3,12 @@ import { computed, ref } from "vue";
 import { apiInvoke } from "../api/client";
 import { apiListen } from "../api/events";
 
+export type DepId = "mkvmerge" | "mkvextract" | "mkvpropedit" | "ffmpeg" | "ffprobe";
 export type DepState = "ok" | "missing" | "outdated";
 export type DepSeverity = "required" | "optional";
 
 export interface DepStatus {
-  id: string;
+  id: DepId;
   label: string;
   severity: DepSeverity;
   state: DepState;
@@ -71,7 +72,7 @@ export const useDepsStore = defineStore("deps", () => {
   }
 
   // Required items only: large optional packages are installed one by one on request.
-  // Re-evaluates after every install: installing Python unlocks the pip packages.
+  // Re-evaluates after every install so items unlocked by an earlier install are picked up.
   async function installAll() {
     const tried = new Set<string>();
     for (;;) {

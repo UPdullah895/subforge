@@ -1,6 +1,6 @@
 # Translation line pipeline parity fixtures
 
-Frozen outputs of the Python helper `scripts/subtitle_lines.py` (pysubs2 1.9.0),
+Frozen outputs of the former Python helper `scripts/subtitle_lines.py` (pysubs2 1.9.0, since deleted; see git history),
 generated once from the repository root. The `.expected` files are never
 regenerated from Rust.
 

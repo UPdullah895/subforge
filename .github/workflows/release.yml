@@ -69,7 +69,7 @@ jobs:
             - **Windows:** run the `.msi` or `-setup.exe`.
             - **Linux:** `.AppImage` (any distro), `.deb` or `.rpm`.
 
-            SubForge needs MKVToolNix, FFmpeg and Python — it checks on first launch and can install them for you.
+            SubForge needs MKVToolNix and FFmpeg — it checks on first launch and can install them for you.
             See the [README](https://github.com/UPdullah895/subforge#readme) for details.
           releaseDraft: false
           prerelease: false
