@@ -334,3 +334,12 @@ fn arabic_punctuation_keeps_arabic_indic_digit_commas() {
         "مبلغ ١,٠٠٠ ريال\u{60c} نعم"
     );
 }
+
+#[test]
+fn arabic_punctuation_keeps_commas_between_any_unicode_digits() {
+    assert_eq!(arabic_punctuation("مبلغ ১,০০০ ريال"), "مبلغ ১,০০০ ريال");
+    assert_eq!(
+        arabic_punctuation("مبلغ ๑,๐๐๐ ريال, نعم"),
+        "مبلغ ๑,๐๐๐ ريال\u{60c} نعم"
+    );
+}

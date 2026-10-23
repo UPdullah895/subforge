@@ -139,12 +139,11 @@ pub fn fix_rtl_text(text: &str) -> String {
         .join("\n")
 }
 
-/// Unicode decimal digits (Nd), matching Python's `\d` for the scripts that matter here.
+/// Unicode decimal digit (category Nd), the same set as Python's `\d`.
 fn is_decimal_digit(c: char) -> bool {
-    c.is_ascii_digit()
-        || matches!(c,
-            '\u{0660}'..='\u{0669}' | '\u{06F0}'..='\u{06F9}' | '\u{07C0}'..='\u{07C9}'
-            | '\u{0966}'..='\u{096F}' | '\u{FF10}'..='\u{FF19}')
+    static RE: OnceLock<Regex> = OnceLock::new();
+    RE.get_or_init(|| Regex::new(r"^\d$").unwrap())
+        .is_match(c.encode_utf8(&mut [0; 4]))
 }
 
 /// Use Arabic `؟ ، ؛` instead of the Latin marks models often leave in Arabic lines.
