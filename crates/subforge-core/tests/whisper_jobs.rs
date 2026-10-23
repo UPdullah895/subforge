@@ -4,14 +4,15 @@ mod support;
 
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use subforge_core::tools::ToolPaths;
 use subforge_core::whisper::{
     list_downloaded_specs, start_download_with, start_model_download, start_transcription,
-    ActiveDownloads, JobKind, JobOutcome, JobSink, TranscribeOptions, WhisperError,
+    start_transcription_with, ActiveDownloads, JobKind, JobOutcome, JobSink, TranscribeOptions,
+    TranscribeOutcome, WhisperError,
 };
 use subforge_core::CancellationToken;
 use support::*;
@@ -28,9 +29,20 @@ enum Ev {
 struct Recorder {
     events: Mutex<Vec<(String, Ev)>>,
     tokens: Mutex<HashMap<String, CancellationToken>>,
+    messages: Mutex<Vec<(String, String)>>,
 }
 
 impl Recorder {
+    fn messages(&self, id: &str) -> Vec<String> {
+        self.messages
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|(j, _)| j == id)
+            .map(|(_, m)| m.clone())
+            .collect()
+    }
+
     fn of(&self, id: &str) -> Vec<Ev> {
         self.events
             .lock()
@@ -85,7 +97,10 @@ impl JobSink for Recorder {
     fn running(&self, id: &str) {
         self.events.lock().unwrap().push((id.into(), Ev::Running));
     }
-    fn progress(&self, id: &str, pct: f64, _message: Option<&str>) {
+    fn progress(&self, id: &str, pct: f64, message: Option<&str>) {
+        if let Some(m) = message {
+            self.messages.lock().unwrap().push((id.into(), m.into()));
+        }
         self.events
             .lock()
             .unwrap()
@@ -268,4 +283,132 @@ async fn transcription_job_without_model_fails_with_clear_message() {
             Some(dir.path().join("in.srt").to_string_lossy().into_owned())
         )
     );
+}
+
+fn quick_options(dir: &std::path::Path, name: &str) -> TranscribeOptions {
+    serde_json::from_value(serde_json::json!({
+        "input": dir.join(format!("{name}.wav")),
+        "output": dir.join(format!("{name}.srt")),
+        "model": "tiny",
+        "device": "cpu",
+        "language": null,
+        "format": "srt",
+        "word_timestamps": false,
+        "vad_filter": false,
+        "cache_dir": dir.join("cache"),
+    }))
+    .unwrap()
+}
+
+fn done() -> Result<TranscribeOutcome, WhisperError> {
+    Ok(TranscribeOutcome {
+        device_used: "cpu".into(),
+        segments: 1,
+        detected_language: Some("en".into()),
+    })
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn concurrent_transcriptions_never_overlap() {
+    let dir = tempfile::tempdir().unwrap();
+    let rec = Arc::new(Recorder::default());
+    let active = Arc::new(AtomicUsize::new(0));
+    let max_seen = Arc::new(AtomicUsize::new(0));
+    let ids: Vec<String> = (0..3)
+        .map(|i| {
+            let active = active.clone();
+            let max_seen = max_seen.clone();
+            start_transcription_with(
+                rec.clone(),
+                ToolPaths::default,
+                quick_options(dir.path(), &format!("job{i}")),
+                move |_paths, _opts, _progress, _cancel| {
+                    let now = active.fetch_add(1, Ordering::SeqCst) + 1;
+                    max_seen.fetch_max(now, Ordering::SeqCst);
+                    std::thread::sleep(Duration::from_millis(150));
+                    active.fetch_sub(1, Ordering::SeqCst);
+                    done()
+                },
+            )
+        })
+        .collect();
+    for id in &ids {
+        assert_eq!(rec.finished(id).await.status(), "completed");
+    }
+    assert_eq!(
+        max_seen.load(Ordering::SeqCst),
+        1,
+        "transcriptions overlapped"
+    );
+    // At least one job had to wait, and said so before it started running.
+    let queued = ids.iter().any(|id| {
+        rec.messages(id)
+            .iter()
+            .any(|m| m.to_lowercase().starts_with("queued"))
+    });
+    assert!(queued, "no job reported a Queued status");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn cancelling_a_queued_transcription_removes_it_without_running() {
+    let dir = tempfile::tempdir().unwrap();
+    let rec = Arc::new(Recorder::default());
+    let release = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let ran_second = Arc::new(AtomicUsize::new(0));
+
+    let hold = release.clone();
+    let first = start_transcription_with(
+        rec.clone(),
+        ToolPaths::default,
+        quick_options(dir.path(), "first"),
+        move |_p, _o, _progress, _c| {
+            // Bounded wait so a failing assertion can never hang the test run.
+            for _ in 0..1000 {
+                if hold.load(Ordering::SeqCst) {
+                    break;
+                }
+                std::thread::sleep(Duration::from_millis(10));
+            }
+            done()
+        },
+    );
+    // Wait until the first job owns the slot.
+    for _ in 0..500 {
+        if rec.of(&first).contains(&Ev::Running) {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+    assert!(rec.of(&first).contains(&Ev::Running));
+
+    let counter = ran_second.clone();
+    let second = start_transcription_with(
+        rec.clone(),
+        ToolPaths::default,
+        quick_options(dir.path(), "second"),
+        move |_p, _o, _progress, _c| {
+            counter.fetch_add(1, Ordering::SeqCst);
+            done()
+        },
+    );
+    for _ in 0..500 {
+        if !rec.messages(&second).is_empty() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+    assert!(
+        rec.messages(&second)
+            .first()
+            .is_some_and(|m| m.to_lowercase().starts_with("queued")),
+        "{:?}",
+        rec.of(&second)
+    );
+    rec.tokens.lock().unwrap()[&second].cancel();
+    assert_eq!(rec.finished(&second).await.status(), "cancelled");
+    assert!(!rec.of(&second).contains(&Ev::Running));
+
+    release.store(true, Ordering::SeqCst);
+    assert_eq!(rec.finished(&first).await.status(), "completed");
+    assert_eq!(ran_second.load(Ordering::SeqCst), 0);
 }

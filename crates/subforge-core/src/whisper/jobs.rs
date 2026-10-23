@@ -16,8 +16,8 @@ use super::models::{
     download_with, legacy_cache_dir, model_path, resolve_cache_dir, spec_for, ModelSpec,
     WhisperError, DEFAULT_BASE_URL, MODELS, VAD_MODEL,
 };
-use super::transcribe::{transcribe, TranscribeOptions};
-use crate::progress::CancellationToken;
+use super::transcribe::{transcribe, TranscribeOptions, TranscribeOutcome};
+use crate::progress::{CancellationToken, ProgressFn};
 use crate::tools::{ToolError, ToolPaths};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -195,13 +195,42 @@ pub fn start_download_with(
     job_id
 }
 
+/// Process-wide limit of one running transcription (see [`start_transcription`]).
+static TRANSCRIBE_SLOT: tokio::sync::Semaphore = tokio::sync::Semaphore::const_new(1);
+
+/// Progress message of a transcription waiting for another one to finish.
+pub const QUEUED_MESSAGE: &str = "Queued: waiting for another transcription to finish";
+
 /// Starts a background transcription. `paths` is called on the worker thread (it may read
-/// config from disk).
+/// config from disk). Only one transcription runs at a time; later ones report
+/// [`QUEUED_MESSAGE`] until the running one ends, and can be cancelled while they wait.
 pub fn start_transcription(
     sink: Arc<dyn JobSink>,
     paths: impl FnOnce() -> ToolPaths + Send + 'static,
     options: TranscribeOptions,
 ) -> String {
+    start_transcription_with(sink, paths, options, transcribe)
+}
+
+/// [`start_transcription`] with the transcription body supplied by the caller (tests use a
+/// stub so they need no model).
+#[doc(hidden)]
+pub fn start_transcription_with<W>(
+    sink: Arc<dyn JobSink>,
+    paths: impl FnOnce() -> ToolPaths + Send + 'static,
+    options: TranscribeOptions,
+    work: W,
+) -> String
+where
+    W: FnOnce(
+            &ToolPaths,
+            &TranscribeOptions,
+            ProgressFn<'_>,
+            CancellationToken,
+        ) -> Result<TranscribeOutcome, WhisperError>
+        + Send
+        + 'static,
+{
     let job_id = format!("transcribe-{}", uuid_v4());
     let input = options.input.to_string_lossy().into_owned();
     let output = options.output.to_string_lossy().into_owned();
@@ -209,14 +238,36 @@ pub fn start_transcription(
 
     let id = job_id.clone();
     tokio::spawn(async move {
+        // One transcription at a time per process: each loads a whole model into memory, so
+        // running several together can exhaust RAM / VRAM and crash the app.
+        let permit = match TRANSCRIBE_SLOT.try_acquire() {
+            Ok(p) => p,
+            Err(_) => {
+                sink.progress(&id, 0.0, Some(QUEUED_MESSAGE));
+                tokio::select! {
+                    biased;
+                    _ = token.cancelled() => {
+                        sink.finished(&id, &JobOutcome::from_error(WhisperError::Cancelled));
+                        return;
+                    }
+                    p = TRANSCRIBE_SLOT.acquire() => p.expect("the transcription semaphore is never closed"),
+                }
+            }
+        };
+        if token.is_cancelled() {
+            drop(permit);
+            sink.finished(&id, &JobOutcome::from_error(WhisperError::Cancelled));
+            return;
+        }
         sink.running(&id);
         let worker_sink = sink.clone();
         let worker_id = id.clone();
         let joined = tokio::task::spawn_blocking(move || {
+            let _permit = permit;
             let paths = paths();
             let mut on_progress =
                 |pct: f64, msg: Option<&str>| worker_sink.progress(&worker_id, pct, msg);
-            transcribe(&paths, &options, &mut on_progress, token)
+            work(&paths, &options, &mut on_progress, token)
         })
         .await;
         let outcome = match joined {
