@@ -752,6 +752,30 @@ mod dependency_report {
     }
 
     #[test]
+    fn custom_tool_failing_its_version_check_reports_an_error() {
+        let _g = serial();
+        let d = tempfile::tempdir().unwrap();
+        let broken = fake_tool(d.path(), ToolId::Ffprobe, "echo 'not ffprobe' >&2; exit 3");
+        let good = fake_tool(d.path(), ToolId::Mkvmerge, "echo 'mkvmerge v1'");
+        let paths = ToolPaths {
+            custom: HashMap::from([(ToolId::Ffprobe, broken.clone()), (ToolId::Mkvmerge, good)]),
+            bundled_dir: None,
+        };
+        let st = subforge_core::tools::tool_status(&paths);
+        let probe = st.iter().find(|s| s.id == ToolId::Ffprobe).unwrap();
+        assert_eq!(probe.source, Some(ToolSource::Custom));
+        assert_eq!(probe.path.as_deref(), Some(broken.as_path()));
+        let err = probe
+            .error
+            .as_deref()
+            .expect("custom path that fails -version must error");
+        assert!(err.contains("ffprobe"), "{err}");
+        assert!(err.contains("Settings"), "{err}");
+        let mkv = st.iter().find(|s| s.id == ToolId::Mkvmerge).unwrap();
+        assert!(mkv.error.is_none(), "{mkv:?}");
+    }
+
+    #[test]
     fn nothing_anywhere_is_missing_required() {
         let report = dependency_report_with(&ToolPaths::default(), &ctx_with(empty_env()));
         assert!(report.has_missing_required);

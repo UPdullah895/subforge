@@ -78,6 +78,63 @@ fn vtt_writer_escapes_markup_and_skips_comments() {
     );
 }
 
+// CHANGELOG "Intentional differences": WebVTT NOTE/STYLE/REGION blocks are dropped on write.
+#[test]
+fn vtt_style_and_region_blocks_are_dropped() {
+    let src = "WEBVTT\n\nSTYLE\n::cue { color: yellow; }\n\nREGION\nid:fred\nwidth:40%\n\n\
+               NOTE a comment\n\n00:00:01.000 --> 00:00:02.000\nHello\n\n\
+               00:00:03.000 --> 00:00:04.000\nWorld\n";
+    let doc = SubtitleDoc::parse(src.as_bytes(), None).unwrap();
+    assert_eq!(doc.cues.len(), 2);
+    let out = String::from_utf8(doc.to_bytes()).unwrap();
+    for gone in ["STYLE", "::cue", "REGION", "id:fred", "NOTE"] {
+        assert!(!out.contains(gone), "{gone} survived:\n{out}");
+    }
+    assert!(
+        out.contains("00:00:01.000 --> 00:00:02.000\nHello"),
+        "{out}"
+    );
+}
+
+// CHANGELOG: on edited cues, inline <c>, <lang>, ruby and timestamp tags are dropped
+// (their text stays); speaker <v> labels are kept.
+#[test]
+fn vtt_lang_ruby_and_timestamps_are_dropped_on_edited_cues() {
+    let src = "WEBVTT\n\n00:00:01.000 --> 00:00:02.000\n\
+               <v Anna><lang en>Hello</lang> <ruby>漢<rt>kan</rt></ruby> <00:00:01.500><c.loud>now</c></v>\n";
+    let mut doc = SubtitleDoc::parse(src.as_bytes(), None).unwrap();
+    // Untouched: written back verbatim.
+    assert!(String::from_utf8(doc.to_bytes())
+        .unwrap()
+        .contains("<lang en>"));
+    doc.shift(1000);
+    let out = String::from_utf8(doc.to_bytes()).unwrap();
+    for gone in [
+        "<lang",
+        "</lang>",
+        "<ruby>",
+        "<rt>",
+        "<00:00:01.500>",
+        "<c.loud>",
+    ] {
+        assert!(!out.contains(gone), "{gone} survived:\n{out}");
+    }
+    assert!(out.contains("<v Anna>"), "{out}");
+    assert!(out.contains("Hello"), "{out}");
+    assert!(out.contains("漢kan"), "{out}");
+    assert!(out.contains("now"), "{out}");
+}
+
+// CHANGELOG: `{\p1 }`/`{\p1abc}` are not drawings and `{\p01}` is (pysubs2's regex differed).
+#[test]
+fn drawing_detection_edge_cases() {
+    use subforge_core::lines::is_drawing;
+    assert!(!is_drawing(r"{\p1 }m 0 0 l 1 1"));
+    assert!(!is_drawing(r"{\p1abc}m 0 0 l 1 1"));
+    assert!(is_drawing(r"{\p01}m 0 0 l 1 1"));
+    assert!(!is_drawing(r"{\p0}text"));
+}
+
 #[test]
 fn signature_less_vtt_needs_the_hint() {
     let body = b"00:00:00.000 --> 00:00:01.000\nx\n";

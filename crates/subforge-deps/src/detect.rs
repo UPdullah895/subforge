@@ -2,6 +2,7 @@ use crate::hide::HideWindow;
 use crate::platform::Os;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::time::Duration;
 
 /// Directories searched for executables: `PATH` plus well-known install
 /// locations that a freshly started GUI process may not have on `PATH` yet
@@ -96,17 +97,62 @@ fn is_executable(p: &Path) -> bool {
     p.is_file()
 }
 
-/// First line of `<tool> <version_arg>` output, or `None` if it fails.
+/// How long a version check may take before the tool is treated as broken.
+pub const VERSION_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// First line of `<tool> <version_arg>` output, or `None` if it fails or
+/// does not finish within [`VERSION_TIMEOUT`].
 pub fn tool_version(path: &Path, version_arg: &str) -> Option<String> {
-    let out = Command::new(path)
+    tool_version_with_timeout(path, version_arg, VERSION_TIMEOUT)
+}
+
+/// [`tool_version`] with an explicit time limit; the process is killed when it
+/// runs over (e.g. a wrong file picked as the tool waiting for input).
+pub fn tool_version_with_timeout(
+    path: &Path,
+    version_arg: &str,
+    timeout: Duration,
+) -> Option<String> {
+    use std::io::Read;
+    use std::process::Stdio;
+
+    let mut child = Command::new(path)
         .hide_window()
         .arg(version_arg)
-        .output()
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
         .ok()?;
-    if !out.status.success() {
+    // Read on a thread so a chatty tool cannot block on a full pipe.
+    let mut stdout = child.stdout.take()?;
+    let reader = std::thread::spawn(move || {
+        let mut buf = Vec::new();
+        let _ = stdout.read_to_end(&mut buf);
+        buf
+    });
+
+    let deadline = std::time::Instant::now() + timeout;
+    let status = loop {
+        match child.try_wait() {
+            Ok(Some(status)) => break status,
+            Ok(None) if std::time::Instant::now() < deadline => {
+                std::thread::sleep(Duration::from_millis(20));
+            }
+            _ => {
+                let _ = child.kill();
+                let _ = child.wait();
+                // The reader ends once every holder of the pipe has exited;
+                // it is not joined so a lingering grandchild cannot block us.
+                return None;
+            }
+        }
+    };
+    let out = reader.join().ok()?;
+    if !status.success() {
         return None;
     }
-    String::from_utf8_lossy(&out.stdout)
+    String::from_utf8_lossy(&out)
         .lines()
         .next()
         .map(|l| l.trim().to_string())
@@ -183,6 +229,20 @@ mod tests {
                 os: Os::Windows,
             };
             assert_eq!(find_executable("ffmpeg", &env), None);
+        }
+
+        #[test]
+        fn tool_version_gives_up_on_a_hanging_tool() {
+            let tmp = tempdir().unwrap();
+            let p = make_script(tmp.path(), "ffmpeg", "exec sleep 30");
+            let started = std::time::Instant::now();
+            let v = tool_version_with_timeout(&p, "-version", Duration::from_millis(300));
+            assert_eq!(v, None);
+            assert!(
+                started.elapsed() < Duration::from_secs(5),
+                "took {:?}",
+                started.elapsed()
+            );
         }
 
         #[test]

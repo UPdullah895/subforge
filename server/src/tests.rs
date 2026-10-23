@@ -248,6 +248,25 @@ async fn invalid_custom_tool_path_is_503_naming_the_setting() {
     );
 }
 
+// CHANGELOG "Intentional differences": the tool registry includes mkvpropedit.
+#[tokio::test]
+async fn tool_registry_includes_mkvpropedit() {
+    let _cfg = TestConfigDir::new();
+    let res = test_app()
+        .oneshot(
+            Request::get("/api/tools/registry")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    let json = body_json(res).await;
+    for tool in ["mkvmerge", "mkvextract", "mkvpropedit", "ffmpeg", "ffprobe"] {
+        assert_eq!(json[tool]["name"], tool, "{json}");
+    }
+}
+
 #[tokio::test]
 async fn convert_unknown_format_is_400_with_readable_body() {
     let res = test_app()

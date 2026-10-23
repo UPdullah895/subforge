@@ -5,6 +5,18 @@ All notable changes to this project are documented here. Format based on
 
 ## [Unreleased]
 
+### Fixed
+- The "Required Programs" dialog no longer appears on installs that bundle FFmpeg and MKVToolNix. It now uses the same lookup as every tool call (custom path, then bundled, then system), shows where each tool was found, and appears when a custom tool path in Settings is broken.
+- Only one transcription runs at a time; others wait with a "Queued" status and can be cancelled while waiting (several at once could run out of memory and crash the app).
+- Translating an ASS/SSA track keeps it ASS/SSA (`{video}.{lang}.ass`) with its styles, instead of writing ASS text into a `.srt` file.
+- SRT files with a blank line inside a subtitle, or stray text between subtitles, load instead of being rejected (same result as pysubs2).
+- MKVToolNix errors show the actual reason instead of the version banner, and an unreadable or unrecognised file is reported as an error instead of "no tracks". The raw tool output is available under "Details" in error messages.
+- Settings shows an error when a custom tool path does not answer its version command, and version checks give up after 10 seconds instead of hanging.
+- Model downloads show the downloaded size and speed.
+
+### Changed
+- Server API: tool failures answer `{"error": "...", "details": "..."}` with status 422 (tool failed) or 503 (tool missing or custom path broken) instead of a bare status code.
+
 ## [0.3.0] - 2026-10-23
 
 ### Added

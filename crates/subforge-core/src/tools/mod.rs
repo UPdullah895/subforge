@@ -375,13 +375,27 @@ pub fn tool_status(paths: &ToolPaths) -> Vec<ToolStatus> {
     ToolId::ALL
         .iter()
         .map(|&id| match resolve(id, paths) {
-            Ok(r) => ToolStatus {
-                id,
-                source: Some(r.source),
-                version: tool_version(&r.path, id.version_arg()),
-                path: Some(r.path),
-                error: None,
-            },
+            Ok(r) => {
+                let version = tool_version(&r.path, id.version_arg());
+                // A file the user picked that does not answer the version
+                // command is most likely not the tool (shown inline in Settings).
+                let error = (r.source == ToolSource::Custom && version.is_none()).then(|| {
+                    format!(
+                        "{} at {} did not respond to `{}`. Check that the path set in Settings → Tool Paths points to {}.",
+                        id,
+                        r.path.display(),
+                        id.version_arg(),
+                        id.exe_name()
+                    )
+                });
+                ToolStatus {
+                    id,
+                    source: Some(r.source),
+                    version,
+                    path: Some(r.path),
+                    error,
+                }
+            }
             Err(e) => ToolStatus {
                 id,
                 source: None,

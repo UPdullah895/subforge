@@ -9,7 +9,10 @@ pub mod detect;
 #[cfg(test)]
 pub(crate) mod testutil;
 
-pub use detect::{find_executable, find_executables, tool_version, SearchEnv};
+pub use detect::{
+    find_executable, find_executables, tool_version, tool_version_with_timeout, SearchEnv,
+    VERSION_TIMEOUT,
+};
 pub mod context;
 pub use context::Context;
 pub mod install;
