@@ -153,7 +153,9 @@ function resetDefaults() {
     ffmpeg_path: undefined,
     ffprobe_path: undefined,
   };
-  void appStore.loadToolStatus();
+  // Unsaved: the backend still reports the persisted config, so hide the
+  // badges until Save reloads them instead of showing stale sources.
+  appStore.toolStatus = [];
 }
 
 function setupContentFor(id: ProviderId) {

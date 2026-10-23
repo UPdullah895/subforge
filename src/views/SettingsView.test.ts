@@ -61,21 +61,24 @@ describe("SettingsView tool paths", () => {
     expect(useAppStore().config?.ffmpeg_path).toBe("/new/ffmpeg");
   });
 
-  it("Save and Reset refresh the badges; Reset clears mkvpropedit_path", async () => {
+  it("Reset clears config paths and badges without reloading; Save restores badges", async () => {
     const w = setup();
     await flushPromises();
     const store = useAppStore();
     store.config!.mkvpropedit_path = "/x/mkvpropedit";
-    vi.mocked(apiInvoke).mockClear();
-    const save = w.findAll("button").find((b) => b.text().trim() === "Save")!;
-    await save.trigger("click");
-    await flushPromises();
-    expect(calls()).toEqual(["save_config", "get_tool_status"]);
+    expect(w.find('[data-testid="badge-ffmpeg"]').exists()).toBe(true);
     vi.mocked(apiInvoke).mockClear();
     const reset = w.findAll("button").find((b) => b.text().trim() === "Reset")!;
     await reset.trigger("click");
     await flushPromises();
     expect(store.config?.mkvpropedit_path).toBeUndefined();
-    expect(calls()).toContain("get_tool_status");
+    expect(calls()).not.toContain("get_tool_status");
+    expect(calls()).not.toContain("save_config");
+    expect(w.find('[data-testid="badge-ffmpeg"]').exists()).toBe(false);
+    const save = w.findAll("button").find((b) => b.text().trim() === "Save")!;
+    await save.trigger("click");
+    await flushPromises();
+    expect(calls()).toEqual(["save_config", "get_tool_status"]);
+    expect(w.get('[data-testid="badge-ffmpeg"]').text()).toBe("Bundled");
   });
 });
