@@ -27,6 +27,8 @@ struct Stub {
     sent: AtomicUsize,
     /// A response stalls (never finishes) once it has sent this many bytes.
     stall_at: AtomicUsize,
+    /// 0 normal, 1 ignore Range (always 200), 2 answer 206 with the wrong Content-Range start.
+    mode: AtomicUsize,
     ranges: Mutex<Vec<String>>,
     paths: Mutex<Vec<String>>,
 }
@@ -53,6 +55,14 @@ async fn serve(State(st): State<Arc<Stub>>, uri: axum::http::Uri, headers: Heade
                 .unwrap();
         }
         partial = true;
+        match st.mode.load(Ordering::SeqCst) {
+            1 => {
+                start = 0;
+                partial = false;
+            }
+            2 => start = 0,
+            _ => {}
+        }
     }
     let stream =
         futures_util::stream::unfold((st.clone(), start, 0usize), |(st, pos, sent)| async move {
@@ -89,6 +99,7 @@ async fn start_stub() -> (String, Arc<Stub>) {
         body: body_bytes(),
         sent: AtomicUsize::new(0),
         stall_at: AtomicUsize::new(usize::MAX),
+        mode: AtomicUsize::new(0),
         ranges: Mutex::new(vec![]),
         paths: Mutex::new(vec![]),
     });
@@ -281,4 +292,67 @@ async fn unknown_model_is_error() {
     )
     .await;
     assert!(matches!(r, Err(WhisperError::UnknownModel(_))));
+}
+
+fn write_part(dir: &std::path::Path, data: &[u8]) {
+    std::fs::write(dir.join("ggml-test.bin.part"), data).unwrap();
+}
+
+async fn run_expect_ok(url: &str, dir: &std::path::Path) -> Vec<u8> {
+    let s = spec(Some(sha(&body_bytes())));
+    let mut cb = |_: f64, _: Option<&str>| {};
+    let path = download_with(&s, None, dir, url, &mut cb, CancellationToken::new())
+        .await
+        .unwrap();
+    assert!(!dir.join("ggml-test.bin.part").exists());
+    std::fs::read(path).unwrap()
+}
+
+#[tokio::test]
+async fn server_ignoring_range_restarts_not_doubles() {
+    let (url, st) = start_stub().await;
+    st.mode.store(1, Ordering::SeqCst);
+    let dir = tempfile::tempdir().unwrap();
+    write_part(dir.path(), &body_bytes()[..1024 * 1024]);
+    let out = run_expect_ok(&url, dir.path()).await;
+    assert_eq!(out.len(), SIZE);
+    assert_eq!(out, body_bytes());
+    assert_eq!(st.ranges.lock().unwrap().len(), 1);
+}
+
+#[tokio::test]
+async fn range_416_with_complete_part_completes() {
+    let (url, st) = start_stub().await;
+    let dir = tempfile::tempdir().unwrap();
+    write_part(dir.path(), &body_bytes());
+    let out = run_expect_ok(&url, dir.path()).await;
+    assert_eq!(out, body_bytes());
+    assert_eq!(
+        st.sent.load(Ordering::SeqCst),
+        0,
+        "no body should be fetched"
+    );
+}
+
+#[tokio::test]
+async fn range_416_with_stale_part_restarts() {
+    let (url, st) = start_stub().await;
+    let dir = tempfile::tempdir().unwrap();
+    write_part(dir.path(), &vec![7u8; SIZE + 10]);
+    let out = run_expect_ok(&url, dir.path()).await;
+    assert_eq!(out, body_bytes());
+    assert_eq!(st.ranges.lock().unwrap().len(), 1);
+    assert_eq!(st.paths.lock().unwrap().len(), 2);
+}
+
+#[tokio::test]
+async fn mismatched_content_range_restarts() {
+    let (url, st) = start_stub().await;
+    st.mode.store(2, Ordering::SeqCst);
+    let dir = tempfile::tempdir().unwrap();
+    write_part(dir.path(), &body_bytes()[..1024 * 1024]);
+    let out = run_expect_ok(&url, dir.path()).await;
+    assert_eq!(out, body_bytes());
+    // Ranged request, then a plain restart (which mode 2 serves as a normal 200).
+    assert_eq!(st.paths.lock().unwrap().len(), 2);
 }

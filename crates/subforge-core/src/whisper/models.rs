@@ -222,12 +222,15 @@ pub async fn download_with(
 ) -> Result<PathBuf, WhisperError> {
     tokio::fs::create_dir_all(cache).await?;
     let base = base_url.trim_end_matches('/');
-    let client = reqwest::Client::new();
+    let client = reqwest::Client::builder()
+        .connect_timeout(Duration::from_secs(30))
+        .build()
+        .map_err(|e| WhisperError::network("Download setup", e))?;
     let url = format!("{base}/{}", spec.file);
     let path = fetch(&client, spec, &url, cache, Some(progress), &cancel).await?;
     if let Some(vad) = vad {
         if !is_complete(cache, vad) {
-            let vad_url = if base_url == DEFAULT_BASE_URL {
+            let vad_url = if base == DEFAULT_BASE_URL.trim_end_matches('/') {
                 VAD_URL.to_string()
             } else {
                 format!("{base}/{}", vad.file)
@@ -274,16 +277,38 @@ impl Reporter<'_> {
     }
 }
 
-async fn hash_file(path: &Path, hasher: &mut Sha256) -> io::Result<()> {
+async fn hash_file(
+    path: &Path,
+    hasher: &mut Sha256,
+    cancel: &CancellationToken,
+) -> Result<(), WhisperError> {
     let mut f = tokio::fs::File::open(path).await?;
     let mut buf = vec![0u8; 1 << 20];
     loop {
+        if cancel.is_cancelled() {
+            return Err(WhisperError::Cancelled);
+        }
         let n = f.read(&mut buf).await?;
         if n == 0 {
             return Ok(());
         }
         hasher.update(&buf[..n]);
     }
+}
+
+/// Start offset from a `Content-Range: bytes <start>-<end>/<total>` header.
+fn content_range_start(resp: &reqwest::Response) -> Option<u64> {
+    let v = resp
+        .headers()
+        .get(reqwest::header::CONTENT_RANGE)?
+        .to_str()
+        .ok()?;
+    v.strip_prefix("bytes ")?
+        .split('-')
+        .next()?
+        .trim()
+        .parse()
+        .ok()
 }
 
 async fn fetch(
@@ -322,7 +347,7 @@ async fn fetch(
         if offset > 0 && spec.size_bytes == Some(offset) {
             // The partial file is already complete; just verify it.
             let mut hasher = Sha256::new();
-            hash_file(&part, &mut hasher).await?;
+            hash_file(&part, &mut hasher, cancel).await?;
             verify_and_commit(spec, hasher, &part, &final_path).await?;
             if let Some(cb) = progress {
                 cb(100.0, None);
@@ -337,7 +362,17 @@ async fn fetch(
             _ = cancel.cancelled() => return Err(WhisperError::Cancelled),
         };
     } else if resp.status() == reqwest::StatusCode::PARTIAL_CONTENT && offset > 0 {
-        append = true;
+        if content_range_start(&resp) == Some(offset) {
+            append = true;
+        } else {
+            // The server answered a different range than requested: restart from scratch.
+            let _ = tokio::fs::remove_file(&part).await;
+            offset = 0;
+            resp = tokio::select! {
+                r = client.get(url).send() => r.map_err(|e| WhisperError::network(&what, e))?,
+                _ = cancel.cancelled() => return Err(WhisperError::Cancelled),
+            };
+        }
     } else {
         offset = 0;
     }
@@ -358,7 +393,7 @@ async fn fetch(
 
     let mut hasher = Sha256::new();
     let mut file = if append {
-        hash_file(&part, &mut hasher).await?;
+        hash_file(&part, &mut hasher, cancel).await?;
         tokio::fs::OpenOptions::new()
             .append(true)
             .open(&part)
@@ -395,6 +430,7 @@ async fn fetch(
         rep.emit(done, false);
     }
     file.flush().await?;
+    file.sync_all().await?;
     drop(file);
 
     if let Some(expected) = total {
