@@ -17,7 +17,13 @@ pub struct InstallRequest {
     pub id: String,
 }
 
-fn emit(sender: &jobs::EventSender, event_type: &str, id: &str, status: Option<JobStatus>, message: String) {
+fn emit(
+    sender: &jobs::EventSender,
+    event_type: &str,
+    id: &str,
+    status: Option<JobStatus>,
+    message: String,
+) {
     jobs::emit_event(
         sender,
         jobs::JobEvent {
@@ -39,7 +45,8 @@ pub async fn install_dep(
     State(state): State<AppState>,
     Json(req): Json<InstallRequest>,
 ) -> Result<Json<DepReport>, AppError> {
-    let dep = DepId::parse(&req.id).ok_or_else(|| err400(format!("Unknown dependency '{}'", req.id)))?;
+    let dep =
+        DepId::parse(&req.id).ok_or_else(|| err400(format!("Unknown dependency '{}'", req.id)))?;
 
     let ctx = Context::from_process();
     let plan = plan_for(dep, &ctx).map_err(|e| err400(e.to_string()))?;
@@ -60,7 +67,9 @@ pub async fn install_dep(
     let sender = state.event_sender.clone();
     let id = req.id.clone();
     let result = blocking(move || {
-        let result = run_plan(&plan, |line| emit(&sender, "dep-install-progress", &id, None, line.to_string()));
+        let result = run_plan(&plan, |line| {
+            emit(&sender, "dep-install-progress", &id, None, line.to_string())
+        });
         let (status, message) = match &result {
             Ok(()) => (JobStatus::Completed, "Installed".to_string()),
             Err(e) => (JobStatus::Failed, e.to_string()),

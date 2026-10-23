@@ -1,13 +1,13 @@
-use crate::jobs::{Job, JobStatus, JobType, SharedJobQueue, JobControlRegistry};
 use crate::config::AppConfig;
+use crate::jobs::{Job, JobControlRegistry, JobStatus, JobType, SharedJobQueue};
 use crate::tools::tool_paths;
-use subforge_core::lines;
-use subforge_core::tools::mkvtoolnix;
-use subforge_core::translate;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
 use std::sync::Arc;
+use subforge_core::lines;
+use subforge_core::tools::mkvtoolnix;
+use subforge_core::translate;
 use tauri::{AppHandle, Emitter, State};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -106,11 +106,14 @@ pub async fn translate_subtitles(
             q.update_status(&job_id_clone, JobStatus::Running);
             q.update_progress(&job_id_clone, 5.0, Some("Extracting lines...".to_string()));
         }
-        let _ = app_clone.emit("job-progress", serde_json::json!({
-            "job_id": job_id_clone,
-            "progress": 5,
-            "message": "Extracting lines...",
-        }));
+        let _ = app_clone.emit(
+            "job-progress",
+            serde_json::json!({
+                "job_id": job_id_clone,
+                "progress": 5,
+                "message": "Extracting lines...",
+            }),
+        );
 
         let lines = match extract_lines_async(&req.input).await {
             Ok(l) => l,
@@ -118,11 +121,14 @@ pub async fn translate_subtitles(
                 let mut q = queue_clone.lock().unwrap();
                 q.update_status(&job_id_clone, JobStatus::Failed);
                 q.update_progress(&job_id_clone, 0.0, Some(e.to_string()));
-                let _ = app_clone.emit("job-completed", serde_json::json!({
-                    "job_id": job_id_clone,
-                    "status": "failed",
-                    "message": e.to_string(),
-                }));
+                let _ = app_clone.emit(
+                    "job-completed",
+                    serde_json::json!({
+                        "job_id": job_id_clone,
+                        "status": "failed",
+                        "message": e.to_string(),
+                    }),
+                );
                 let mut registry = controls_clone.lock().unwrap();
                 registry.remove(&job_id_clone);
                 return;
@@ -144,13 +150,20 @@ pub async fn translate_subtitles(
                 {
                     let mut q = queue_clone.lock().unwrap();
                     q.update_status(&job_id_clone, JobStatus::Cancelled);
-                    q.update_progress(&job_id_clone, 0.0, Some("Translation cancelled".to_string()));
+                    q.update_progress(
+                        &job_id_clone,
+                        0.0,
+                        Some("Translation cancelled".to_string()),
+                    );
                 }
-                let _ = app_clone.emit("job-completed", serde_json::json!({
-                    "job_id": job_id_clone,
-                    "status": "cancelled",
-                    "message": "Translation cancelled",
-                }));
+                let _ = app_clone.emit(
+                    "job-completed",
+                    serde_json::json!({
+                        "job_id": job_id_clone,
+                        "status": "cancelled",
+                        "message": "Translation cancelled",
+                    }),
+                );
                 let mut registry = controls_clone.lock().unwrap();
                 registry.remove(&job_id_clone);
                 return;
@@ -162,7 +175,16 @@ pub async fn translate_subtitles(
 
             {
                 let mut q = queue_clone.lock().unwrap();
-                q.update_progress(&job_id_clone, pct as f64, Some(format!("Translating lines {}-{}/{}", batch_start + 1, batch_end, total)));
+                q.update_progress(
+                    &job_id_clone,
+                    pct as f64,
+                    Some(format!(
+                        "Translating lines {}-{}/{}",
+                        batch_start + 1,
+                        batch_end,
+                        total
+                    )),
+                );
             }
             let _ = app_clone.emit("job-progress", serde_json::json!({
                 "job_id": job_id_clone,
@@ -172,36 +194,70 @@ pub async fn translate_subtitles(
 
             let result = match req.engine.as_str() {
                 "ollama" => {
-                    let host = req.host.clone().unwrap_or_else(|| "http://localhost:11434".to_string());
+                    let host = req
+                        .host
+                        .clone()
+                        .unwrap_or_else(|| "http://localhost:11434".to_string());
                     let model = req.model.clone().unwrap_or_else(|| "llama3".to_string());
-                    translate::translate_ollama(&host, &model, chunk, &req.source_lang, &req.target_lang).await
+                    translate::translate_ollama(
+                        &host,
+                        &model,
+                        chunk,
+                        &req.source_lang,
+                        &req.target_lang,
+                    )
+                    .await
                 }
                 "libretranslate" => {
-                    let host = req.host.clone().unwrap_or_else(|| "http://localhost:5000".to_string());
-                    translate::translate_libretranslate(&host, chunk, &req.source_lang, &req.target_lang).await
+                    let host = req
+                        .host
+                        .clone()
+                        .unwrap_or_else(|| "http://localhost:5000".to_string());
+                    translate::translate_libretranslate(
+                        &host,
+                        chunk,
+                        &req.source_lang,
+                        &req.target_lang,
+                    )
+                    .await
                 }
                 "deepl" => {
                     let key = req.api_key.clone().unwrap_or_default();
-                    translate::translate_deepl(&key, chunk, &req.source_lang, &req.target_lang).await
+                    translate::translate_deepl(&key, chunk, &req.source_lang, &req.target_lang)
+                        .await
                 }
                 "openai" => {
                     let key = req.api_key.clone().unwrap_or_default();
-                    let model = req.model.clone().unwrap_or_else(|| "gpt-4o-mini".to_string());
-                    translate::translate_openai(&key, &model, chunk, &req.source_lang, &req.target_lang).await
+                    let model = req
+                        .model
+                        .clone()
+                        .unwrap_or_else(|| "gpt-4o-mini".to_string());
+                    translate::translate_openai(
+                        &key,
+                        &model,
+                        chunk,
+                        &req.source_lang,
+                        &req.target_lang,
+                    )
+                    .await
                 }
                 "google" => {
                     let key = req.api_key.clone().unwrap_or_default();
-                    translate::translate_google(&key, chunk, &req.source_lang, &req.target_lang).await
+                    translate::translate_google(&key, chunk, &req.source_lang, &req.target_lang)
+                        .await
                 }
                 _ => {
                     let mut q = queue_clone.lock().unwrap();
                     q.update_status(&job_id_clone, JobStatus::Failed);
                     q.update_progress(&job_id_clone, 0.0, Some("Unknown engine".to_string()));
-                    let _ = app_clone.emit("job-completed", serde_json::json!({
-                        "job_id": job_id_clone,
-                        "status": "failed",
-                        "message": "Unknown translation engine",
-                    }));
+                    let _ = app_clone.emit(
+                        "job-completed",
+                        serde_json::json!({
+                            "job_id": job_id_clone,
+                            "status": "failed",
+                            "message": "Unknown translation engine",
+                        }),
+                    );
                     return;
                 }
             };
@@ -214,11 +270,14 @@ pub async fn translate_subtitles(
                     let mut q = queue_clone.lock().unwrap();
                     q.update_status(&job_id_clone, JobStatus::Failed);
                     q.update_progress(&job_id_clone, 0.0, Some(e.to_string()));
-                    let _ = app_clone.emit("job-completed", serde_json::json!({
-                        "job_id": job_id_clone,
-                        "status": "failed",
-                        "message": e.to_string(),
-                    }));
+                    let _ = app_clone.emit(
+                        "job-completed",
+                        serde_json::json!({
+                            "job_id": job_id_clone,
+                            "status": "failed",
+                            "message": e.to_string(),
+                        }),
+                    );
                     return;
                 }
             }
@@ -236,23 +295,33 @@ pub async fn translate_subtitles(
         // Rebuild subtitle file
         {
             let mut q = queue_clone.lock().unwrap();
-            q.update_progress(&job_id_clone, 95.0, Some("Rebuilding subtitle file...".to_string()));
+            q.update_progress(
+                &job_id_clone,
+                95.0,
+                Some("Rebuilding subtitle file...".to_string()),
+            );
         }
-        let _ = app_clone.emit("job-progress", serde_json::json!({
-            "job_id": job_id_clone,
-            "progress": 95,
-            "message": "Rebuilding subtitle file...",
-        }));
+        let _ = app_clone.emit(
+            "job-progress",
+            serde_json::json!({
+                "job_id": job_id_clone,
+                "progress": 95,
+                "message": "Rebuilding subtitle file...",
+            }),
+        );
 
         if let Err(e) = rebuild_lines_async(&req.input, translated, &req.output).await {
             let mut q = queue_clone.lock().unwrap();
             q.update_status(&job_id_clone, JobStatus::Failed);
             q.update_progress(&job_id_clone, 0.0, Some(e.to_string()));
-            let _ = app_clone.emit("job-completed", serde_json::json!({
-                "job_id": job_id_clone,
-                "status": "failed",
-                "message": e.to_string(),
-            }));
+            let _ = app_clone.emit(
+                "job-completed",
+                serde_json::json!({
+                    "job_id": job_id_clone,
+                    "status": "failed",
+                    "message": e.to_string(),
+                }),
+            );
             let mut registry = controls_clone.lock().unwrap();
             registry.remove(&job_id_clone);
             return;
@@ -261,13 +330,20 @@ pub async fn translate_subtitles(
         {
             let mut q = queue_clone.lock().unwrap();
             q.update_status(&job_id_clone, JobStatus::Completed);
-            q.update_progress(&job_id_clone, 100.0, Some(format!("Translated {} lines", total)));
+            q.update_progress(
+                &job_id_clone,
+                100.0,
+                Some(format!("Translated {} lines", total)),
+            );
         }
-        let _ = app_clone.emit("job-completed", serde_json::json!({
-            "job_id": job_id_clone,
-            "status": "completed",
-            "message": format!("Translated {} lines", total),
-        }));
+        let _ = app_clone.emit(
+            "job-completed",
+            serde_json::json!({
+                "job_id": job_id_clone,
+                "status": "completed",
+                "message": format!("Translated {} lines", total),
+            }),
+        );
 
         let mut registry = controls_clone.lock().unwrap();
         registry.remove(&job_id_clone);
@@ -312,8 +388,7 @@ async fn rebuild_lines_async(
     let (original, output) = (PathBuf::from(original), PathBuf::from(output));
     let rtl_fix = AppConfig::load().fix_rtl_punctuation;
     tokio::task::spawn_blocking(move || {
-        lines::rebuild_lines(&original, &translations, &output, rtl_fix)
-            .map_err(|e| e.to_string())
+        lines::rebuild_lines(&original, &translations, &output, rtl_fix).map_err(|e| e.to_string())
     })
     .await
     .map_err(|e| e.to_string())?
@@ -409,15 +484,25 @@ pub async fn run_translation_pipeline(
             .unwrap_or_else(|| PathBuf::from("."));
 
         // Stage 1: extract
-        emit_stage(&app_clone, &job_id_clone, "extracting", 5, "Extracting subtitle track...");
+        emit_stage(
+            &app_clone,
+            &job_id_clone,
+            "extracting",
+            5,
+            "Extracting subtitle track...",
+        );
         let extracted_path = std::env::temp_dir()
             .join(format!("subforge_pipeline_{}_extracted.srt", job_id_clone))
             .to_string_lossy()
             .to_string();
 
         let extract_result = {
-            let (paths, video, track_id, out) =
-                (paths.clone(), req.video_path.clone(), req.track_id, extracted_path.clone());
+            let (paths, video, track_id, out) = (
+                paths.clone(),
+                req.video_path.clone(),
+                req.track_id,
+                extracted_path.clone(),
+            );
             tokio::task::spawn_blocking(move || {
                 mkvtoolnix::extract_subtitle_track(&paths, &video, track_id, &out)
             })
@@ -430,7 +515,13 @@ pub async fn run_translation_pipeline(
         }
 
         // Stage 2: translate
-        emit_stage(&app_clone, &job_id_clone, "translating", 15, "Extracting lines...");
+        emit_stage(
+            &app_clone,
+            &job_id_clone,
+            "translating",
+            15,
+            "Extracting lines...",
+        );
         let lines = match extract_lines_async(&extracted_path).await {
             Ok(l) => l,
             Err(e) => {
@@ -452,14 +543,21 @@ pub async fn run_translation_pipeline(
                 {
                     let mut q = queue_clone.lock().unwrap();
                     q.update_status(&job_id_clone, JobStatus::Cancelled);
-                    q.update_progress(&job_id_clone, 0.0, Some("Translation cancelled".to_string()));
+                    q.update_progress(
+                        &job_id_clone,
+                        0.0,
+                        Some("Translation cancelled".to_string()),
+                    );
                 }
-                let _ = app_clone.emit("job-completed", serde_json::json!({
-                    "job_id": job_id_clone,
-                    "stage": "error",
-                    "status": "cancelled",
-                    "message": "Translation cancelled",
-                }));
+                let _ = app_clone.emit(
+                    "job-completed",
+                    serde_json::json!({
+                        "job_id": job_id_clone,
+                        "stage": "error",
+                        "status": "cancelled",
+                        "message": "Translation cancelled",
+                    }),
+                );
                 let mut registry = controls_clone.lock().unwrap();
                 registry.remove(&job_id_clone);
                 return;
@@ -473,31 +571,67 @@ pub async fn run_translation_pipeline(
                 &job_id_clone,
                 "translating",
                 pct,
-                &format!("Translating lines {}-{}/{}", batch_start + 1, batch_end, total),
+                &format!(
+                    "Translating lines {}-{}/{}",
+                    batch_start + 1,
+                    batch_end,
+                    total
+                ),
             );
 
             let result = match req.engine.as_str() {
                 "ollama" => {
-                    let host = req.host.clone().unwrap_or_else(|| "http://localhost:11434".to_string());
+                    let host = req
+                        .host
+                        .clone()
+                        .unwrap_or_else(|| "http://localhost:11434".to_string());
                     let model = req.model.clone().unwrap_or_else(|| "llama3".to_string());
-                    translate::translate_ollama(&host, &model, chunk, &req.source_lang, &req.target_lang).await
+                    translate::translate_ollama(
+                        &host,
+                        &model,
+                        chunk,
+                        &req.source_lang,
+                        &req.target_lang,
+                    )
+                    .await
                 }
                 "libretranslate" => {
-                    let host = req.host.clone().unwrap_or_else(|| "http://localhost:5000".to_string());
-                    translate::translate_libretranslate(&host, chunk, &req.source_lang, &req.target_lang).await
+                    let host = req
+                        .host
+                        .clone()
+                        .unwrap_or_else(|| "http://localhost:5000".to_string());
+                    translate::translate_libretranslate(
+                        &host,
+                        chunk,
+                        &req.source_lang,
+                        &req.target_lang,
+                    )
+                    .await
                 }
                 "deepl" => {
                     let key = req.api_key.clone().unwrap_or_default();
-                    translate::translate_deepl(&key, chunk, &req.source_lang, &req.target_lang).await
+                    translate::translate_deepl(&key, chunk, &req.source_lang, &req.target_lang)
+                        .await
                 }
                 "openai" => {
                     let key = req.api_key.clone().unwrap_or_default();
-                    let model = req.model.clone().unwrap_or_else(|| "gpt-4o-mini".to_string());
-                    translate::translate_openai(&key, &model, chunk, &req.source_lang, &req.target_lang).await
+                    let model = req
+                        .model
+                        .clone()
+                        .unwrap_or_else(|| "gpt-4o-mini".to_string());
+                    translate::translate_openai(
+                        &key,
+                        &model,
+                        chunk,
+                        &req.source_lang,
+                        &req.target_lang,
+                    )
+                    .await
                 }
                 "google" => {
                     let key = req.api_key.clone().unwrap_or_default();
-                    translate::translate_google(&key, chunk, &req.source_lang, &req.target_lang).await
+                    translate::translate_google(&key, chunk, &req.source_lang, &req.target_lang)
+                        .await
                 }
                 _ => {
                     let _ = fs::remove_file(&extracted_path);
@@ -526,7 +660,13 @@ pub async fn run_translation_pipeline(
             .to_string_lossy()
             .to_string();
 
-        emit_stage(&app_clone, &job_id_clone, "translating", 82, "Rebuilding subtitle file...");
+        emit_stage(
+            &app_clone,
+            &job_id_clone,
+            "translating",
+            82,
+            "Rebuilding subtitle file...",
+        );
         if let Err(e) = rebuild_lines_async(&extracted_path, translated, &translated_srt).await {
             let _ = fs::remove_file(&extracted_path);
             fail!(e);
@@ -539,21 +679,34 @@ pub async fn run_translation_pipeline(
             {
                 let mut q = queue_clone.lock().unwrap();
                 q.update_status(&job_id_clone, JobStatus::Cancelled);
-                q.update_progress(&job_id_clone, 0.0, Some("Translation cancelled".to_string()));
+                q.update_progress(
+                    &job_id_clone,
+                    0.0,
+                    Some("Translation cancelled".to_string()),
+                );
             }
-            let _ = app_clone.emit("job-completed", serde_json::json!({
-                "job_id": job_id_clone,
-                "stage": "error",
-                "status": "cancelled",
-                "message": "Translation cancelled",
-            }));
+            let _ = app_clone.emit(
+                "job-completed",
+                serde_json::json!({
+                    "job_id": job_id_clone,
+                    "stage": "error",
+                    "status": "cancelled",
+                    "message": "Translation cancelled",
+                }),
+            );
             let mut registry = controls_clone.lock().unwrap();
             registry.remove(&job_id_clone);
             return;
         }
 
         let output_path = if req.auto_merge {
-            emit_stage(&app_clone, &job_id_clone, "merging", 90, "Merging translated subtitle into video...");
+            emit_stage(
+                &app_clone,
+                &job_id_clone,
+                "merging",
+                90,
+                "Merging translated subtitle into video...",
+            );
             let merged_path = video_dir
                 .join(format!("{}.{}.mkv", video_stem, req.target_lang))
                 .to_string_lossy()
@@ -565,14 +718,29 @@ pub async fn run_translation_pipeline(
                 hearing_impaired: req.hearing_impaired,
                 make_default: req.set_default_subtitle,
             };
-            if let Err(e) = mkvtoolnix::merge_subtitles_async(&paths, &req.video_path, &[sub_spec], &merged_path, Some(control.token()), |pct| {
-                let merge_pct = 90.0 + (pct * 0.1);
-                {
-                    let mut q = queue_clone.lock().unwrap();
-                    q.update_progress(&job_id_clone, merge_pct, None);
-                }
-                emit_stage(&app_clone, &job_id_clone, "merging", merge_pct as i32, &format!("Merging... {}%", pct as i32));
-            }).await {
+            if let Err(e) = mkvtoolnix::merge_subtitles_async(
+                &paths,
+                &req.video_path,
+                &[sub_spec],
+                &merged_path,
+                Some(control.token()),
+                |pct| {
+                    let merge_pct = 90.0 + (pct * 0.1);
+                    {
+                        let mut q = queue_clone.lock().unwrap();
+                        q.update_progress(&job_id_clone, merge_pct, None);
+                    }
+                    emit_stage(
+                        &app_clone,
+                        &job_id_clone,
+                        "merging",
+                        merge_pct as i32,
+                        &format!("Merging... {}%", pct as i32),
+                    );
+                },
+            )
+            .await
+            {
                 fail!(e.to_string());
             }
             merged_path
@@ -583,7 +751,11 @@ pub async fn run_translation_pipeline(
         {
             let mut q = queue_clone.lock().unwrap();
             q.update_status(&job_id_clone, JobStatus::Completed);
-            q.update_progress(&job_id_clone, 100.0, Some(format!("Saved to {}", output_path)));
+            q.update_progress(
+                &job_id_clone,
+                100.0,
+                Some(format!("Saved to {}", output_path)),
+            );
         }
         let _ = app_clone.emit(
             "job-completed",

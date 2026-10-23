@@ -1,8 +1,8 @@
 use super::blocking;
 use crate::tools::tool_paths;
+use serde::{Deserialize, Serialize};
 use subforge_core::tools::ffmpeg::{self, FfprobeStream};
 use subforge_core::tools::mkvtoolnix;
-use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AudioTrackInfo {
@@ -29,12 +29,11 @@ impl From<&FfprobeStream> for AudioTrackInfo {
     }
 }
 
-
 #[tauri::command]
 pub async fn list_audio_tracks(file_path: String) -> Result<Vec<AudioTrackInfo>, String> {
     blocking(move || {
-        let streams = ffmpeg::probe_audio_tracks(&tool_paths(), &file_path)
-            .map_err(|e| e.to_string())?;
+        let streams =
+            ffmpeg::probe_audio_tracks(&tool_paths(), &file_path).map_err(|e| e.to_string())?;
         Ok(streams.iter().map(|s| s.into()).collect())
     })
     .await
@@ -74,10 +73,7 @@ pub async fn merge_audio_track(
 }
 
 #[tauri::command]
-pub async fn remove_audio_tracks(
-    file_path: String,
-    output_path: String,
-) -> Result<(), String> {
+pub async fn remove_audio_tracks(file_path: String, output_path: String) -> Result<(), String> {
     blocking(move || {
         mkvtoolnix::remove_all_audio(&tool_paths(), &file_path, &output_path)
             .map_err(|e| e.to_string())

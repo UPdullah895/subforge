@@ -1,13 +1,13 @@
+pub mod hide;
 pub mod model;
 pub mod platform;
-pub mod hide;
 
+pub use hide::HideWindow;
 pub use model::{DepId, DepReport, DepSpec, DepState, DepStatus, Severity};
 pub use platform::{detect_package_manager, Os, PackageManager, SystemPackage};
-pub use hide::HideWindow;
+pub mod detect;
 #[cfg(test)]
 pub(crate) mod testutil;
-pub mod detect;
 
 pub use detect::{find_executable, find_executables, tool_version, SearchEnv};
 pub mod context;

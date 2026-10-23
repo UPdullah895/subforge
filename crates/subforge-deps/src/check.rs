@@ -4,7 +4,10 @@ use crate::install::plan_for;
 use crate::model::{DepId, DepReport, DepState, DepStatus};
 
 pub fn check_all(ctx: &Context) -> DepReport {
-    let items = DepId::ALL.into_iter().map(|id| check_one(ctx, id)).collect();
+    let items = DepId::ALL
+        .into_iter()
+        .map(|id| check_one(ctx, id))
+        .collect();
     DepReport::new(ctx.os.as_str().to_string(), items)
 }
 
@@ -14,12 +17,20 @@ fn check_one(ctx: &Context, id: DepId) -> DepStatus {
     let (state, path, version) = match ctx.find_executable(id.as_str()) {
         Some(p) => {
             let version = tool_version(&p, id.version_arg());
-            (DepState::Ok, Some(p.to_string_lossy().into_owned()), version)
+            (
+                DepState::Ok,
+                Some(p.to_string_lossy().into_owned()),
+                version,
+            )
         }
         None => (DepState::Missing, None, None),
     };
 
-    let plan = if state == DepState::Ok { None } else { plan_for(id, ctx).ok() };
+    let plan = if state == DepState::Ok {
+        None
+    } else {
+        plan_for(id, ctx).ok()
+    };
 
     DepStatus {
         id,
@@ -47,7 +58,10 @@ mod tests {
     fn ctx(dir: &std::path::Path) -> Context {
         Context {
             os: Os::Linux,
-            env: SearchEnv { dirs: vec![dir.to_path_buf()], os: Os::Linux },
+            env: SearchEnv {
+                dirs: vec![dir.to_path_buf()],
+                os: Os::Linux,
+            },
             package_manager: Some(PackageManager::Pacman),
             has_pkexec: true,
         }
@@ -95,7 +109,10 @@ mod tests {
         assert!(report.has_missing_required);
         let ff = item(&report, DepId::Ffmpeg);
         assert_eq!(ff.state, DepState::Missing);
-        assert_eq!(ff.install_command.as_deref(), Some("sudo pacman -S --needed --noconfirm ffmpeg"));
+        assert_eq!(
+            ff.install_command.as_deref(),
+            Some("sudo pacman -S --needed --noconfirm ffmpeg")
+        );
         assert!(ff.can_auto_install);
         assert_eq!(ff.download_url, "https://ffmpeg.org/download.html");
     }
@@ -104,7 +121,9 @@ mod tests {
     fn report_has_no_python_entries() {
         let tmp = tempdir().unwrap();
         install_all_tools(tmp.path());
-        let json = serde_json::to_string(&check_all(&ctx(tmp.path()))).unwrap().to_lowercase();
+        let json = serde_json::to_string(&check_all(&ctx(tmp.path())))
+            .unwrap()
+            .to_lowercase();
         for word in ["python", "pysubs2", "whisper", "venv"] {
             assert!(!json.contains(word), "report mentions {word}: {json}");
         }

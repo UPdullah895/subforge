@@ -33,7 +33,9 @@ fn describe_code(code: Option<i32>) -> String {
 /// pkexec exits 126 when the user dismisses the prompt / is not authorised and
 /// 127 when authorisation could not be obtained; report those as a denial.
 fn classify_failure(program: &str, command: String, code: Option<i32>) -> InstallError {
-    let is_pkexec = Path::new(program).file_name().is_some_and(|n| n == "pkexec");
+    let is_pkexec = Path::new(program)
+        .file_name()
+        .is_some_and(|n| n == "pkexec");
     if is_pkexec && matches!(code, Some(126 | 127)) {
         InstallError::AuthorizationDenied
     } else {
@@ -59,7 +61,9 @@ struct Cmd {
 
 pub fn plan_for(id: DepId, ctx: &Context) -> Result<InstallPlan, InstallError> {
     match id {
-        DepId::Mkvmerge | DepId::Mkvextract | DepId::Mkvpropedit => system_plan(id, SystemPackage::Mkvtoolnix, ctx),
+        DepId::Mkvmerge | DepId::Mkvextract | DepId::Mkvpropedit => {
+            system_plan(id, SystemPackage::Mkvtoolnix, ctx)
+        }
         DepId::Ffmpeg | DepId::Ffprobe => system_plan(id, SystemPackage::Ffmpeg, ctx),
     }
 }
@@ -69,7 +73,10 @@ fn system_plan(id: DepId, pkg: SystemPackage, ctx: &Context) -> Result<InstallPl
     let cmds = pm
         .install_commands(pkg)
         .into_iter()
-        .map(|argv| Cmd { argv, elevated: pm.needs_elevation() })
+        .map(|argv| Cmd {
+            argv,
+            elevated: pm.needs_elevation(),
+        })
         .collect();
     Ok(finalize(id, cmds, ctx))
 }
@@ -88,7 +95,12 @@ fn finalize(id: DepId, cmds: Vec<Cmd>, ctx: &Context) -> InstallPlan {
     let mut shown = Vec::new();
 
     for cmd in cmds {
-        let line = cmd.argv.iter().map(|a| quote(a)).collect::<Vec<_>>().join(" ");
+        let line = cmd
+            .argv
+            .iter()
+            .map(|a| quote(a))
+            .collect::<Vec<_>>()
+            .join(" ");
         if cmd.elevated && ctx.os == Os::Linux {
             shown.push(format!("sudo {line}"));
             if ctx.has_pkexec {
@@ -97,7 +109,11 @@ fn finalize(id: DepId, cmds: Vec<Cmd>, ctx: &Context) -> InstallPlan {
                 if let Some(program) = rest.next() {
                     // pkexec runs with a minimal PATH; give it the absolute program.
                     let resolved = ctx.find_executable(&program);
-                    argv.push(resolved.map(|p| p.to_string_lossy().into_owned()).unwrap_or(program));
+                    argv.push(
+                        resolved
+                            .map(|p| p.to_string_lossy().into_owned())
+                            .unwrap_or(program),
+                    );
                 }
                 argv.extend(rest);
                 steps.push(argv);
@@ -111,14 +127,21 @@ fn finalize(id: DepId, cmds: Vec<Cmd>, ctx: &Context) -> InstallPlan {
         }
     }
 
-    InstallPlan { dep: id, steps, display_command: shown.join(" && "), auto_runnable }
+    InstallPlan {
+        dep: id,
+        steps,
+        display_command: shown.join(" && "),
+        auto_runnable,
+    }
 }
 
 /// Runs every step, passing each output line (stdout and stderr) to `on_line`.
 /// Stops at the first failing step.
 pub fn run_plan(plan: &InstallPlan, mut on_line: impl FnMut(&str)) -> Result<(), InstallError> {
     if !plan.auto_runnable {
-        return Err(InstallError::NeedsManualInstall(plan.display_command.clone()));
+        return Err(InstallError::NeedsManualInstall(
+            plan.display_command.clone(),
+        ));
     }
     for step in &plan.steps {
         on_line(&format!("$ {}", step.join(" ")));
@@ -181,7 +204,9 @@ fn run_step(step: &[String], on_line: &mut impl FnMut(&str)) -> Result<(), Insta
         let _ = r.join();
     }
 
-    let status = child.wait().map_err(|e| InstallError::Spawn(e.to_string()))?;
+    let status = child
+        .wait()
+        .map_err(|e| InstallError::Spawn(e.to_string()))?;
     if status.success() {
         Ok(())
     } else {
@@ -206,25 +231,47 @@ mod tests {
 
     #[test]
     fn pacman_plan_runs_through_pkexec_and_displays_sudo() {
-        let plan = plan_for(DepId::Mkvmerge, &ctx(Os::Linux, Some(PackageManager::Pacman), true)).unwrap();
+        let plan = plan_for(
+            DepId::Mkvmerge,
+            &ctx(Os::Linux, Some(PackageManager::Pacman), true),
+        )
+        .unwrap();
         assert_eq!(
             plan.steps,
-            vec![vec!["pkexec", "pacman", "-S", "--needed", "--noconfirm", "mkvtoolnix-cli"]]
+            vec![vec![
+                "pkexec",
+                "pacman",
+                "-S",
+                "--needed",
+                "--noconfirm",
+                "mkvtoolnix-cli"
+            ]]
         );
-        assert_eq!(plan.display_command, "sudo pacman -S --needed --noconfirm mkvtoolnix-cli");
+        assert_eq!(
+            plan.display_command,
+            "sudo pacman -S --needed --noconfirm mkvtoolnix-cli"
+        );
         assert!(plan.auto_runnable);
     }
 
     #[test]
     fn without_pkexec_the_plan_is_display_only() {
-        let plan = plan_for(DepId::Ffmpeg, &ctx(Os::Linux, Some(PackageManager::Apt), false)).unwrap();
+        let plan = plan_for(
+            DepId::Ffmpeg,
+            &ctx(Os::Linux, Some(PackageManager::Apt), false),
+        )
+        .unwrap();
         assert!(!plan.auto_runnable);
         assert_eq!(plan.display_command, "sudo apt-get install -y ffmpeg");
     }
 
     #[test]
     fn winget_needs_no_elevation_prefix() {
-        let plan = plan_for(DepId::Ffprobe, &ctx(Os::Windows, Some(PackageManager::Winget), false)).unwrap();
+        let plan = plan_for(
+            DepId::Ffprobe,
+            &ctx(Os::Windows, Some(PackageManager::Winget), false),
+        )
+        .unwrap();
         assert!(plan.auto_runnable);
         assert_eq!(plan.steps[0][0], "winget");
         assert!(!plan.display_command.starts_with("sudo"));
@@ -248,20 +295,38 @@ mod tests {
     #[test]
     fn classify_failure_maps_pkexec_denial() {
         let c = |prog: &str, code| classify_failure(prog, "cmd".into(), code);
-        assert!(matches!(c("pkexec", Some(126)), InstallError::AuthorizationDenied));
-        assert!(matches!(c("pkexec", Some(127)), InstallError::AuthorizationDenied));
-        assert!(matches!(c("pkexec", Some(1)), InstallError::StepFailed { .. }));
-        assert!(matches!(c("sh", Some(126)), InstallError::StepFailed { .. }));
+        assert!(matches!(
+            c("pkexec", Some(126)),
+            InstallError::AuthorizationDenied
+        ));
+        assert!(matches!(
+            c("pkexec", Some(127)),
+            InstallError::AuthorizationDenied
+        ));
+        assert!(matches!(
+            c("pkexec", Some(1)),
+            InstallError::StepFailed { .. }
+        ));
+        assert!(matches!(
+            c("sh", Some(126)),
+            InstallError::StepFailed { .. }
+        ));
         assert!(matches!(c("pkexec", None), InstallError::StepFailed { .. }));
     }
 
     #[test]
     fn step_failed_message_shows_plain_exit_code() {
-        let e = InstallError::StepFailed { command: "x".into(), code: Some(3) };
+        let e = InstallError::StepFailed {
+            command: "x".into(),
+            code: Some(3),
+        };
         let msg = e.to_string();
         assert!(msg.contains("exit code 3"), "{msg}");
         assert!(!msg.contains("Some"), "{msg}");
-        let e = InstallError::StepFailed { command: "x".into(), code: None };
+        let e = InstallError::StepFailed {
+            command: "x".into(),
+            code: None,
+        };
         assert!(e.to_string().contains("unknown exit code"));
     }
 
@@ -275,7 +340,11 @@ mod tests {
         fn run_plan_streams_stdout_and_stderr() {
             let plan = InstallPlan {
                 dep: DepId::Ffmpeg,
-                steps: vec![vec!["sh".into(), "-c".into(), "echo out-line; echo err-line 1>&2".into()]],
+                steps: vec![vec![
+                    "sh".into(),
+                    "-c".into(),
+                    "echo out-line; echo err-line 1>&2".into(),
+                ]],
                 display_command: String::new(),
                 auto_runnable: true,
             };
@@ -298,7 +367,10 @@ mod tests {
             };
             let mut lines = Vec::new();
             let err = run_plan(&plan, |l| lines.push(l.to_string())).unwrap_err();
-            assert!(matches!(err, InstallError::StepFailed { code: Some(3), .. }));
+            assert!(matches!(
+                err,
+                InstallError::StepFailed { code: Some(3), .. }
+            ));
             assert!(!lines.iter().any(|l| l == "should-not-run"));
         }
 
@@ -310,14 +382,21 @@ mod tests {
                 display_command: String::new(),
                 auto_runnable: true,
             };
-            assert!(matches!(run_plan(&plan, |_| {}).unwrap_err(), InstallError::Spawn(_)));
+            assert!(matches!(
+                run_plan(&plan, |_| {}).unwrap_err(),
+                InstallError::Spawn(_)
+            ));
         }
 
         #[test]
         fn run_plan_survives_non_utf8_output() {
             let plan = InstallPlan {
                 dep: DepId::Ffmpeg,
-                steps: vec![vec!["sh".into(), "-c".into(), "printf 'bad\\377byte\\nsecond-line\\n'".into()]],
+                steps: vec![vec![
+                    "sh".into(),
+                    "-c".into(),
+                    "printf 'bad\\377byte\\nsecond-line\\n'".into(),
+                ]],
                 display_command: String::new(),
                 auto_runnable: true,
             };
@@ -349,7 +428,10 @@ mod tests {
             let pacman = make_script(&bin, "pacman", "exit 0");
             let c = Context {
                 os: Os::Linux,
-                env: SearchEnv { dirs: vec![bin], os: Os::Linux },
+                env: SearchEnv {
+                    dirs: vec![bin],
+                    os: Os::Linux,
+                },
                 package_manager: Some(PackageManager::Pacman),
                 has_pkexec: true,
             };

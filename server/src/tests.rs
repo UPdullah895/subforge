@@ -105,17 +105,28 @@ async fn save_config_never_lowers_config_version() {
 #[tokio::test]
 async fn whisper_info_and_catalog_routes() {
     let res = test_app()
-        .oneshot(Request::get("/api/transcribe/info").body(Body::empty()).unwrap())
+        .oneshot(
+            Request::get("/api/transcribe/info")
+                .body(Body::empty())
+                .unwrap(),
+        )
         .await
         .unwrap();
     assert_eq!(res.status(), StatusCode::OK);
     let info = body_json(res).await;
-    assert!(info["engine"].as_str().unwrap().starts_with("whisper.cpp "), "{info}");
+    assert!(
+        info["engine"].as_str().unwrap().starts_with("whisper.cpp "),
+        "{info}"
+    );
     assert!(info["gpu"].is_null(), "{info}");
     assert_eq!(info["devices"], serde_json::json!(["auto", "cpu"]));
 
     let res = test_app()
-        .oneshot(Request::post("/api/transcribe/catalog").body(Body::empty()).unwrap())
+        .oneshot(
+            Request::post("/api/transcribe/catalog")
+                .body(Body::empty())
+                .unwrap(),
+        )
         .await
         .unwrap();
     assert_eq!(res.status(), StatusCode::OK);
@@ -143,5 +154,8 @@ async fn whisper_download_rejects_unknown_model() {
         .unwrap();
     assert_eq!(res.status(), StatusCode::BAD_REQUEST);
     let body = body_json(res).await;
-    assert!(body["error"].as_str().unwrap().contains("large-v9"), "{body}");
+    assert!(
+        body["error"].as_str().unwrap().contains("large-v9"),
+        "{body}"
+    );
 }

@@ -26,14 +26,10 @@ pub async fn search_series(
     let results = match req.provider.as_str() {
         "tmdb" => {
             let config = AppConfig::load();
-            let api_key = config
-                .tmdb_api_key
-                .filter(|k| !k.is_empty())
-                .ok_or((
-                    StatusCode::UNPROCESSABLE_ENTITY,
-                    "TMDB API key not configured. Add one in Settings > API & Providers."
-                        .to_string(),
-                ))?;
+            let api_key = config.tmdb_api_key.filter(|k| !k.is_empty()).ok_or((
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "TMDB API key not configured. Add one in Settings > API & Providers.".to_string(),
+            ))?;
             TmdbClient::new(api_key)
                 .search_tv(&req.query)
                 .await
@@ -43,7 +39,12 @@ pub async fn search_series(
             .search_shows(&req.query)
             .await
             .map_err(|e| (StatusCode::BAD_GATEWAY, e.to_string()))?,
-        other => return Err((StatusCode::BAD_REQUEST, format!("Unknown provider: {other}"))),
+        other => {
+            return Err((
+                StatusCode::BAD_REQUEST,
+                format!("Unknown provider: {other}"),
+            ))
+        }
     };
     Ok(Json(matcher::rank_matches(&req.query, &results)))
 }
@@ -64,14 +65,10 @@ pub async fn get_episodes(
     let episodes = match req.provider.as_str() {
         "tmdb" => {
             let config = AppConfig::load();
-            let api_key = config
-                .tmdb_api_key
-                .filter(|k| !k.is_empty())
-                .ok_or((
-                    StatusCode::UNPROCESSABLE_ENTITY,
-                    "TMDB API key not configured. Add one in Settings > API & Providers."
-                        .to_string(),
-                ))?;
+            let api_key = config.tmdb_api_key.filter(|k| !k.is_empty()).ok_or((
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "TMDB API key not configured. Add one in Settings > API & Providers.".to_string(),
+            ))?;
             TmdbClient::new(api_key)
                 .get_all_episodes(&req.series_id)
                 .await
@@ -81,7 +78,12 @@ pub async fn get_episodes(
             .get_episodes(&req.series_id)
             .await
             .map_err(|e| (StatusCode::BAD_GATEWAY, e.to_string()))?,
-        other => return Err((StatusCode::BAD_REQUEST, format!("Unknown provider: {other}"))),
+        other => {
+            return Err((
+                StatusCode::BAD_REQUEST,
+                format!("Unknown provider: {other}"),
+            ))
+        }
     };
 
     let _ = cache::save(&req.provider, &req.series_id, &episodes);
@@ -137,11 +139,7 @@ pub async fn preview_rename(Json(req): Json<PreviewRequest>) -> Json<Vec<RenameP
 }
 
 fn split_stem_ext(path: &str) -> (String, String) {
-    let name = path
-        .rsplit(['/', '\\'])
-        .next()
-        .unwrap_or(path)
-        .to_string();
+    let name = path.rsplit(['/', '\\']).next().unwrap_or(path).to_string();
     match name.rfind('.') {
         Some(idx) if idx > 0 => (name[..idx].to_string(), name[idx + 1..].to_string()),
         _ => (name, String::new()),

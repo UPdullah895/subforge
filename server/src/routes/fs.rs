@@ -43,17 +43,26 @@ pub struct FsRoot {
 fn roots() -> Vec<FsRoot> {
     let mut roots = Vec::new();
     if let Some(home) = dirs::home_dir() {
-        roots.push(FsRoot { name: "Home".into(), path: home.to_string_lossy().into() });
+        roots.push(FsRoot {
+            name: "Home".into(),
+            path: home.to_string_lossy().into(),
+        });
     }
     #[cfg(windows)]
     for letter in b'A'..=b'Z' {
         let drive = format!("{}:\\", letter as char);
         if std::path::Path::new(&drive).exists() {
-            roots.push(FsRoot { name: drive.clone(), path: drive });
+            roots.push(FsRoot {
+                name: drive.clone(),
+                path: drive,
+            });
         }
     }
     #[cfg(not(windows))]
-    roots.push(FsRoot { name: "/".into(), path: "/".into() });
+    roots.push(FsRoot {
+        name: "/".into(),
+        path: "/".into(),
+    });
     roots
 }
 
@@ -79,7 +88,10 @@ fn list(query: ListQuery) -> Result<FsListing, (StatusCode, String)> {
         .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
 
     let read = std::fs::read_dir(&dir).map_err(|e| {
-        (StatusCode::FORBIDDEN, format!("Cannot open {}: {e}", dir.display()))
+        (
+            StatusCode::FORBIDDEN,
+            format!("Cannot open {}: {e}", dir.display()),
+        )
     })?;
 
     let mut entries: Vec<FsEntry> = Vec::new();
@@ -90,7 +102,9 @@ fn list(query: ListQuery) -> Result<FsListing, (StatusCode, String)> {
             continue;
         }
         // `metadata` follows symlinks; broken links are skipped.
-        let Ok(meta) = std::fs::metadata(entry.path()) else { continue };
+        let Ok(meta) = std::fs::metadata(entry.path()) else {
+            continue;
+        };
         if entries.len() >= MAX_ENTRIES {
             truncated = true;
             break;

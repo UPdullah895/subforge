@@ -132,7 +132,11 @@ impl DepReport {
         let has_missing_required = items
             .iter()
             .any(|i| i.severity == Severity::Required && i.state != DepState::Ok);
-        Self { os, items, has_missing_required }
+        Self {
+            os,
+            items,
+            has_missing_required,
+        }
     }
 }
 
@@ -164,11 +168,17 @@ mod tests {
     #[test]
     fn report_has_no_python_entries() {
         let ids: Vec<&str> = DepId::ALL.iter().map(|i| i.as_str()).collect();
-        assert_eq!(ids, ["mkvmerge", "mkvextract", "mkvpropedit", "ffmpeg", "ffprobe"]);
+        assert_eq!(
+            ids,
+            ["mkvmerge", "mkvextract", "mkvpropedit", "ffmpeg", "ffprobe"]
+        );
         for id in DepId::ALL {
             let s = id.spec();
             let text = format!("{} {} {}", s.label, s.purpose, s.download_url).to_lowercase();
-            assert!(!text.contains("python") && !text.contains("pysubs2") && !text.contains("whisper"), "{text}");
+            assert!(
+                !text.contains("python") && !text.contains("pysubs2") && !text.contains("whisper"),
+                "{text}"
+            );
         }
         assert_eq!(DepId::parse("python"), None);
         assert_eq!(DepId::parse("pysubs2"), None);
@@ -195,7 +205,10 @@ mod tests {
     fn report_flags_missing_required_only() {
         let optional_missing = DepReport::new(
             "linux".into(),
-            vec![status(DepId::Ffmpeg, DepState::Ok), status(DepId::Mkvpropedit, DepState::Missing)],
+            vec![
+                status(DepId::Ffmpeg, DepState::Ok),
+                status(DepId::Mkvpropedit, DepState::Missing),
+            ],
         );
         assert!(!optional_missing.has_missing_required);
 
@@ -205,7 +218,10 @@ mod tests {
         );
         assert!(required_missing.has_missing_required);
 
-        let outdated = DepReport::new("linux".into(), vec![status(DepId::Ffprobe, DepState::Outdated)]);
+        let outdated = DepReport::new(
+            "linux".into(),
+            vec![status(DepId::Ffprobe, DepState::Outdated)],
+        );
         assert!(outdated.has_missing_required);
     }
 }

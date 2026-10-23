@@ -1,13 +1,13 @@
 use crate::config::AppConfig;
 use crate::tools::tool_paths;
-use subforge_core::lines;
-use subforge_core::tools::mkvtoolnix;
-use subforge_core::translate;
 use crate::{jobs, AppState};
 use axum::{extract::Json, extract::State, http::StatusCode};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
+use subforge_core::lines;
+use subforge_core::tools::mkvtoolnix;
+use subforge_core::translate;
 
 /// Host precedence: explicit request value, then the saved provider config,
 /// then the built-in default — so the saved setting is honoured even when a
@@ -77,7 +77,11 @@ pub struct LibreInfoResp {
 pub async fn detect_libretranslate(
     Json(req): Json<DetectRequest>,
 ) -> Result<Json<LibreInfoResp>, StatusCode> {
-    let host = resolve_host(req.host, |c| c.libretranslate_base_url, "http://localhost:5000");
+    let host = resolve_host(
+        req.host,
+        |c| c.libretranslate_base_url,
+        "http://localhost:5000",
+    );
     match translate::detect_libretranslate(&host).await {
         Ok(langs) => Ok(Json(LibreInfoResp {
             available: true,
@@ -211,7 +215,11 @@ pub async fn translate_subtitles(
                 {
                     let mut q = queue_clone.lock().unwrap();
                     q.update_status(&job_id_clone, jobs::JobStatus::Cancelled);
-                    q.update_progress(&job_id_clone, 0.0, Some("Translation cancelled".to_string()));
+                    q.update_progress(
+                        &job_id_clone,
+                        0.0,
+                        Some("Translation cancelled".to_string()),
+                    );
                 }
                 jobs::emit_event(
                     &sender_clone,
@@ -269,13 +277,21 @@ pub async fn translate_subtitles(
 
             let result = match req_engine.as_str() {
                 "ollama" => {
-                    let host = resolve_host(req_host.clone(), |c| c.ollama_base_url, "http://localhost:11434");
+                    let host = resolve_host(
+                        req_host.clone(),
+                        |c| c.ollama_base_url,
+                        "http://localhost:11434",
+                    );
                     let model = req_model.clone().unwrap_or_else(|| "llama3".to_string());
                     translate::translate_ollama(&host, &model, chunk, &req_source, &req_target)
                         .await
                 }
                 "libretranslate" => {
-                    let host = resolve_host(req_host.clone(), |c| c.libretranslate_base_url, "http://localhost:5000");
+                    let host = resolve_host(
+                        req_host.clone(),
+                        |c| c.libretranslate_base_url,
+                        "http://localhost:5000",
+                    );
                     translate::translate_libretranslate(&host, chunk, &req_source, &req_target)
                         .await
                 }
@@ -288,8 +304,7 @@ pub async fn translate_subtitles(
                     let model = req_model
                         .clone()
                         .unwrap_or_else(|| "gpt-4o-mini".to_string());
-                    translate::translate_openai(&key, &model, chunk, &req_source, &req_target)
-                        .await
+                    translate::translate_openai(&key, &model, chunk, &req_source, &req_target).await
                 }
                 "google" => {
                     let key = resolve_api_key(&req_engine, req_key.clone());
@@ -561,15 +576,25 @@ pub async fn run_translation_pipeline(
             .unwrap_or_else(|| PathBuf::from("."));
 
         // Stage 1: extract
-        emit_stage(&sender_clone, &job_id_clone, "extracting", 5, "Extracting subtitle track...");
+        emit_stage(
+            &sender_clone,
+            &job_id_clone,
+            "extracting",
+            5,
+            "Extracting subtitle track...",
+        );
         let extracted_path = std::env::temp_dir()
             .join(format!("subforge_pipeline_{}_extracted.srt", job_id_clone))
             .to_string_lossy()
             .to_string();
 
         let extract_result = {
-            let (paths, video, track_id, out) =
-                (paths.clone(), req.video_path.clone(), req.track_id, extracted_path.clone());
+            let (paths, video, track_id, out) = (
+                paths.clone(),
+                req.video_path.clone(),
+                req.track_id,
+                extracted_path.clone(),
+            );
             tokio::task::spawn_blocking(move || {
                 mkvtoolnix::extract_subtitle_track(&paths, &video, track_id, &out)
             })
@@ -582,7 +607,13 @@ pub async fn run_translation_pipeline(
         }
 
         // Stage 2: translate
-        emit_stage(&sender_clone, &job_id_clone, "translating", 15, "Extracting lines...");
+        emit_stage(
+            &sender_clone,
+            &job_id_clone,
+            "translating",
+            15,
+            "Extracting lines...",
+        );
         let lines = match extract_lines_async(&extracted_path).await {
             Ok(l) => l,
             Err(e) => {
@@ -604,7 +635,11 @@ pub async fn run_translation_pipeline(
                 {
                     let mut q = queue_clone.lock().unwrap();
                     q.update_status(&job_id_clone, jobs::JobStatus::Cancelled);
-                    q.update_progress(&job_id_clone, 0.0, Some("Translation cancelled".to_string()));
+                    q.update_progress(
+                        &job_id_clone,
+                        0.0,
+                        Some("Translation cancelled".to_string()),
+                    );
                 }
                 jobs::emit_event(
                     &sender_clone,
@@ -632,31 +667,69 @@ pub async fn run_translation_pipeline(
                 &job_id_clone,
                 "translating",
                 pct,
-                &format!("Translating lines {}-{}/{}", batch_start + 1, batch_end, total),
+                &format!(
+                    "Translating lines {}-{}/{}",
+                    batch_start + 1,
+                    batch_end,
+                    total
+                ),
             );
 
             let result = match req.engine.as_str() {
                 "ollama" => {
-                    let host = resolve_host(req.host.clone(), |c| c.ollama_base_url, "http://localhost:11434");
+                    let host = resolve_host(
+                        req.host.clone(),
+                        |c| c.ollama_base_url,
+                        "http://localhost:11434",
+                    );
                     let model = req.model.clone().unwrap_or_else(|| "llama3".to_string());
-                    translate::translate_ollama(&host, &model, chunk, &req.source_lang, &req.target_lang).await
+                    translate::translate_ollama(
+                        &host,
+                        &model,
+                        chunk,
+                        &req.source_lang,
+                        &req.target_lang,
+                    )
+                    .await
                 }
                 "libretranslate" => {
-                    let host = resolve_host(req.host.clone(), |c| c.libretranslate_base_url, "http://localhost:5000");
-                    translate::translate_libretranslate(&host, chunk, &req.source_lang, &req.target_lang).await
+                    let host = resolve_host(
+                        req.host.clone(),
+                        |c| c.libretranslate_base_url,
+                        "http://localhost:5000",
+                    );
+                    translate::translate_libretranslate(
+                        &host,
+                        chunk,
+                        &req.source_lang,
+                        &req.target_lang,
+                    )
+                    .await
                 }
                 "deepl" => {
                     let key = resolve_api_key(&req.engine, req.api_key.clone());
-                    translate::translate_deepl(&key, chunk, &req.source_lang, &req.target_lang).await
+                    translate::translate_deepl(&key, chunk, &req.source_lang, &req.target_lang)
+                        .await
                 }
                 "openai" => {
                     let key = resolve_api_key(&req.engine, req.api_key.clone());
-                    let model = req.model.clone().unwrap_or_else(|| "gpt-4o-mini".to_string());
-                    translate::translate_openai(&key, &model, chunk, &req.source_lang, &req.target_lang).await
+                    let model = req
+                        .model
+                        .clone()
+                        .unwrap_or_else(|| "gpt-4o-mini".to_string());
+                    translate::translate_openai(
+                        &key,
+                        &model,
+                        chunk,
+                        &req.source_lang,
+                        &req.target_lang,
+                    )
+                    .await
                 }
                 "google" => {
                     let key = resolve_api_key(&req.engine, req.api_key.clone());
-                    translate::translate_google(&key, chunk, &req.source_lang, &req.target_lang).await
+                    translate::translate_google(&key, chunk, &req.source_lang, &req.target_lang)
+                        .await
                 }
                 _ => {
                     let _ = fs::remove_file(&extracted_path);
@@ -685,7 +758,13 @@ pub async fn run_translation_pipeline(
             .to_string_lossy()
             .to_string();
 
-        emit_stage(&sender_clone, &job_id_clone, "translating", 82, "Rebuilding subtitle file...");
+        emit_stage(
+            &sender_clone,
+            &job_id_clone,
+            "translating",
+            82,
+            "Rebuilding subtitle file...",
+        );
         if let Err(e) = rebuild_lines_async(&extracted_path, translated, &translated_srt).await {
             let _ = fs::remove_file(&extracted_path);
             fail!(e);
@@ -698,7 +777,11 @@ pub async fn run_translation_pipeline(
             {
                 let mut q = queue_clone.lock().unwrap();
                 q.update_status(&job_id_clone, jobs::JobStatus::Cancelled);
-                q.update_progress(&job_id_clone, 0.0, Some("Translation cancelled".to_string()));
+                q.update_progress(
+                    &job_id_clone,
+                    0.0,
+                    Some("Translation cancelled".to_string()),
+                );
             }
             jobs::emit_event(
                 &sender_clone,
@@ -719,7 +802,13 @@ pub async fn run_translation_pipeline(
         }
 
         let output_path = if req.auto_merge {
-            emit_stage(&sender_clone, &job_id_clone, "merging", 90, "Merging translated subtitle into video...");
+            emit_stage(
+                &sender_clone,
+                &job_id_clone,
+                "merging",
+                90,
+                "Merging translated subtitle into video...",
+            );
             let merged_path = video_dir
                 .join(format!("{}.{}.mkv", video_stem, req.target_lang))
                 .to_string_lossy()
@@ -731,14 +820,29 @@ pub async fn run_translation_pipeline(
                 hearing_impaired: req.hearing_impaired,
                 make_default: req.set_default_subtitle,
             };
-            if let Err(e) = mkvtoolnix::merge_subtitles_async(&paths, &req.video_path, &[sub_spec], &merged_path, Some(control.token()), |pct| {
-                let merge_pct = 90.0 + (pct * 0.1);
-                {
-                    let mut q = queue_clone.lock().unwrap();
-                    q.update_progress(&job_id_clone, merge_pct, None);
-                }
-                emit_stage(&sender_clone, &job_id_clone, "merging", merge_pct as i32, &format!("Merging... {}%", pct as i32));
-            }).await {
+            if let Err(e) = mkvtoolnix::merge_subtitles_async(
+                &paths,
+                &req.video_path,
+                &[sub_spec],
+                &merged_path,
+                Some(control.token()),
+                |pct| {
+                    let merge_pct = 90.0 + (pct * 0.1);
+                    {
+                        let mut q = queue_clone.lock().unwrap();
+                        q.update_progress(&job_id_clone, merge_pct, None);
+                    }
+                    emit_stage(
+                        &sender_clone,
+                        &job_id_clone,
+                        "merging",
+                        merge_pct as i32,
+                        &format!("Merging... {}%", pct as i32),
+                    );
+                },
+            )
+            .await
+            {
                 fail!(e.to_string());
             }
             merged_path
@@ -749,7 +853,11 @@ pub async fn run_translation_pipeline(
         {
             let mut q = queue_clone.lock().unwrap();
             q.update_status(&job_id_clone, jobs::JobStatus::Completed);
-            q.update_progress(&job_id_clone, 100.0, Some(format!("Saved to {}", output_path)));
+            q.update_progress(
+                &job_id_clone,
+                100.0,
+                Some(format!("Saved to {}", output_path)),
+            );
         }
         jobs::emit_event(
             &sender_clone,

@@ -1,11 +1,11 @@
-use crate::jobs::{Job, JobStatus, JobType, SharedJobQueue};
 use super::blocking;
+use crate::jobs::{Job, JobStatus, JobType, SharedJobQueue};
 use crate::tools::tool_paths;
-use subforge_core::tools::mkvtoolnix::{self, ExternalSub, VideoFileInfo};
-use subforge_core::tools::ToolError;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::path::Path;
+use subforge_core::tools::mkvtoolnix::{self, ExternalSub, VideoFileInfo};
+use subforge_core::tools::ToolError;
 use subforge_metadata::filenaming;
 use tauri::{AppHandle, Emitter, State};
 use walkdir::WalkDir;
@@ -107,13 +107,26 @@ fn scan_directory_blocking(
 
         match mkvtoolnix::enumerate_tracks(paths, &path_str) {
             Ok(info) => {
-                let subtitle_count = info.tracks.iter().filter(|t| t.track_type == "subtitles").count();
-                let audio_count = info.tracks.iter().filter(|t| t.track_type == "audio").count();
-                let video_count = info.tracks.iter().filter(|t| t.track_type == "video").count();
+                let subtitle_count = info
+                    .tracks
+                    .iter()
+                    .filter(|t| t.track_type == "subtitles")
+                    .count();
+                let audio_count = info
+                    .tracks
+                    .iter()
+                    .filter(|t| t.track_type == "audio")
+                    .count();
+                let video_count = info
+                    .tracks
+                    .iter()
+                    .filter(|t| t.track_type == "video")
+                    .count();
 
                 files.push(VideoFileInfo {
                     path: path_str.clone(),
-                    name: path.file_name()
+                    name: path
+                        .file_name()
                         .map(|n| n.to_string_lossy().to_string())
                         .unwrap_or_else(|| path_str.clone()),
                     tracks: info.tracks,
@@ -190,7 +203,12 @@ pub async fn batch_extract_subtitles(
                 if languages.is_empty() {
                     mkvtoolnix::extract_all_subtitles(&paths, &file, &output_dir)
                 } else {
-                    mkvtoolnix::extract_subtitles_by_language(&paths, &file, &output_dir, &languages)
+                    mkvtoolnix::extract_subtitles_by_language(
+                        &paths,
+                        &file,
+                        &output_dir,
+                        &languages,
+                    )
                 }
             })
             .await
@@ -200,7 +218,11 @@ pub async fn batch_extract_subtitles(
             match result {
                 Ok(extracted) => {
                     q.update_status(&job_id, JobStatus::Completed);
-                    q.update_progress(&job_id, 100.0, Some(format!("Extracted {} tracks", extracted.len())));
+                    q.update_progress(
+                        &job_id,
+                        100.0,
+                        Some(format!("Extracted {} tracks", extracted.len())),
+                    );
                 }
                 Err(e) => {
                     q.update_status(&job_id, JobStatus::Failed);
@@ -208,11 +230,14 @@ pub async fn batch_extract_subtitles(
                 }
             }
 
-            let _ = app_clone.emit("job-completed", serde_json::json!({
-                "job_id": job_id,
-                "status": q.get(&job_id).map(|j| &j.status),
-                "message": q.get(&job_id).and_then(|j| j.message.clone()),
-            }));
+            let _ = app_clone.emit(
+                "job-completed",
+                serde_json::json!({
+                    "job_id": job_id,
+                    "status": q.get(&job_id).map(|j| &j.status),
+                    "message": q.get(&job_id).and_then(|j| j.message.clone()),
+                }),
+            );
         });
     }
 
@@ -324,26 +349,47 @@ pub async fn merge_external_subs(
             q.update_status(&job_id_clone, JobStatus::Running);
         }
 
-        let result = mkvtoolnix::merge_subtitles_async(&paths, &video_path_str, &subs, &output_path, Some(control.token()), |pct| {
-            let mut q = queue_clone.lock().unwrap();
-            q.update_progress(&job_id_clone, pct, None);
-            let _ = app_clone.emit("job-progress", serde_json::json!({
-                "job_id": job_id_clone,
-                "progress": pct,
-            }));
-        }).await;
+        let result = mkvtoolnix::merge_subtitles_async(
+            &paths,
+            &video_path_str,
+            &subs,
+            &output_path,
+            Some(control.token()),
+            |pct| {
+                let mut q = queue_clone.lock().unwrap();
+                q.update_progress(&job_id_clone, pct, None);
+                let _ = app_clone.emit(
+                    "job-progress",
+                    serde_json::json!({
+                        "job_id": job_id_clone,
+                        "progress": pct,
+                    }),
+                );
+            },
+        )
+        .await;
 
         if let Err(e) = result {
             let cancelled = matches!(e, ToolError::Cancelled);
             let msg = e.to_string();
             let mut q = queue_clone.lock().unwrap();
-            q.update_status(&job_id_clone, if cancelled { JobStatus::Cancelled } else { JobStatus::Failed });
+            q.update_status(
+                &job_id_clone,
+                if cancelled {
+                    JobStatus::Cancelled
+                } else {
+                    JobStatus::Failed
+                },
+            );
             q.update_progress(&job_id_clone, 0.0, Some(msg.clone()));
-            let _ = app_clone.emit("job-completed", serde_json::json!({
-                "job_id": job_id_clone,
-                "status": if cancelled { "cancelled" } else { "failed" },
-                "message": msg,
-            }));
+            let _ = app_clone.emit(
+                "job-completed",
+                serde_json::json!({
+                    "job_id": job_id_clone,
+                    "status": if cancelled { "cancelled" } else { "failed" },
+                    "message": msg,
+                }),
+            );
             let mut registry = controls_clone.lock().unwrap();
             registry.remove(&job_id_clone);
             return;
@@ -362,13 +408,16 @@ pub async fn merge_external_subs(
         let mut final_output = output_path.clone();
         let mut done_message = "Merge complete".to_string();
         if replace_original {
-            let produced = std::fs::metadata(&output_path).map(|m| m.len() > 0).unwrap_or(false);
+            let produced = std::fs::metadata(&output_path)
+                .map(|m| m.len() > 0)
+                .unwrap_or(false);
             if produced {
                 match std::fs::rename(&output_path, &video_path_str) {
                     Ok(()) => final_output = video_path_str.clone(),
                     Err(e) => {
-                        done_message =
-                            format!("Merged, but could not replace the original (kept {output_path}): {e}");
+                        done_message = format!(
+                            "Merged, but could not replace the original (kept {output_path}): {e}"
+                        );
                     }
                 }
             }
@@ -379,12 +428,15 @@ pub async fn merge_external_subs(
             q.update_status(&job_id_clone, JobStatus::Completed);
             q.update_progress(&job_id_clone, 100.0, Some(done_message.clone()));
         }
-        let _ = app_clone.emit("job-completed", serde_json::json!({
-            "job_id": job_id_clone,
-            "status": "completed",
-            "message": done_message,
-            "output_path": final_output,
-        }));
+        let _ = app_clone.emit(
+            "job-completed",
+            serde_json::json!({
+                "job_id": job_id_clone,
+                "status": "completed",
+                "message": done_message,
+                "output_path": final_output,
+            }),
+        );
 
         let mut registry = controls_clone.lock().unwrap();
         registry.remove(&job_id_clone);

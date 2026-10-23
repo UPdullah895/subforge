@@ -77,11 +77,10 @@ pub fn preview_rename(
         .map(|path| {
             let (stem, ext) = split_stem_ext(&path);
             let parsed = parser::parse_filename(&stem);
-            let matched_ep = parsed.season.zip(parsed.episode).and_then(|(s, e)| {
-                episodes
-                    .iter()
-                    .find(|ep| ep.season == s && ep.episode == e)
-            });
+            let matched_ep = parsed
+                .season
+                .zip(parsed.episode)
+                .and_then(|(s, e)| episodes.iter().find(|ep| ep.season == s && ep.episode == e));
 
             match matched_ep {
                 Some(ep) => RenamePreviewRow {
@@ -110,11 +109,7 @@ pub fn preview_rename(
 }
 
 fn split_stem_ext(path: &str) -> (String, String) {
-    let name = path
-        .rsplit(['/', '\\'])
-        .next()
-        .unwrap_or(path)
-        .to_string();
+    let name = path.rsplit(['/', '\\']).next().unwrap_or(path).to_string();
     match name.rfind('.') {
         Some(idx) if idx > 0 => (name[..idx].to_string(), name[idx + 1..].to_string()),
         _ => (name, String::new()),
@@ -130,6 +125,9 @@ pub struct RenameMapping {
 #[tauri::command(rename_all = "snake_case")]
 pub fn apply_rename(mapping: Vec<RenameMapping>) -> Result<usize, String> {
     // Validates first (no overwrites, no folder escapes), then renames.
-    let mapping: Vec<(String, String)> = mapping.into_iter().map(|m| (m.old_path, m.new_path)).collect();
+    let mapping: Vec<(String, String)> = mapping
+        .into_iter()
+        .map(|m| (m.old_path, m.new_path))
+        .collect();
     subforge_metadata::renamer::apply_rename_mapping(&mapping)
 }

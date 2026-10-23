@@ -123,7 +123,11 @@ impl AppConfig {
             }
         }
         // The API key is a credential too.
-        if self.opensubtitles_api_key.as_deref().is_some_and(|v| !v.is_empty()) {
+        if self
+            .opensubtitles_api_key
+            .as_deref()
+            .is_some_and(|v| !v.is_empty())
+        {
             self.opensubtitles_api_key = Some(SECRET_MASK.to_string());
         }
         self
@@ -138,7 +142,11 @@ impl AppConfig {
                 *s = o.take();
             }
         }
-        if self.opensubtitles_api_key.as_deref().is_some_and(Self::is_mask) {
+        if self
+            .opensubtitles_api_key
+            .as_deref()
+            .is_some_and(Self::is_mask)
+        {
             self.opensubtitles_api_key = existing.opensubtitles_api_key.take();
         }
     }

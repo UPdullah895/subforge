@@ -1,8 +1,8 @@
+use serde::{Deserialize, Serialize};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 use subforge_core::CancellationToken;
 use subforge_deps::HideWindow;
-use serde::{Deserialize, Serialize};
-use std::sync::{Arc, Mutex};
-use std::sync::atomic::{AtomicBool, Ordering};
 use tauri::{AppHandle, Emitter};
 use tokio::process::Command;
 use tokio::sync::Notify;
@@ -178,7 +178,8 @@ pub async fn run_command_job(
 
     let _ = app.emit("job-started", &job_id);
 
-    let output = Command::new(program).hide_window()
+    let output = Command::new(program)
+        .hide_window()
         .args(args)
         .output()
         .await
@@ -190,12 +191,20 @@ pub async fn run_command_job(
     let (status, message) = if output.status.success() {
         (
             JobStatus::Completed,
-            Some(if stdout.is_empty() { "Done".to_string() } else { stdout.trim().to_string() }),
+            Some(if stdout.is_empty() {
+                "Done".to_string()
+            } else {
+                stdout.trim().to_string()
+            }),
         )
     } else {
         (
             JobStatus::Failed,
-            Some(if stderr.is_empty() { "Unknown error".to_string() } else { stderr.trim().to_string() }),
+            Some(if stderr.is_empty() {
+                "Unknown error".to_string()
+            } else {
+                stderr.trim().to_string()
+            }),
         )
     };
 
@@ -205,11 +214,14 @@ pub async fn run_command_job(
         q.update_progress(&job_id, 100.0, message.clone());
     }
 
-    let _ = app.emit("job-completed", serde_json::json!({
-        "job_id": job_id,
-        "status": status,
-        "message": message,
-    }));
+    let _ = app.emit(
+        "job-completed",
+        serde_json::json!({
+            "job_id": job_id,
+            "status": status,
+            "message": message,
+        }),
+    );
 
     Ok(())
 }

@@ -1,7 +1,7 @@
 use crate::config::AppConfig;
-use subforge_core::translate as translate_tools;
 use axum::{http::StatusCode, Json};
 use serde::Deserialize;
+use subforge_core::translate as translate_tools;
 use subforge_metadata::{tmdb::TmdbClient, tvmaze::TvmazeClient};
 
 #[derive(Deserialize)]
@@ -15,7 +15,10 @@ pub async fn test_provider_config(
     let config = AppConfig::load();
     let result: Result<(), String> = match req.provider.as_str() {
         "tmdb" => match config.tmdb_api_key.filter(|k| !k.is_empty()) {
-            Some(key) => TmdbClient::new(key).test_key().await.map_err(|e| e.to_string()),
+            Some(key) => TmdbClient::new(key)
+                .test_key()
+                .await
+                .map_err(|e| e.to_string()),
             None => Err("No TMDB API key configured".to_string()),
         },
         "tvmaze" => TvmazeClient::new()
@@ -44,15 +47,21 @@ pub async fn test_provider_config(
                 .map_err(|e| e.to_string())
         }
         "deepl" => match config.deepl_api_key.filter(|k| !k.is_empty()) {
-            Some(key) => translate_tools::test_deepl_key(&key).await.map_err(|e| e.to_string()),
+            Some(key) => translate_tools::test_deepl_key(&key)
+                .await
+                .map_err(|e| e.to_string()),
             None => Err("No DeepL API key configured".to_string()),
         },
         "openai" => match config.openai_api_key.filter(|k| !k.is_empty()) {
-            Some(key) => translate_tools::test_openai_key(&key).await.map_err(|e| e.to_string()),
+            Some(key) => translate_tools::test_openai_key(&key)
+                .await
+                .map_err(|e| e.to_string()),
             None => Err("No OpenAI API key configured".to_string()),
         },
         "google" => match config.google_translate_api_key.filter(|k| !k.is_empty()) {
-            Some(key) => translate_tools::test_google_key(&key).await.map_err(|e| e.to_string()),
+            Some(key) => translate_tools::test_google_key(&key)
+                .await
+                .map_err(|e| e.to_string()),
             None => Err("No Google Translate API key configured".to_string()),
         },
         "opensubtitles" => {

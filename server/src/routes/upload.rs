@@ -20,8 +20,10 @@ pub async fn upload_file(mut multipart: Multipart) -> Result<Json<serde_json::Va
             let filename = field.file_name().unwrap_or("upload").to_string();
             let dest = upload_dir.join(format!("{}_{}", Uuid::new_v4(), filename));
             let data = field.bytes().await.map_err(|_| StatusCode::BAD_REQUEST)?;
-            let mut file = std::fs::File::create(&dest).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-            file.write_all(&data).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+            let mut file =
+                std::fs::File::create(&dest).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+            file.write_all(&data)
+                .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
             file_path = Some(dest.to_string_lossy().to_string());
         }
     }
@@ -47,12 +49,17 @@ pub async fn download_file(
         return Err(StatusCode::NOT_FOUND);
     }
 
-    let bytes = tokio::fs::read(&path).await.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let bytes = tokio::fs::read(&path)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     let filename = path.file_name().unwrap_or_default().to_string_lossy();
 
     Ok((
         StatusCode::OK,
-        [(header::CONTENT_DISPOSITION, format!("attachment; filename=\"{}\"", filename))],
+        [(
+            header::CONTENT_DISPOSITION,
+            format!("attachment; filename=\"{}\"", filename),
+        )],
         bytes,
     ))
 }

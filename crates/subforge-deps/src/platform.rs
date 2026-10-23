@@ -60,7 +60,10 @@ impl PackageManager {
     pub fn needs_elevation(self) -> bool {
         matches!(
             self,
-            PackageManager::Pacman | PackageManager::Apt | PackageManager::Dnf | PackageManager::Zypper
+            PackageManager::Pacman
+                | PackageManager::Apt
+                | PackageManager::Dnf
+                | PackageManager::Zypper
         )
     }
 
@@ -93,8 +96,13 @@ impl PackageManager {
                 .iter()
                 .map(|id| {
                     s(&[
-                        "winget", "install", "--exact", "--id", id,
-                        "--accept-package-agreements", "--accept-source-agreements",
+                        "winget",
+                        "install",
+                        "--exact",
+                        "--id",
+                        id,
+                        "--accept-package-agreements",
+                        "--accept-source-agreements",
                     ])
                 })
                 .collect(),
@@ -175,7 +183,13 @@ mod tests {
     fn pacman_command_is_exact() {
         assert_eq!(
             PackageManager::Pacman.install_commands(SystemPackage::Mkvtoolnix),
-            vec![vec!["pacman", "-S", "--needed", "--noconfirm", "mkvtoolnix-cli"]]
+            vec![vec![
+                "pacman",
+                "-S",
+                "--needed",
+                "--noconfirm",
+                "mkvtoolnix-cli"
+            ]]
         );
     }
 
