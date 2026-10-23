@@ -139,6 +139,14 @@ pub fn fix_rtl_text(text: &str) -> String {
         .join("\n")
 }
 
+/// Unicode decimal digits (Nd), matching Python's `\d` for the scripts that matter here.
+fn is_decimal_digit(c: char) -> bool {
+    c.is_ascii_digit()
+        || matches!(c,
+            '\u{0660}'..='\u{0669}' | '\u{06F0}'..='\u{06F9}' | '\u{07C0}'..='\u{07C9}'
+            | '\u{0966}'..='\u{096F}' | '\u{FF10}'..='\u{FF19}')
+}
+
 /// Use Arabic `؟ ، ؛` instead of the Latin marks models often leave in Arabic lines.
 /// Commas between two digits (1,000) are left alone.
 pub fn arabic_punctuation(text: &str) -> String {
@@ -152,8 +160,8 @@ pub fn arabic_punctuation(text: &str) -> String {
             '?' => out.push('\u{061f}'),
             ';' => out.push('\u{061b}'),
             ',' => {
-                let after_digit = i > 0 && chars[i - 1].is_numeric();
-                let before_digit = chars.get(i + 1).is_some_and(|n| n.is_numeric());
+                let after_digit = i > 0 && is_decimal_digit(chars[i - 1]);
+                let before_digit = chars.get(i + 1).is_some_and(|n| is_decimal_digit(*n));
                 // (?<!\d),|,(?!\d): replaced unless digits sit on both sides.
                 if after_digit && before_digit {
                     out.push(',');

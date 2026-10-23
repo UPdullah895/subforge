@@ -214,6 +214,35 @@ fn check_rebuild(source: &Path, tr: &str, expected: &str, ext: &str, skip_commen
         }
         assert_eq!(g.text, w.text, "cue {i}");
     }
+    if ext == "ass" {
+        let (got, want) = (event_fields(&out), event_fields(&lines_fixture(expected)));
+        assert_eq!(got, want, "layer/style/name/margins/effect must match");
+    }
+}
+
+/// Every event line's fields except the Text, with the kind prefix and padding normalised.
+fn event_fields(path: &Path) -> Vec<Vec<String>> {
+    std::fs::read_to_string(path)
+        .unwrap()
+        .lines()
+        .filter_map(|l| {
+            let rest = l
+                .strip_prefix("Dialogue:")
+                .or_else(|| l.strip_prefix("Comment:"))?;
+            let kind = if l.starts_with('D') {
+                "Dialogue"
+            } else {
+                "Comment"
+            };
+            let mut f: Vec<String> = rest
+                .splitn(10, ',')
+                .take(9)
+                .map(|x| x.trim().to_string())
+                .collect();
+            f.insert(0, kind.to_string());
+            Some(f)
+        })
+        .collect()
 }
 
 #[test]
@@ -243,5 +272,65 @@ fn rebuild_matches_python_parity_ass() {
         "arabic_full.rebuilt.expected.ass",
         "ass",
         true,
+    );
+}
+
+#[test]
+fn rebuild_keeps_untouched_ass_event_lines_verbatim() {
+    let dir = tempfile::tempdir().unwrap();
+    let out = dir.path().join("out.ass");
+    let mut tr = translations("translations_arabic_full.json");
+    tr[5] = String::new(); // the `Dialogue:0,...,fx,` cue with trailing spaces
+    rebuild_lines(&sub_fixture("arabic_full.ass"), &tr, &out, true).unwrap();
+    let got = std::fs::read_to_string(&out).unwrap();
+    let src = std::fs::read_to_string(sub_fixture("arabic_full.ass")).unwrap();
+    for prefix in ["Dialogue: 2,", "Dialogue:0,"] {
+        let line = src.lines().find(|l| l.starts_with(prefix)).unwrap();
+        assert!(got.contains(&format!("{line}\n")), "line lost: {line:?}");
+    }
+    assert!(src.contains("fx,السلام عليكم ورحمة الله  \n"));
+}
+
+#[test]
+fn rebuild_with_blank_translations_returns_original_srt_bytes() {
+    let dir = tempfile::tempdir().unwrap();
+    let out = dir.path().join("out.srt");
+    let blanks = vec![String::new(), "  ".to_string(), "\n".to_string()];
+    rebuild_lines(&sub_fixture("basic.srt"), &blanks, &out, true).unwrap();
+    assert_eq!(
+        std::fs::read(&out).unwrap(),
+        std::fs::read(sub_fixture("basic.srt")).unwrap()
+    );
+}
+
+#[test]
+fn reflow_caps_at_three_parts() {
+    let long = "كلمة ".repeat(60);
+    let out = reflow("Short", long.trim());
+    assert_eq!(out.split('\n').count(), 3);
+}
+
+#[test]
+fn reflow_dash_falls_back_when_piece_count_differs() {
+    // Two dash lines originally, but the translation has one turn: balanced split instead.
+    let out = reflow(r"- Where?\N- Home.", "إلى أين تذهب الآن يا صديقي");
+    assert_eq!(out.split('\n').count(), 2);
+    assert!(!out.starts_with('-'));
+}
+
+#[test]
+fn reflow_dash_dialogue_with_en_and_em_dash() {
+    let out = reflow(r"– Where?\N— Home.", "– أين؟ — إلى البيت.");
+    assert_eq!(
+        out.split('\n').collect::<Vec<_>>(),
+        ["– أين؟", "— إلى البيت."]
+    );
+}
+
+#[test]
+fn arabic_punctuation_keeps_arabic_indic_digit_commas() {
+    assert_eq!(
+        arabic_punctuation("مبلغ ١,٠٠٠ ريال, نعم"),
+        "مبلغ ١,٠٠٠ ريال\u{60c} نعم"
     );
 }
