@@ -30,7 +30,58 @@ pub(crate) struct AssLayout {
     format: Vec<String>,
     /// Index in `lines` after which cues beyond the original slots are inserted.
     events_end: Option<usize>,
+    /// Whether `lines` and `format` are in the SSA (v4.00) dialect rather than ASS (v4.00+).
+    ssa: bool,
+    /// The event field names were switched from the other dialect (Layer <-> Marked), so the
+    /// stored field values at those positions no longer apply.
+    renamed: bool,
 }
+
+const ASS_STYLE: [&str; 23] = [
+    "Name",
+    "Fontname",
+    "Fontsize",
+    "PrimaryColour",
+    "SecondaryColour",
+    "OutlineColour",
+    "BackColour",
+    "Bold",
+    "Italic",
+    "Underline",
+    "StrikeOut",
+    "ScaleX",
+    "ScaleY",
+    "Spacing",
+    "Angle",
+    "BorderStyle",
+    "Outline",
+    "Shadow",
+    "Alignment",
+    "MarginL",
+    "MarginR",
+    "MarginV",
+    "Encoding",
+];
+const SSA_STYLE: [&str; 18] = [
+    "Name",
+    "Fontname",
+    "Fontsize",
+    "PrimaryColour",
+    "SecondaryColour",
+    "TertiaryColour",
+    "BackColour",
+    "Bold",
+    "Italic",
+    "BorderStyle",
+    "Outline",
+    "Shadow",
+    "Alignment",
+    "MarginL",
+    "MarginR",
+    "MarginV",
+    "AlphaLevel",
+    "Encoding",
+];
 
 fn default_format(ssa: bool) -> Vec<String> {
     let names: &[&str] = if ssa { &SSA_FORMAT } else { &ASS_FORMAT };
@@ -168,7 +219,7 @@ pub(crate) fn parse(text: &str, ssa: bool) -> Result<(Vec<Cue>, FormatExtras), S
         };
         let mut cue = Cue::new(time("start")?, time("end")?, field("text").clone());
         cue.comment = comment;
-        cue.keep_original(line.to_owned(), Format::Ass);
+        cue.keep_original(line.to_owned(), dialect_tag(ssa));
         cue.extra = CueExtra::Ass { fields };
         cues.push(cue);
         lines.push(Line::Event);
@@ -178,6 +229,8 @@ pub(crate) fn parse(text: &str, ssa: bool) -> Result<(Vec<Cue>, FormatExtras), S
         lines,
         format: format.unwrap_or_else(|| default_format(ssa)),
         events_end,
+        ssa,
+        renamed: false,
     };
     Ok((cues, FormatExtras::Ass(layout)))
 }
@@ -192,8 +245,17 @@ fn field_default(name: &str) -> &'static str {
     }
 }
 
-fn cue_line(cue: &Cue, format: &[String]) -> String {
-    if let Some(raw) = cue.unchanged_raw(Format::Ass) {
+fn dialect_tag(ssa: bool) -> Format {
+    if ssa {
+        Format::Ssa
+    } else {
+        Format::Ass
+    }
+}
+
+fn cue_line(cue: &Cue, layout: &AssLayout) -> String {
+    let format = &layout.format;
+    if let Some(raw) = cue.unchanged_raw(dialect_tag(layout.ssa)) {
         return raw.to_owned();
     }
     let previous = match &cue.extra {
@@ -207,6 +269,7 @@ fn cue_line(cue: &Cue, format: &[String]) -> String {
             "start" => format_time(cue.start_ms),
             "end" => format_time(cue.end_ms),
             "text" => cue.text.replace("\r\n", "\\N").replace(['\n', '\r'], "\\N"),
+            "layer" | "marked" if layout.renamed => field_default(name).to_owned(),
             other => previous
                 .map(|f| f[i].clone())
                 .unwrap_or_else(|| field_default(other).to_owned()),
@@ -279,9 +342,19 @@ pub(crate) fn write(cues: &[Cue], layout: Option<&AssLayout>, ssa: bool) -> Stri
                 lines,
                 format,
                 events_end,
+                ssa,
+                renamed: false,
             };
             &default_layout
         }
+    };
+
+    let converted;
+    let layout = if layout.ssa == ssa {
+        layout
+    } else {
+        converted = layout.to_dialect(ssa);
+        &converted
     };
 
     let mut out: Vec<String> = Vec::with_capacity(layout.lines.len() + cues.len());
@@ -291,12 +364,12 @@ pub(crate) fn write(cues: &[Cue], layout: Option<&AssLayout>, ssa: bool) -> Stri
             Line::Raw(s) => out.push(s.clone()),
             Line::Event => {
                 if let Some(cue) = remaining.next() {
-                    out.push(cue_line(cue, &layout.format));
+                    out.push(cue_line(cue, layout));
                 }
             }
         }
         if layout.events_end == Some(i + 1) {
-            out.extend(remaining.by_ref().map(|c| cue_line(c, &layout.format)));
+            out.extend(remaining.by_ref().map(|c| cue_line(c, layout)));
         }
     }
     if layout.events_end.is_none() && remaining.len() > 0 {
@@ -310,10 +383,161 @@ pub(crate) fn write(cues: &[Cue], layout: Option<&AssLayout>, ssa: bool) -> Stri
         }
         out.push("[Events]".into());
         out.push(format_line(&layout.format));
-        out.extend(remaining.map(|c| cue_line(c, &layout.format)));
+        out.extend(remaining.map(|c| cue_line(c, layout)));
         if had_final_newline {
             out.push(String::new());
         }
     }
     out.join("\n")
+}
+
+/// SSA colours are decimal `0xBBGGRR`; ASS colours are `&HAABBGGRR`.
+fn colour_to_ass(v: &str) -> String {
+    match v.trim().parse::<i64>() {
+        Ok(n) => format!("&H00{:06X}", n & 0xFF_FFFF),
+        Err(_) => v.to_owned(),
+    }
+}
+
+fn colour_to_ssa(v: &str) -> String {
+    let hex = v.trim().trim_start_matches("&H").trim_start_matches("&h");
+    match i64::from_str_radix(hex.trim_end_matches('&'), 16) {
+        Ok(n) => (n & 0xFF_FFFF).to_string(),
+        Err(_) => v.to_owned(),
+    }
+}
+
+/// SSA alignment (1-3 bottom, 5-7 top, 9-11 middle) to ASS numpad alignment, and back.
+fn alignment_convert(v: &str, to_ass: bool) -> String {
+    let Ok(n) = v.trim().parse::<i64>() else {
+        return v.to_owned();
+    };
+    let out = match (to_ass, n) {
+        (true, 5..=7) => n + 2,
+        (true, 9..=11) => n - 5,
+        (false, 4..=6) => n + 5,
+        (false, 7..=9) => n - 2,
+        _ => n,
+    };
+    out.to_string()
+}
+
+fn style_alias(name: &str) -> &str {
+    match name {
+        "tertiarycolour" => "outlinecolour",
+        "outlinecolour" => "tertiarycolour",
+        other => other,
+    }
+}
+
+/// Value for a style field the source dialect does not have.
+fn style_default(name: &str, ssa: bool) -> &'static str {
+    match (name, ssa) {
+        ("scalex" | "scaley", _) => "100",
+        ("primarycolour", true) => "16777215",
+        ("secondarycolour", true) => "255",
+        ("primarycolour", false) => "&H00FFFFFF",
+        ("secondarycolour", false) => "&H000000FF",
+        ("outlinecolour" | "tertiarycolour" | "backcolour", true) => "0",
+        ("outlinecolour" | "tertiarycolour" | "backcolour", false) => "&H00000000",
+        _ => "0",
+    }
+}
+
+fn rename_layer(format: &[String], ssa: bool) -> Vec<String> {
+    let (from, to) = if ssa {
+        ("layer", "marked")
+    } else {
+        ("marked", "layer")
+    };
+    format
+        .iter()
+        .map(|n| if n == from { to.to_owned() } else { n.clone() })
+        .collect()
+}
+
+fn is_styles_section(section: &str) -> bool {
+    section == "[v4 styles]" || section == "[v4+ styles]"
+}
+
+impl AssLayout {
+    /// The same file in the other dialect: ScriptType, the styles section (header, Format line
+    /// and Style lines) and the event field names are translated; every other line (including
+    /// `[Fonts]`, `[Graphics]` and unknown sections) is kept as is.
+    fn to_dialect(&self, ssa: bool) -> AssLayout {
+        let target: &[&str] = if ssa { &SSA_STYLE } else { &ASS_STYLE };
+        let format = rename_layer(&self.format, ssa);
+        let mut section = String::new();
+        let mut source_style: Option<Vec<String>> = None;
+        let mut lines = Vec::with_capacity(self.lines.len());
+        for line in &self.lines {
+            let Line::Raw(s) = line else {
+                lines.push(Line::Event);
+                continue;
+            };
+            let trimmed = s.trim();
+            let mut out = s.clone();
+            if trimmed.starts_with('[') && trimmed.ends_with(']') {
+                section = trimmed.to_ascii_lowercase();
+                if is_styles_section(&section) {
+                    out = if ssa { "[V4 Styles]" } else { "[V4+ Styles]" }.to_owned();
+                }
+            } else if section == "[script info]" {
+                if let Some(rest) = strip_prefix_ci(s, "scripttype:") {
+                    if rest.trim().to_ascii_lowercase().starts_with("v4.00") {
+                        out = format!("ScriptType: {}", if ssa { "v4.00" } else { "v4.00+" });
+                    }
+                }
+            } else if is_styles_section(&section) {
+                if let Some(rest) = strip_prefix_ci(s, "format:") {
+                    source_style = Some(
+                        rest.split(',')
+                            .map(|n| n.trim().to_ascii_lowercase())
+                            .collect(),
+                    );
+                    out = format!("Format: {}", target.join(", "));
+                } else if let (Some(rest), Some(names)) =
+                    (strip_prefix_ci(s, "style:"), &source_style)
+                {
+                    let values: Vec<&str> = rest.trim_start().splitn(names.len(), ',').collect();
+                    let converted: Vec<String> = target
+                        .iter()
+                        .map(|t| {
+                            let t = t.to_ascii_lowercase();
+                            let pos = names
+                                .iter()
+                                .position(|n| *n == t)
+                                .or_else(|| names.iter().position(|n| n == style_alias(&t)));
+                            let Some(v) = pos.and_then(|i| values.get(i)) else {
+                                return style_default(&t, ssa).to_owned();
+                            };
+                            match t.as_str() {
+                                "primarycolour" | "secondarycolour" | "outlinecolour"
+                                | "tertiarycolour" | "backcolour" => {
+                                    if ssa {
+                                        colour_to_ssa(v)
+                                    } else {
+                                        colour_to_ass(v)
+                                    }
+                                }
+                                "alignment" => alignment_convert(v, !ssa),
+                                _ => (*v).to_owned(),
+                            }
+                        })
+                        .collect();
+                    out = format!("Style: {}", converted.join(","));
+                }
+            } else if section == "[events]" && strip_prefix_ci(s, "format:").is_some() {
+                out = format_line(&format);
+            }
+            lines.push(Line::Raw(out));
+        }
+        AssLayout {
+            lines,
+            format,
+            events_end: self.events_end,
+            ssa,
+            renamed: true,
+        }
+    }
 }

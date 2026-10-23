@@ -224,3 +224,104 @@ fn to_bytes_follows_the_public_format_field() {
     assert_eq!(back.format, Format::Ass);
     assert_eq!(back.cues.len(), doc.cues.len());
 }
+
+#[test]
+fn ass_switched_to_ssa_is_rewritten_in_the_ssa_dialect() {
+    let mut doc = SubtitleDoc::load(&fixture("arabic_full.ass")).unwrap();
+    doc.format = Format::Ssa;
+    let bytes = doc.to_bytes();
+    let out = String::from_utf8(bytes.clone()).unwrap();
+    let l = lines(&bytes);
+    assert!(l.contains(&"ScriptType: v4.00".to_owned()), "{out}");
+    assert!(!out.contains("v4.00+") && !out.contains("[V4+ Styles]"));
+    assert!(l.contains(&"[V4 Styles]".to_owned()));
+    assert!(l.contains(&"Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, TertiaryColour, BackColour, Bold, Italic, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, AlphaLevel, Encoding".to_owned()));
+    // Colours become decimal BGR; the top-aligned style (ASS 8) becomes SSA 6.
+    assert!(
+        l.contains(
+            &"Style: Default,Noto Naskh Arabic,48,16777215,255,0,0,0,0,1,2,1,2,30,30,25,0,178"
+                .to_owned()
+        ),
+        "{out}"
+    );
+    assert!(
+        l.contains(
+            &"Style: Top,Noto Naskh Arabic,40,65535,255,0,0,-1,0,1,2,0,6,30,30,25,0,178".to_owned()
+        ),
+        "{out}"
+    );
+    assert!(l.contains(
+        &"Format: Marked, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text"
+            .to_owned()
+    ));
+    assert!(
+        l.contains(
+            &"Dialogue: Marked=0,0:00:01.00,0:00:03.50,Default,,0,0,0,,مرحبا بالعالم".to_owned()
+        ),
+        "{out}"
+    );
+    // Fonts, graphics and unknown sections are untouched.
+    for keep in [
+        "[Fonts]",
+        "[Graphics]",
+        "[Aegisub Project Garbage]",
+        "fontname: NotoNaskhArabic_0.ttf",
+    ] {
+        assert!(l.contains(&keep.to_owned()), "{keep}");
+    }
+    let back = SubtitleDoc::parse(&bytes, None).unwrap();
+    assert_eq!(back.format, Format::Ssa);
+    assert_eq!(back.cues.len(), 6);
+    assert_eq!(back.cues[3].text, doc.cues[3].text);
+}
+
+#[test]
+fn ssa_switched_to_ass_is_rewritten_in_the_ass_dialect() {
+    let mut doc = SubtitleDoc::load(&fixture("legacy.ssa")).unwrap();
+    doc.format = Format::Ass;
+    let bytes = doc.to_bytes();
+    let out = String::from_utf8(bytes.clone()).unwrap();
+    let l = lines(&bytes);
+    assert!(l.contains(&"ScriptType: v4.00+".to_owned()), "{out}");
+    assert!(l.contains(&"[V4+ Styles]".to_owned()));
+    assert!(!out.contains("[V4 Styles]"));
+    assert!(l.contains(&"Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding".to_owned()));
+    assert!(l.contains(&"Style: Default,Arial,20,&H00FFFFFF,&H0000FFFF,&H0000FFFF,&H00000000,0,0,0,0,100,100,0,0,1,2,2,2,30,30,30,0".to_owned()), "{out}");
+    assert!(l.contains(
+        &"Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text"
+            .to_owned()
+    ));
+    assert!(
+        l.contains(
+            &"Dialogue: 0,0:00:01.00,0:00:03.00,Default,,0000,0000,0000,,Hello, world".to_owned()
+        ),
+        "{out}"
+    );
+    assert!(
+        l.contains(&"Comment: 0,0:00:03.00,0:00:04.00,Default,,0000,0000,0000,,A note".to_owned()),
+        "{out}"
+    );
+    assert_eq!(
+        SubtitleDoc::parse(&bytes, None).unwrap().format,
+        Format::Ass
+    );
+}
+
+#[test]
+fn switching_dialect_and_back_restores_the_original_cue_lines() {
+    let original = fixture_bytes("legacy.ssa");
+    let mut doc = SubtitleDoc::parse(&original, None).unwrap();
+    doc.format = Format::Ass;
+    doc.format = Format::Ssa;
+    assert_eq!(doc.to_bytes(), original);
+}
+
+#[test]
+fn srt_output_skips_comment_cues() {
+    let mut doc = SubtitleDoc::load(&fixture("arabic_full.ass")).unwrap();
+    doc.format = Format::Srt;
+    let srt = String::from_utf8(doc.to_bytes()).unwrap();
+    assert!(!srt.contains("ملاحظة المترجم"));
+    assert!(srt.starts_with("1\n00:00:01,000"));
+    assert!(srt.contains("\n\n5\n00:01:02,100"), "{srt}");
+}

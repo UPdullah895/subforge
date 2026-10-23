@@ -72,8 +72,10 @@ pub(crate) fn parse(text: &str) -> Result<(Vec<Cue>, FormatExtras), SubtitleErro
 
 /// Serialise cues as SRT text using `\n` line endings.
 pub(crate) fn write(cues: &[Cue], trailing_newlines: usize) -> String {
+    // ASS `Comment:` events are never rendered, so they have no place in an SRT file.
     let blocks: Vec<String> = cues
         .iter()
+        .filter(|cue| !cue.comment)
         .enumerate()
         .map(|(n, cue)| match cue.unchanged_raw(Format::Srt) {
             Some(raw) => raw.to_owned(),
