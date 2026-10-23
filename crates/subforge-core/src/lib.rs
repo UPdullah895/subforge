@@ -3,5 +3,6 @@
 pub mod lines;
 pub mod progress;
 pub mod subtitle;
+pub mod tools;
 
 pub use progress::{CancellationToken, ProgressFn};
