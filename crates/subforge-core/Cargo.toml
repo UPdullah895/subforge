@@ -27,6 +27,8 @@ subforge-metadata = { path = "../subforge-metadata" }
 # Box<dyn FnMut> but reads it back as `F`. The fix depends on that storage layout; re-check
 # transcribe.rs (abort callback) before changing this version.
 whisper-rs = "=0.16.0"
+# Same version whisper-rs 0.16.0 depends on: log capture and the Vulkan device query use it directly.
+whisper-rs-sys = "=0.15.0"
 uuid = { version = "1", features = ["v4"] }
 # Loads the Vulkan loader at run time to probe for a usable GPU before ggml touches Vulkan.
 ash = { version = "0.38", default-features = false, features = ["loaded", "std"], optional = true }

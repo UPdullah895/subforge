@@ -113,7 +113,10 @@ fn cache_dir(dir: &Option<String>) -> Option<&Path> {
 
 #[tauri::command]
 pub async fn get_whisper_info() -> Result<EngineInfo, String> {
-    Ok(whisper::engine_info())
+    // GPU detection initialises Vulkan on first use: keep it off the async workers.
+    tokio::task::spawn_blocking(whisper::engine_info)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]

@@ -118,7 +118,11 @@ impl JobSink for ServerSink {
 }
 
 pub async fn get_whisper_info() -> Json<EngineInfo> {
-    Json(whisper::engine_info())
+    // GPU detection initialises Vulkan on first use: keep it off the async workers.
+    let info = tokio::task::spawn_blocking(whisper::engine_info)
+        .await
+        .expect("engine_info does not panic");
+    Json(info)
 }
 
 #[derive(Deserialize)]

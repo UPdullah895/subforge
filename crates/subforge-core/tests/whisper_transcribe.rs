@@ -186,6 +186,31 @@ fn transcribe_cancel_mid_run_returns_cancelled() {
     require_model();
     let dir = tempfile::tempdir().unwrap();
 
+    // whisper.cpp only checks the abort callback between encoder/decoder windows, and the
+    // 10 s fixture is a single 30 s window, so cancelling could never beat a full run. Loop the
+    // fixture into a ~120 s clip (several windows) so an early abort is measurable.
+    let long = dir.path().join("long.opus");
+    let status = std::process::Command::new("ffmpeg")
+        .args([
+            "-hide_banner",
+            "-v",
+            "error",
+            "-y",
+            "-stream_loop",
+            "11",
+            "-i",
+        ])
+        .arg(fixture())
+        .args(["-t", "120", "-c:a", "libopus", "-b:a", "16k"])
+        .arg(&long)
+        .status()
+        .expect("ffmpeg is needed to build the long clip");
+    assert!(status.success(), "ffmpeg could not build the long clip");
+    let long_options = |output: PathBuf| TranscribeOptions {
+        input: long.clone(),
+        ..options(output, model_cache())
+    };
+
     // Baseline: how long the whisper.cpp phase (10 % reported -> return) takes uncancelled.
     let mut whisper_start = None;
     let mut cb = |p: f64, _: Option<&str>| {
@@ -195,7 +220,7 @@ fn transcribe_cancel_mid_run_returns_cancelled() {
     };
     transcribe(
         &ToolPaths::default(),
-        &options(dir.path().join("full.srt"), model_cache()),
+        &long_options(dir.path().join("full.srt")),
         &mut cb,
         CancellationToken::new(),
     )
@@ -219,7 +244,7 @@ fn transcribe_cancel_mid_run_returns_cancelled() {
     };
     let err = transcribe(
         &ToolPaths::default(),
-        &options(out.clone(), model_cache()),
+        &long_options(out.clone()),
         &mut cb,
         cancel,
     )

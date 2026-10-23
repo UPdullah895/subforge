@@ -51,7 +51,7 @@ jobs:
       # glslc to build; the SDK provides both and sets VULKAN_SDK. On Windows it also supplies the
       # redistributable loader (vulkan-1.dll) that the bundle ships; see packaging/bundled-tools.json.
       - name: Install Vulkan SDK
-        uses: jakoch/install-vulkan-sdk-action@v1
+        uses: jakoch/install-vulkan-sdk-action@d17de7e2f5e50efb5d2123efed18497d3c58c533 # v1.7.0
         with:
           vulkan_version: 1.4.304.1
           install_runtime: false

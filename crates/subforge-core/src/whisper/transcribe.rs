@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicI32, Ordering};
 use std::sync::mpsc::{self, RecvTimeoutError};
-use std::sync::{Arc, Mutex, Once};
+use std::sync::Arc;
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
@@ -17,7 +17,7 @@ use whisper_rs::{
     FullParams, SamplingStrategy, WhisperContext, WhisperContextParameters, WhisperState,
 };
 
-use super::device::{self, Device};
+use super::device::{self, gpu_failure_line, Backend, Device};
 use super::models::{list_downloaded, model_path, resolve_cache_dir, spec_for, WhisperError};
 use super::VAD_MODEL;
 use crate::progress::{CancellationToken, ProgressFn};
@@ -71,7 +71,9 @@ const PCT_RUN: f64 = 10.0;
 const PCT_WRITE: f64 = 95.0;
 
 /// Transcribes `opts.input` into `opts.output`. Blocks until done, failed or cancelled; a
-/// cancelled run writes no output.
+/// cancelled run writes no output. Cancelling takes effect when whisper.cpp next checks its abort
+/// callback, which is at encoder/decoder window boundaries, so the latency is up to one encoder
+/// pass (a fraction of a second for small models, longer for large ones or on a slow CPU).
 pub fn transcribe(
     paths: &ToolPaths,
     opts: &TranscribeOptions,
@@ -113,20 +115,41 @@ pub fn transcribe(
     let pcm = decode_audio(paths, &opts.input, &cancel)?;
     check()?;
 
-    progress(PCT_LOAD, Some("Loading model"));
+    progress(
+        PCT_LOAD,
+        Some(if device == Device::Gpu {
+            "Preparing GPU (first run can take a few seconds)"
+        } else {
+            "Loading model"
+        }),
+    );
     let model_file = model_path(&cache, spec);
     let (_ctx, mut state) = match load_engine(&model_file, device == Device::Gpu) {
-        Ok(loaded) => loaded,
-        Err(gpu_err) if device == Device::Gpu => {
-            // The GPU path failed at runtime (driver, out of memory, ...): retry on the CPU.
+        Ok(loaded) => {
+            if device == Device::Gpu && loaded.backend != Backend::Gpu {
+                // whisper.cpp skips a GPU it cannot initialise and carries on with the CPU.
+                let why = gpu_failure_line(&loaded.log).unwrap_or_else(|| "unknown".into());
+                device_used = "cpu".to_string();
+                progress(
+                    PCT_LOAD,
+                    Some(&format!("GPU unavailable ({why}); using the CPU")),
+                );
+            }
+            (loaded.ctx, loaded.state)
+        }
+        Err((_, log)) if device == Device::Gpu && gpu_failure_line(&log).is_some() => {
+            // Loading failed with GPU trouble in the log (e.g. out of VRAM): retry on the CPU.
+            // A model-file error with no GPU involvement is returned as is (below).
+            let why = gpu_failure_line(&log).unwrap_or_default();
+            device_used = "cpu".to_string();
             progress(
                 PCT_LOAD,
-                Some(&format!("GPU unavailable ({gpu_err}); using the CPU")),
+                Some(&format!("GPU unavailable ({why}); using the CPU")),
             );
-            device_used = "cpu".to_string();
-            load_engine(&model_file, false)?
+            let loaded = load_engine(&model_file, false).map_err(|(e, _)| e)?;
+            (loaded.ctx, loaded.state)
         }
-        Err(e) => return Err(e),
+        Err((err, _)) => return Err(err),
     };
     check()?;
 
@@ -210,27 +233,46 @@ fn gpu_for(requested: Device) -> Option<String> {
         .flatten()
 }
 
-/// Loads the model and creates the inference state, on the GPU when `use_gpu`.
-fn load_engine(
-    model_file: &Path,
-    use_gpu: bool,
-) -> Result<(WhisperContext, WhisperState), WhisperError> {
-    // ggml's backend registry and Vulkan device setup are not safe to initialise from several
-    // threads at once (seen as a rare SIGSEGV with concurrent runs), so serialise model loads.
-    static LOAD: Mutex<()> = Mutex::new(());
-    let _guard = LOAD.lock().unwrap_or_else(|e| e.into_inner());
+struct Loaded {
+    ctx: WhisperContext,
+    state: WhisperState,
+    /// What whisper.cpp actually initialised (it silently falls back to the CPU).
+    backend: Backend,
+    log: Vec<String>,
+}
+
+/// Loads the model and creates the inference state, asking for the GPU when `use_gpu`. On error
+/// the engine log of the attempt comes back too.
+fn load_engine(model_file: &Path, use_gpu: bool) -> Result<Loaded, (WhisperError, Vec<String>)> {
+    // Backend registry and Vulkan instance setup are not thread-safe (see `ggml_init_lock`);
+    // holding the lock also keeps the captured log to this load.
+    let _guard = device::ggml_init_lock();
+    device::clear_engine_log();
     let mut ctx_params = WhisperContextParameters::default();
     ctx_params.use_gpu(use_gpu);
-    let ctx = WhisperContext::new_with_params(model_file, ctx_params).map_err(|e| {
-        WhisperError::Engine(format!(
-            "could not load the model {} ({e}). Delete it and download it again.",
-            model_file.display()
-        ))
-    })?;
-    let state = ctx
-        .create_state()
-        .map_err(|e| WhisperError::Engine(format!("could not start the engine ({e})")))?;
-    Ok((ctx, state))
+    let result = WhisperContext::new_with_params(model_file, ctx_params)
+        .map_err(|e| {
+            WhisperError::Engine(format!(
+                "could not load the model {} ({e}). Delete it and download it again.",
+                model_file.display()
+            ))
+        })
+        .and_then(|ctx| {
+            let state = ctx
+                .create_state()
+                .map_err(|e| WhisperError::Engine(format!("could not start the engine ({e})")))?;
+            Ok((ctx, state))
+        });
+    let log = device::engine_log();
+    match result {
+        Ok((ctx, state)) => Ok(Loaded {
+            ctx,
+            state,
+            backend: device::backend_from_log(&log),
+            log,
+        }),
+        Err(e) => Err((e, log)),
+    }
 }
 
 /// Runs `f` while forwarding whisper's 0-100 progress (written to `pct` by its callback) to
@@ -353,8 +395,7 @@ fn thread_count() -> i32 {
         .clamp(1, 8) as i32
 }
 
-/// Route whisper.cpp / GGML logging away from stderr (whisper-rs has no log backend enabled).
+/// Route whisper.cpp / GGML logging into the capture buffer in `device` instead of stderr.
 fn silence_engine_logs() {
-    static ONCE: Once = Once::new();
-    ONCE.call_once(whisper_rs::install_logging_hooks);
+    device::install_log_capture();
 }
