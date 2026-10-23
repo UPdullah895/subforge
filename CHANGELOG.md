@@ -20,8 +20,8 @@ All notable changes to this project are documented here. Format based on
 - Server API: convert/shift/stretch return a readable error body; converting to an unknown format returns 400 instead of 500; track removal now actually removes the selected tracks; new `GET /api/tools/status`; the tool registry includes mkvpropedit.
 
 ### Changed
-- Speech-to-text runs on the built-in whisper.cpp engine (CPU) instead of Python faster-whisper. Models are GGML files in `<cache>/subforge/whisper-ggml`; the old faster-whisper models can be deleted from the Transcribe page.
-- Model downloads run as background jobs with a progress bar and a cancel button; the app no longer freezes while a model downloads. A model must be downloaded before transcribing (it is no longer fetched on first use).
+- Speech-to-text runs on the built-in whisper.cpp engine (CPU) instead of Python faster-whisper. Models are GGML files in `<cache>/subforge/whisper-ggml`; the old faster-whisper models can be deleted from the Speech to Text page.
+- Model downloads run as background jobs with a progress bar and a cancel button; the app no longer freezes while a model downloads.
 - Model list: `large-v1` and `large-v2` are gone; `large-v3-turbo` and `large-v3-turbo-q5_0` are new.
 - The Device choice is Auto / CPU (GPU support follows); a saved `cuda` value is treated as Auto.
 

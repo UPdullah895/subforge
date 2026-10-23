@@ -17,7 +17,7 @@ const MAX_PARTS: usize = 3;
 const RLE: char = '\u{202b}';
 const PDF: char = '\u{202c}';
 
-/// One cue as sent to a translator. Same JSON shape as the old Python helper.
+/// One cue as sent to a translator. Serialized as JSON for the translation pipeline.
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct SubtitleLine {
     pub id: usize,

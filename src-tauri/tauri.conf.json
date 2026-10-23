@@ -50,7 +50,7 @@
         "depends": ["mkvtoolnix", "ffmpeg"]
       },
       "rpm": {
-        "depends": ["mkvtoolnix", "ffmpeg"]
+        "depends": ["mkvtoolnix", "(ffmpeg or ffmpeg-free)"]
       }
     }
   }

@@ -57,7 +57,7 @@ describe("DependencyList", () => {
     expect(w.text()).not.toContain("Python");
   });
 
-  it("has no purpose text for removed Python dependencies", () => {
+  it("falls back to the backend purpose when an id has no translation", () => {
     for (const id of ["python", "pysubs2", "faster_whisper"]) {
       const w = mountList([item({ id: id as DepStatus["id"], state: "missing", purpose: "backend purpose" })]);
       expect(w.text()).toContain("backend purpose");

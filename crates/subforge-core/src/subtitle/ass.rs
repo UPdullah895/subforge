@@ -298,7 +298,7 @@ fn format_line(format: &[String]) -> String {
 }
 
 /// Header and `[Events]` Format line for a document that was not read from an ASS/SSA file:
-/// the pysubs2 default style on a 384x288 canvas.
+/// the default style on a 384x288 canvas.
 fn default_prelude(ssa: bool) -> Vec<String> {
     let (script_type, styles_header, styles_format, style) = if ssa {
         (
