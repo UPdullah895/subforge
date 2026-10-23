@@ -336,6 +336,48 @@ fn arabic_punctuation_keeps_arabic_indic_digit_commas() {
 }
 
 #[test]
+fn rebuilding_ass_into_srt_path_writes_valid_srt() {
+    let dir = tempfile::tempdir().unwrap();
+    let out = dir.path().join("video.ar.srt");
+    let original = sub_fixture("arabic_full.ass");
+    let n = extract_lines(&original).unwrap().len();
+    let tr: Vec<String> = (0..n).map(|i| format!("سطر {i}")).collect();
+    rebuild_lines(&original, &tr, &out, false).unwrap();
+
+    let text = std::fs::read_to_string(&out).unwrap();
+    assert!(
+        !text.contains("[Script Info]"),
+        "ASS written into .srt:\n{text}"
+    );
+    assert!(!text.contains("Dialogue:"), "{text}");
+    assert!(text.contains(" --> "), "{text}");
+    let doc = load(&out).unwrap();
+    assert_eq!(doc.format, subforge_core::subtitle::Format::Srt);
+}
+
+#[test]
+fn pipeline_paths_follow_the_track_format() {
+    use subforge_core::lines::pipeline_paths;
+    use subforge_core::subtitle::Format;
+    let tmp = Path::new("/tmp/x");
+    let video = Path::new("/media/My Show/ep 01.mkv");
+    let p = pipeline_paths(video, tmp, "pipeline-1", "ar", Format::Ass);
+    assert_eq!(
+        p.extracted,
+        tmp.join("subforge_pipeline_pipeline-1_extracted.ass")
+    );
+    assert_eq!(p.output, Path::new("/media/My Show/ep 01.ar.ass"));
+    let p = pipeline_paths(video, tmp, "pipeline-1", "ar", Format::Srt);
+    assert_eq!(
+        p.extracted,
+        tmp.join("subforge_pipeline_pipeline-1_extracted.srt")
+    );
+    assert_eq!(p.output, Path::new("/media/My Show/ep 01.ar.srt"));
+    let p = pipeline_paths(video, tmp, "j", "en", Format::Ssa);
+    assert_eq!(p.output, Path::new("/media/My Show/ep 01.en.ssa"));
+}
+
+#[test]
 fn arabic_punctuation_keeps_commas_between_any_unicode_digits() {
     assert_eq!(arabic_punctuation("مبلغ ১,০০০ ريال"), "مبلغ ১,০০০ ريال");
     assert_eq!(

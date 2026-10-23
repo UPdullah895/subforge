@@ -2,14 +2,14 @@
 //! translation and rebuild the file from the translated lines (with Arabic RTL and
 //! punctuation fixes). Port of the former `scripts/subtitle_lines.py`.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 
 use crate::subtitle::markup::has_drawing;
-use crate::subtitle::{load, SubtitleError};
+use crate::subtitle::{load, Format, SubtitleError};
 
 /// Longest line `reflow` aims for before it adds another line.
 const MAX_LINE: usize = 42;
@@ -353,5 +353,44 @@ pub fn rebuild_lines(
         }
         cue.text = text.replace('\n', "\\N");
     }
-    doc.save(output)
+    // Safety net: never write one format's text under another format's extension.
+    match Format::from_path(output) {
+        Some(to) if to != doc.format => doc.convert(to).save(output),
+        _ => doc.save(output),
+    }
+}
+
+/// File locations used by the extract -> translate -> rebuild pipeline.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PipelinePaths {
+    /// Temporary file the track is extracted to.
+    pub extracted: PathBuf,
+    /// Translated subtitle next to the video: `{video stem}.{lang}.{ext}`.
+    pub output: PathBuf,
+}
+
+/// Names the pipeline's files after the track's real `format`, so an ASS track
+/// gives `*_extracted.ass` and `{video}.{lang}.ass` (keeping its styles) and an
+/// SRT track keeps `.srt`.
+pub fn pipeline_paths(
+    video: &Path,
+    temp_dir: &Path,
+    job_id: &str,
+    target_lang: &str,
+    format: Format,
+) -> PipelinePaths {
+    let ext = format.extension();
+    let stem = video
+        .file_stem()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "subtitle".to_string());
+    let dir = video
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .map(Path::to_path_buf)
+        .unwrap_or_else(|| PathBuf::from("."));
+    PipelinePaths {
+        extracted: temp_dir.join(format!("subforge_pipeline_{job_id}_extracted.{ext}")),
+        output: dir.join(format!("{stem}.{target_lang}.{ext}")),
+    }
 }

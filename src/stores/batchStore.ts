@@ -100,13 +100,22 @@ export const useBatchStore = defineStore("batch", () => {
       upsertExternalSub(mapping.path, mapping.lang, payload.stage === "error" ? "error" : "pending");
     });
 
-    await apiListen<{ job_id: string; status: string; message?: string }>(
+    await apiListen<{ job_id: string; status: string; message?: string; output_path?: string }>(
       "job-completed",
       (payload) => {
         const mapping = pipelineJobs.get(payload.job_id);
         if (!mapping) return;
         if (payload.status === "completed") {
           upsertExternalSub(mapping.path, mapping.lang, "ok");
+          // The pipeline names its output after the track format (.ass for ASS
+          // tracks), so take the real path instead of the .srt guess.
+          const out = payload.output_path;
+          if (out && /\.(srt|ass|ssa|vtt)$/i.test(out)) {
+            const sub = scannedFiles.value
+              .find((f) => f.path === mapping.path)
+              ?.external_subs.find((s) => s.lang === mapping.lang);
+            if (sub) sub.path = out;
+          }
         } else {
           upsertExternalSub(mapping.path, mapping.lang, "error", mapJobErrorMessage(payload.message));
         }

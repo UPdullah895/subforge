@@ -10,6 +10,7 @@ use subforge_metadata::{filenaming, languages};
 use tokio_util::sync::CancellationToken;
 
 use super::{resolve, ToolError, ToolId, ToolPaths};
+use crate::subtitle::Format;
 
 /// MKVToolNix decodes its command line with the locale's charset, so under a non-UTF-8 locale
 /// (C/POSIX: services, CI runners, `env -i`) every non-ASCII path reaches it mangled. In that
@@ -92,6 +93,9 @@ pub struct TrackProperties {
         default
     )]
     pub hearing_impaired: Option<bool>,
+    /// Matroska codec id, e.g. `S_TEXT/ASS`.
+    #[serde(default)]
+    pub codec_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -107,6 +111,35 @@ pub struct Track {
     pub codec: String,
     #[serde(default)]
     pub properties: Option<TrackProperties>,
+}
+
+impl Track {
+    /// The text subtitle format mkvextract writes for this track, so extracted
+    /// files can be named after it (ASS stays ASS and keeps its styles). Unknown
+    /// codecs default to SRT.
+    pub fn subtitle_format(&self) -> Format {
+        let codec_id = self
+            .properties
+            .as_ref()
+            .and_then(|p| p.codec_id.as_deref())
+            .unwrap_or("")
+            .to_ascii_uppercase();
+        match codec_id.as_str() {
+            "S_TEXT/ASS" | "S_ASS" => return Format::Ass,
+            "S_TEXT/SSA" | "S_SSA" => return Format::Ssa,
+            "S_TEXT/WEBVTT" => return Format::Vtt,
+            "S_TEXT/UTF8" | "S_TEXT/ASCII" => return Format::Srt,
+            _ => {}
+        }
+        let codec = self.codec.to_ascii_lowercase();
+        if codec.contains("substationalpha") {
+            Format::Ass
+        } else if codec.contains("webvtt") {
+            Format::Vtt
+        } else {
+            Format::Srt
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

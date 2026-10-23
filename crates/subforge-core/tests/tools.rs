@@ -16,6 +16,16 @@ fn fake_tool(dir: &Path, id: ToolId, body: &str) -> PathBuf {
     p
 }
 
+/// Spawning while another thread has just written a script can fail with
+/// ETXTBSY ("text file busy"), so every test that writes and execs fake tools
+/// holds this lock.
+#[cfg(unix)]
+static EXEC_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+#[cfg(unix)]
+fn serial() -> std::sync::MutexGuard<'static, ()> {
+    EXEC_LOCK.lock().unwrap_or_else(|e| e.into_inner())
+}
+
 fn empty_env() -> SearchEnv {
     SearchEnv {
         dirs: vec![],
@@ -152,14 +162,6 @@ mod resolution {
 #[allow(clippy::await_holding_lock)] // intentional: serialises exec of fake tools
 mod fake_mkv {
     use super::*;
-    use std::sync::{Mutex, MutexGuard};
-
-    /// Spawning while another thread has just written a script can fail with
-    /// ETXTBSY ("text file busy"), so tests that exec fake tools run serially.
-    static EXEC_LOCK: Mutex<()> = Mutex::new(());
-    fn serial() -> MutexGuard<'static, ()> {
-        EXEC_LOCK.lock().unwrap_or_else(|e| e.into_inner())
-    }
 
     fn paths_with(dir: &Path, id: ToolId, body: &str) -> ToolPaths {
         let p = fake_tool(dir, id, body);
@@ -411,6 +413,7 @@ JSON"#;
     /// Same checks against the installed mkvmerge, when there is one.
     #[test]
     fn real_mkvmerge_errors_are_summarised() {
+        let _g = serial(); // spawning while another test writes a fake tool gives ETXTBSY
         let Some(real) = subforge_deps::find_executable("mkvmerge", &SearchEnv::from_process())
         else {
             eprintln!("mkvmerge not installed; skipping");
@@ -604,6 +607,43 @@ JSON"#;
 }
 
 #[test]
+fn subtitle_tracks_report_their_real_format() {
+    use subforge_core::subtitle::Format;
+    use subforge_core::tools::mkvtoolnix::Track;
+    let track = |codec: &str, codec_id: Option<&str>| -> Track {
+        let mut v =
+            serde_json::json!({ "id": 2, "type": "subtitles", "codec": codec, "properties": {} });
+        if let Some(id) = codec_id {
+            v["properties"]["codec_id"] = id.into();
+        }
+        serde_json::from_value(v).unwrap()
+    };
+    // codec / codec_id pairs as printed by mkvmerge -J.
+    assert_eq!(
+        track("SubStationAlpha", Some("S_TEXT/ASS")).subtitle_format(),
+        Format::Ass
+    );
+    assert_eq!(
+        track("SubStationAlpha", Some("S_TEXT/SSA")).subtitle_format(),
+        Format::Ssa
+    );
+    assert_eq!(
+        track("SubRip/SRT", Some("S_TEXT/UTF8")).subtitle_format(),
+        Format::Srt
+    );
+    assert_eq!(
+        track("WebVTT", Some("S_TEXT/WEBVTT")).subtitle_format(),
+        Format::Vtt
+    );
+    // Older output without codec_id falls back to the codec name.
+    assert_eq!(
+        track("SubStationAlpha", None).subtitle_format(),
+        Format::Ass
+    );
+    assert_eq!(track("SubRip/SRT", None).subtitle_format(), Format::Srt);
+}
+
+#[test]
 fn tool_ids_have_platform_exe_names() {
     let n = ToolId::Mkvpropedit.exe_name();
     if cfg!(windows) {
@@ -636,6 +676,7 @@ mod dependency_report {
 
     #[test]
     fn bundled_only_tools_count_as_present() {
+        let _g = serial();
         let bundled = tempfile::tempdir().unwrap();
         bundled_all(bundled.path());
         let paths = ToolPaths {
@@ -660,6 +701,7 @@ mod dependency_report {
 
     #[test]
     fn invalid_custom_path_is_a_failure_even_with_bundled_copy() {
+        let _g = serial();
         let bundled = tempfile::tempdir().unwrap();
         bundled_all(bundled.path());
         let missing = bundled.path().join("gone").join("mkvpropedit");
@@ -686,6 +728,7 @@ mod dependency_report {
 
     #[test]
     fn system_and_custom_sources_are_reported() {
+        let _g = serial();
         let sys = tempfile::tempdir().unwrap();
         let custom = tempfile::tempdir().unwrap();
         bundled_all(sys.path());

@@ -3,7 +3,7 @@ use crate::jobs::{Job, JobControlRegistry, JobStatus, JobType, SharedJobQueue};
 use crate::tools::tool_paths;
 use serde::{Deserialize, Serialize};
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use subforge_core::lines;
 use subforge_core::tools::mkvtoolnix;
@@ -491,10 +491,36 @@ pub async fn run_translation_pipeline(
             5,
             "Extracting subtitle track...",
         );
-        let extracted_path = std::env::temp_dir()
-            .join(format!("subforge_pipeline_{}_extracted.srt", job_id_clone))
-            .to_string_lossy()
-            .to_string();
+        // Name the files after the track's real format, so ASS keeps its styles.
+        let track_format = {
+            let (paths, video, track_id) = (paths.clone(), req.video_path.clone(), req.track_id);
+            tokio::task::spawn_blocking(move || {
+                mkvtoolnix::enumerate_tracks(&paths, &video).map(|info| {
+                    info.tracks
+                        .iter()
+                        .find(|t| t.id == track_id)
+                        .map(|t| t.subtitle_format())
+                })
+            })
+            .await
+        };
+        let track_format = match track_format {
+            Ok(Ok(Some(f))) => f,
+            Ok(Ok(None)) => fail!(format!(
+                "Track {} was not found in {}. Reload the file's tracks and try again.",
+                req.track_id, req.video_path
+            )),
+            Ok(Err(e)) => fail!(e.to_string()),
+            Err(e) => fail!(e.to_string()),
+        };
+        let pipeline = lines::pipeline_paths(
+            Path::new(&req.video_path),
+            &std::env::temp_dir(),
+            &job_id_clone,
+            &req.target_lang,
+            track_format,
+        );
+        let extracted_path = pipeline.extracted.to_string_lossy().to_string();
 
         let extract_result = {
             let (paths, video, track_id, out) = (
@@ -655,10 +681,7 @@ pub async fn run_translation_pipeline(
             translated.truncate(total);
         }
 
-        let translated_srt = video_dir
-            .join(format!("{}.{}.srt", video_stem, req.target_lang))
-            .to_string_lossy()
-            .to_string();
+        let translated_srt = pipeline.output.to_string_lossy().to_string();
 
         emit_stage(
             &app_clone,
