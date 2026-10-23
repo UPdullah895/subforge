@@ -8,6 +8,8 @@ export interface Toast {
   kind: ToastKind;
   message: string;
   detail?: string;
+  /** Raw tool output, shown in a collapsed "Details" section. */
+  details?: string;
 }
 
 const MAX_TOASTS = 4;
@@ -26,9 +28,9 @@ export const useToastStore = defineStore("toast", () => {
     toasts.value = toasts.value.filter((t) => t.id !== id);
   }
 
-  function push(kind: ToastKind, message: string, detail?: string): number {
+  function push(kind: ToastKind, message: string, detail?: string, details?: string): number {
     const id = nextId++;
-    toasts.value.push({ id, kind, message, detail });
+    toasts.value.push({ id, kind, message, detail, details: details || undefined });
     while (toasts.value.length > MAX_TOASTS) dismiss(toasts.value[0].id);
     timers.set(
       id,
@@ -42,7 +44,8 @@ export const useToastStore = defineStore("toast", () => {
     push,
     dismiss,
     success: (message: string, detail?: string) => push("success", message, detail),
-    error: (message: string, detail?: string) => push("error", message, detail),
+    error: (message: string, detail?: string, details?: string | null) =>
+      push("error", message, detail, details ?? undefined),
     info: (message: string, detail?: string) => push("info", message, detail),
   };
 });

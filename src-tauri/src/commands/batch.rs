@@ -214,6 +214,11 @@ pub async fn batch_extract_subtitles(
             .await
             .unwrap_or_else(|e| Err(ToolError::Io(std::io::Error::other(e))));
 
+            let details = result
+                .as_ref()
+                .err()
+                .and_then(|e| e.details())
+                .map(str::to_string);
             let mut q = queue_clone.lock().unwrap();
             match result {
                 Ok(extracted) => {
@@ -236,6 +241,7 @@ pub async fn batch_extract_subtitles(
                     "job_id": job_id,
                     "status": q.get(&job_id).map(|j| &j.status),
                     "message": q.get(&job_id).and_then(|j| j.message.clone()),
+                    "details": details,
                 }),
             );
         });

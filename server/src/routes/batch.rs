@@ -168,7 +168,7 @@ fn effective_output_dir(video: &str, output_dir: &str) -> String {
 
 pub async fn batch_extract_subtitles(
     Json(req): Json<BatchExtractRequest>,
-) -> Result<Json<Vec<String>>, StatusCode> {
+) -> Result<Json<Vec<String>>, crate::error::AppError> {
     crate::error::blocking(move || {
         let paths = tool_paths();
         let mut all_paths: Vec<String> = Vec::new();
@@ -179,10 +179,7 @@ pub async fn batch_extract_subtitles(
             } else {
                 mkvtoolnix::extract_subtitles_by_language(&paths, file, &output_dir, &req.languages)
             };
-            match result {
-                Ok(paths) => all_paths.extend(paths),
-                Err(_) => return Err(StatusCode::INTERNAL_SERVER_ERROR),
-            }
+            all_paths.extend(result?);
         }
         Ok(Json(all_paths))
     })

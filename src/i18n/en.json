@@ -25,7 +25,8 @@
     "extract": "Extract",
     "scanFailed": "Scan failed",
     "cancel": "Cancel",
-    "close": "Close"
+    "close": "Close",
+    "details": "Details"
   },
   "trackType": {
     "video": "Video",

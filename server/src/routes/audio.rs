@@ -1,3 +1,4 @@
+use crate::error::AppError;
 use crate::tools::tool_paths;
 use axum::{extract::Json, http::StatusCode};
 use serde::{Deserialize, Serialize};
@@ -19,11 +20,11 @@ pub struct TrackRequest {
 
 pub async fn list_audio_tracks(
     Json(req): Json<TrackRequest>,
-) -> Result<Json<Vec<AudioTrackInfo>>, StatusCode> {
+) -> Result<Json<Vec<AudioTrackInfo>>, AppError> {
     let streams =
         crate::error::blocking(move || ffmpeg::probe_audio_tracks(&tool_paths(), &req.file_path))
             .await?
-            .map_err(|_| StatusCode::BAD_REQUEST)?;
+            .map_err(AppError::from)?;
     let tracks: Vec<AudioTrackInfo> = streams
         .iter()
         .map(|s| AudioTrackInfo {
@@ -49,9 +50,7 @@ pub struct ExtractRequest {
     format: Option<String>,
 }
 
-pub async fn extract_audio_track(
-    Json(req): Json<ExtractRequest>,
-) -> Result<StatusCode, StatusCode> {
+pub async fn extract_audio_track(Json(req): Json<ExtractRequest>) -> Result<StatusCode, AppError> {
     crate::error::blocking(move || {
         ffmpeg::extract_audio(
             &tool_paths(),
@@ -62,7 +61,7 @@ pub async fn extract_audio_track(
         )
     })
     .await?
-    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    .map_err(AppError::from)?;
     Ok(StatusCode::OK)
 }
 
@@ -73,7 +72,7 @@ pub struct MergeRequest {
     output_path: String,
 }
 
-pub async fn merge_audio_track(Json(req): Json<MergeRequest>) -> Result<StatusCode, StatusCode> {
+pub async fn merge_audio_track(Json(req): Json<MergeRequest>) -> Result<StatusCode, AppError> {
     crate::error::blocking(move || {
         ffmpeg::merge_audio(
             &tool_paths(),
@@ -83,7 +82,7 @@ pub async fn merge_audio_track(Json(req): Json<MergeRequest>) -> Result<StatusCo
         )
     })
     .await?
-    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    .map_err(AppError::from)?;
     Ok(StatusCode::OK)
 }
 
@@ -93,11 +92,11 @@ pub struct RemoveRequest {
     output_path: String,
 }
 
-pub async fn remove_audio_tracks(Json(req): Json<RemoveRequest>) -> Result<StatusCode, StatusCode> {
+pub async fn remove_audio_tracks(Json(req): Json<RemoveRequest>) -> Result<StatusCode, AppError> {
     crate::error::blocking(move || {
         mkvtoolnix::remove_all_audio(&tool_paths(), &req.file_path, &req.output_path)
     })
     .await?
-    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    .map_err(AppError::from)?;
     Ok(StatusCode::OK)
 }

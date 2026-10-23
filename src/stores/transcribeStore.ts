@@ -3,6 +3,7 @@ import { apiInvoke } from "../api/client";
 import { startAndWait } from "../api/jobs";
 import { computed, ref } from "vue";
 import { useJobQueue } from "../composables/useJobQueue";
+import { errorDetails as errorDetailsOf } from "../api/errors";
 
 /** Built-in whisper.cpp engine, as reported by `get_whisper_info`. */
 export interface WhisperInfo {
@@ -21,6 +22,8 @@ export interface ModelDownload {
   model: string;
   jobId: string | null;
   progress: number;
+  /** Latest status line from the backend (MB done, speed). */
+  message?: string;
 }
 
 export interface DeviceOption {
@@ -54,6 +57,8 @@ export const useTranscribeStore = defineStore("transcribe", () => {
   const legacyCache = ref<string | null>(null);
   const legacyNoteDismissed = ref(readDismissed());
   const error = ref<string | null>(null);
+  // Raw tool / network output behind `error`, shown in a details expander.
+  const errorDetails = ref<string | null>(null);
   const { jobs, addJob, updateJobProgress, completeJob, clearCompleted, removeJob, cancelJob } = useJobQueue();
 
   const allModels = computed(() => catalog.value.map((m) => m.name));
@@ -107,7 +112,7 @@ export const useTranscribeStore = defineStore("transcribe", () => {
   async function downloadModel(name: string) {
     if (download.value) return;
     download.value = { model: name, jobId: null, progress: 0 };
-    error.value = null;
+    clearError();
     try {
       const result = await startAndWait(
         () => apiInvoke<string>("download_whisper_model", { model: name, cacheDir: null }),
@@ -115,21 +120,29 @@ export const useTranscribeStore = defineStore("transcribe", () => {
           onStarted: (jobId) => {
             if (download.value) download.value.jobId = jobId;
           },
-          onProgress: (pct) => {
-            if (download.value) download.value.progress = pct;
+          onProgress: (pct, message) => {
+            if (!download.value) return;
+            download.value.progress = pct;
+            if (message) download.value.message = message;
           },
         }
       );
       if (result.status === "failed") {
         error.value = `Failed to download model: ${result.message ?? "unknown error"}`;
-        if (result.details) console.warn("Model download details:", result.details);
+        errorDetails.value = result.details ?? null;
       }
       await loadModels();
     } catch (e) {
       error.value = `Failed to download model: ${errorText(e)}`;
+      errorDetails.value = errorDetailsOf(e) ?? null;
     } finally {
       download.value = null;
     }
+  }
+
+  function clearError() {
+    error.value = null;
+    errorDetails.value = null;
   }
 
   async function cancelDownload() {
@@ -208,6 +221,8 @@ export const useTranscribeStore = defineStore("transcribe", () => {
     legacyCache,
     showLegacyNote,
     error,
+    errorDetails,
+    clearError,
     jobs,
     allModels,
     loadInfo,

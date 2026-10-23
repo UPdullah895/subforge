@@ -1,4 +1,4 @@
-use crate::error::blocking;
+use crate::error::{blocking, AppError};
 use crate::tools::tool_paths;
 use crate::{jobs, AppState};
 use axum::{
@@ -31,10 +31,10 @@ pub struct TrackInfo {
 
 pub async fn enumerate_tracks(
     Json(req): Json<EnumerateRequest>,
-) -> Result<Json<Vec<TrackInfo>>, StatusCode> {
+) -> Result<Json<Vec<TrackInfo>>, AppError> {
     let info = blocking(move || mkvtoolnix::enumerate_tracks(&tool_paths(), &req.file_path))
         .await?
-        .map_err(|_| StatusCode::BAD_REQUEST)?;
+        .map_err(AppError::from)?;
     let tracks: Vec<TrackInfo> = info
         .tracks
         .iter()
@@ -64,7 +64,7 @@ pub struct ExtractRequest {
     output_path: String,
 }
 
-pub async fn extract_subtitle(Json(req): Json<ExtractRequest>) -> Result<String, StatusCode> {
+pub async fn extract_subtitle(Json(req): Json<ExtractRequest>) -> Result<String, AppError> {
     let output_path = req.output_path.clone();
     blocking(move || {
         mkvtoolnix::extract_subtitle_track(
@@ -75,7 +75,7 @@ pub async fn extract_subtitle(Json(req): Json<ExtractRequest>) -> Result<String,
         )
     })
     .await?
-    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    .map_err(AppError::from)?;
     Ok(output_path)
 }
 
@@ -176,6 +176,7 @@ pub async fn merge_subtitle(
         if let Err(e) = result {
             let cancelled = matches!(e, ToolError::Cancelled);
             let msg = e.to_string();
+            let details = e.details().map(str::to_string);
             let status = if cancelled {
                 jobs::JobStatus::Cancelled
             } else {
@@ -194,7 +195,7 @@ pub async fn merge_subtitle(
                     message: Some(msg),
                     stage: None,
                     output_path: None,
-                    details: None,
+                    details,
                 },
             );
             let mut registry = controls_clone.lock().unwrap();
@@ -235,12 +236,12 @@ pub struct RemoveRequest {
     output_path: String,
 }
 
-pub async fn remove_subtitles(Json(req): Json<RemoveRequest>) -> Result<StatusCode, StatusCode> {
+pub async fn remove_subtitles(Json(req): Json<RemoveRequest>) -> Result<StatusCode, AppError> {
     blocking(move || {
         mkvtoolnix::remove_all_subtitles(&tool_paths(), &req.file_path, &req.output_path)
     })
     .await?
-    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    .map_err(AppError::from)?;
     Ok(StatusCode::OK)
 }
 
@@ -251,22 +252,17 @@ pub struct ConvertRequest {
     format: String,
 }
 
-pub async fn convert_format(
-    Json(req): Json<ConvertRequest>,
-) -> Result<StatusCode, (StatusCode, String)> {
+pub async fn convert_format(Json(req): Json<ConvertRequest>) -> Result<StatusCode, AppError> {
     let to = Format::from_extension(&req.format).ok_or_else(|| {
-        (
-            StatusCode::BAD_REQUEST,
-            format!(
-                "Unsupported subtitle format '{}'. Use one of: srt, ass, ssa, vtt.",
-                req.format
-            ),
-        )
+        crate::error::err400(format!(
+            "Unsupported subtitle format '{}'. Use one of: srt, ass, ssa, vtt.",
+            req.format
+        ))
     })?;
     blocking(move || subtitle::convert_file(Path::new(&req.input), Path::new(&req.output), to))
         .await
-        .map_err(|c| (c, "task failed".to_string()))?
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+        .map_err(AppError::from)?
+        .map_err(crate::error::err500)?;
     Ok(StatusCode::OK)
 }
 
@@ -277,9 +273,7 @@ pub struct ShiftRequest {
     milliseconds: i64,
 }
 
-pub async fn shift_timing(
-    Json(req): Json<ShiftRequest>,
-) -> Result<StatusCode, (StatusCode, String)> {
+pub async fn shift_timing(Json(req): Json<ShiftRequest>) -> Result<StatusCode, AppError> {
     blocking(move || {
         subtitle::shift_file(
             Path::new(&req.input),
@@ -288,8 +282,8 @@ pub async fn shift_timing(
         )
     })
     .await
-    .map_err(|c| (c, "task failed".to_string()))?
-    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    .map_err(AppError::from)?
+    .map_err(crate::error::err500)?;
     Ok(StatusCode::OK)
 }
 
@@ -301,12 +295,12 @@ pub struct ExtractAllRequest {
 
 pub async fn extract_all_subtitles(
     Json(req): Json<ExtractAllRequest>,
-) -> Result<Json<Vec<String>>, StatusCode> {
+) -> Result<Json<Vec<String>>, AppError> {
     let paths = blocking(move || {
         mkvtoolnix::extract_all_subtitles(&tool_paths(), &req.file_path, &req.output_dir)
     })
     .await?
-    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    .map_err(AppError::from)?;
     Ok(Json(paths))
 }
 
@@ -320,13 +314,10 @@ pub struct StretchRequest {
 
 /// Fixes progressive drift caused by a frame-rate mismatch between the
 /// subtitle's origin and the video (a constant shift can't).
-pub async fn stretch_timing(
-    Json(req): Json<StretchRequest>,
-) -> Result<StatusCode, (StatusCode, String)> {
+pub async fn stretch_timing(Json(req): Json<StretchRequest>) -> Result<StatusCode, AppError> {
     if !(req.from_fps > 0.0 && req.to_fps > 0.0) {
-        return Err((
-            StatusCode::BAD_REQUEST,
-            "Frame rates must be positive numbers.".to_string(),
+        return Err(crate::error::err400(
+            "Frame rates must be positive numbers.",
         ));
     }
     blocking(move || {
@@ -338,8 +329,8 @@ pub async fn stretch_timing(
         )
     })
     .await
-    .map_err(|c| (c, "task failed".to_string()))?
-    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    .map_err(AppError::from)?
+    .map_err(crate::error::err500)?;
     Ok(StatusCode::OK)
 }
 

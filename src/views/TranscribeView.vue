@@ -11,6 +11,7 @@ const { t } = useI18n();
 import { JOB_STATUS, type JobStatus } from "../constants/jobStatus";
 import { useAppStore } from "../stores/appStore";
 import ErrorBanner from "../components/ErrorBanner.vue";
+import ErrorDetails from "../components/ErrorDetails.vue";
 import Modal from "../components/Modal.vue";
 import {
   FolderOpen,
@@ -130,10 +131,10 @@ onMounted(async () => {
     }
   );
 
-  unlistenCompleted = await apiListen<{ job_id: string; status: string; message?: string }>(
+  unlistenCompleted = await apiListen<{ job_id: string; status: string; message?: string; details?: string | null }>(
     "job-completed",
-    ({ job_id, status, message }) => {
-      transcribeStore.completeJob(job_id, status as JobStatus, message);
+    ({ job_id, status, message, details }) => {
+      transcribeStore.completeJob(job_id, status as JobStatus, message, details);
     }
   );
 });
@@ -173,7 +174,11 @@ onUnmounted(() => {
 
     <!-- Content -->
     <div class="flex-1 overflow-auto p-6 space-y-6">
-      <ErrorBanner :message="transcribeStore.error" @dismiss="transcribeStore.error = null" />
+      <ErrorBanner
+        :message="transcribeStore.error"
+        :details="transcribeStore.errorDetails"
+        @dismiss="transcribeStore.clearError()"
+      />
 
       <!-- Engine status could not be read (e.g. web mode with the server down) -->
       <div
@@ -365,6 +370,14 @@ onUnmounted(() => {
                   :style="{ width: `${downloadPercent}%` }"
                 />
               </div>
+              <p
+                v-if="transcribeStore.download.message"
+                data-testid="download-message"
+                dir="ltr"
+                class="text-[11px] text-text-muted truncate"
+              >
+                {{ transcribeStore.download.message }}
+              </p>
             </div>
             <p v-else-if="!isModelDownloaded" class="text-xs text-warning mt-1.5">
               {{ t("transcribe.modelNotCached") }}
@@ -474,6 +487,7 @@ onUnmounted(() => {
               <div class="flex-1 min-w-0">
                 <p class="text-xs text-text-muted font-mono truncate">{{ job.id.slice(0, 24) }}…</p>
                 <p v-if="job.message" class="text-xs text-text-secondary truncate">{{ job.message }}</p>
+                <ErrorDetails :details="job.details" />
               </div>
               <button
                 class="text-text-muted hover:text-text-secondary transition-colors"

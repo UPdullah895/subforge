@@ -8,6 +8,7 @@ import { useAppStore } from "../stores/appStore";
 
 const { t } = useI18n();
 import AudioTrackTable from "../components/AudioTrackTable.vue";
+import ErrorDetails from "../components/ErrorDetails.vue";
 import {
   FolderOpen,
   Loader2,
@@ -299,6 +300,7 @@ onMounted(() => {
         <div>
           <p class="text-sm font-medium text-error">{{ t("common.failedToReadFile") }}</p>
           <p class="text-xs text-error/80 mt-1">{{ audioStore.error }}</p>
+          <ErrorDetails :details="audioStore.errorDetails" />
         </div>
       </div>
 
@@ -362,6 +364,7 @@ onMounted(() => {
               <p v-if="job.message" class="text-xs text-text-secondary truncate">
                 {{ job.message }}
               </p>
+              <ErrorDetails :details="job.details" />
             </div>
             <button
               class="text-text-muted hover:text-text-secondary transition-colors"

@@ -2,6 +2,7 @@
 import { AlertTriangle, CheckCircle2, Info, X } from "lucide-vue-next";
 import { useI18n } from "vue-i18n";
 import { useToastStore } from "../stores/toastStore";
+import ErrorDetails from "./ErrorDetails.vue";
 
 const { t } = useI18n();
 const toastStore = useToastStore();
@@ -40,6 +41,7 @@ const tones = {
           >
             {{ toast.detail }}
           </p>
+          <ErrorDetails :details="toast.details" />
         </div>
         <button
           class="text-text-muted hover:text-text-primary shrink-0"

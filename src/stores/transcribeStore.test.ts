@@ -48,8 +48,9 @@ describe("transcribeStore", () => {
     expect(store.downloadingModel).toBe("base");
     expect(store.download?.progress).toBe(0);
 
-    opts.onProgress?.(42.5);
+    opts.onProgress?.(42.5, "ggml-base.bin: 60.1 / 141.0 MB, 12.3 MB/s");
     expect(store.download?.progress).toBe(42.5);
+    expect(store.download?.message).toBe("ggml-base.bin: 60.1 / 141.0 MB, 12.3 MB/s");
 
     // Cancel goes through the shared job-control command with the tracked id.
     await store.cancelDownload();
@@ -75,6 +76,26 @@ describe("transcribeStore", () => {
     await store.downloadModel("tiny");
     expect(store.error).toBeNull();
     expect(store.download).toBeNull();
+  });
+
+  it("downloadModel keeps the raw details of a failed job for the details expander", async () => {
+    const store = useTranscribeStore();
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.mocked(apiInvoke).mockResolvedValue([]);
+    vi.mocked(startAndWait).mockResolvedValueOnce({
+      job_id: "d",
+      status: "failed",
+      message: "Download failed",
+      details: "GET https://huggingface.co/x -> 404",
+    });
+    await store.downloadModel("tiny");
+    expect(store.error).toContain("Download failed");
+    expect(store.errorDetails).toBe("GET https://huggingface.co/x -> 404");
+    expect(warn).not.toHaveBeenCalled();
+    store.clearError();
+    expect(store.error).toBeNull();
+    expect(store.errorDetails).toBeNull();
+    warn.mockRestore();
   });
 
   it("device list hides gpu when not detected", async () => {

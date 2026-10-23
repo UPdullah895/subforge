@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { commandSchemas } from "./schemas";
+import { ApiError, toApiError } from "./errors";
 
 // `__TAURI_INTERNALS__` is injected by every Tauri v2 webview regardless of
 // the `withGlobalTauri` config flag (which only controls `__TAURI__`), so
@@ -11,7 +12,11 @@ export function isTauri(): boolean {
 
 export async function apiInvoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
   if (isTauri()) {
-    return invoke<T>(cmd, args);
+    try {
+      return await invoke<T>(cmd, args);
+    } catch (e) {
+      throw toApiError(e);
+    }
   }
 
   // Map command to REST endpoint
@@ -24,7 +29,7 @@ export async function apiInvoke<T>(cmd: string, args?: Record<string, unknown>):
         body: JSON.stringify(restBody(cmd, args)),
       });
 
-  if (!resp.ok) throw new Error(await errorMessage(resp));
+  if (!resp.ok) throw await responseError(resp);
 
   const data = await readBody(resp);
   const schema = commandSchemas[cmd];
@@ -67,16 +72,18 @@ async function readBody(resp: Response): Promise<unknown> {
   return text.trim() === "" ? undefined : JSON.parse(text);
 }
 
-// Handlers answer with `{"error": "..."}`, a plain-text body, or just a
-// status code; reduce all three to a sentence.
-async function errorMessage(resp: Response): Promise<string> {
+// Handlers answer with `{"error": "...", "details"?: "..."}`, a plain-text body,
+// or just a status code; reduce all three to a sentence (plus raw details).
+async function responseError(resp: Response): Promise<ApiError> {
   const text = (await resp.text()).trim();
   if (text) {
     try {
-      const body = JSON.parse(text) as { error?: unknown };
-      if (typeof body.error === "string" && body.error) return body.error;
+      const body = JSON.parse(text) as { error?: unknown; details?: unknown };
+      if (typeof body.error === "string" && body.error) {
+        return new ApiError(body.error, typeof body.details === "string" ? body.details : undefined);
+      }
     } catch {
-      return text;
+      return new ApiError(text);
     }
   }
   const reasons: Record<number, string> = {
@@ -87,19 +94,23 @@ async function errorMessage(resp: Response): Promise<string> {
     502: "A remote service could not be reached.",
     503: "A required tool is unavailable.",
   };
-  return reasons[resp.status] ?? `Request failed (HTTP ${resp.status}).`;
+  return new ApiError(reasons[resp.status] ?? `Request failed (HTTP ${resp.status}).`);
 }
 
 export async function apiGet<T>(cmd: string, params?: Record<string, string>): Promise<T> {
   if (isTauri()) {
-    return invoke<T>(cmd, params);
+    try {
+      return await invoke<T>(cmd, params);
+    } catch (e) {
+      throw toApiError(e);
+    }
   }
 
   const endpoint = cmdToEndpoint(cmd);
   const query = params ? "?" + new URLSearchParams(params).toString() : "";
   const resp = await fetch(endpoint + query);
 
-  if (!resp.ok) throw new Error(await errorMessage(resp));
+  if (!resp.ok) throw await responseError(resp);
 
   return (await readBody(resp)) as T;
 }

@@ -141,6 +141,129 @@ async fn whisper_info_and_catalog_routes() {
     );
 }
 
+fn post_json(uri: &str, body: serde_json::Value) -> Request<Body> {
+    Request::post(uri)
+        .header("content-type", "application/json")
+        .body(Body::from(body.to_string()))
+        .unwrap()
+}
+
+/// Saves a config whose custom mkvmerge is a fake script printing real
+/// mkvmerge v102 failure output.
+#[cfg(unix)]
+fn fake_failing_mkvmerge() -> (TestConfigDir, std::path::PathBuf) {
+    use std::os::unix::fs::PermissionsExt;
+    let cfg_dir = TestConfigDir::new();
+    let dir = std::env::temp_dir().join(format!("subforge_fake_{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let exe = dir.join("mkvmerge");
+    std::fs::write(
+        &exe,
+        "#!/bin/sh\necho \"mkvmerge v102.0 ('Little Houses') 64-bit\"\n\
+         echo \"Error: The type of file 'junk.txt' could not be recognized.\"\nexit 2\n",
+    )
+    .unwrap();
+    std::fs::set_permissions(&exe, std::fs::Permissions::from_mode(0o755)).unwrap();
+    AppConfig {
+        mkvmerge_path: Some(exe.to_string_lossy().to_string()),
+        ..AppConfig::default()
+    }
+    .save()
+    .unwrap();
+    (cfg_dir, dir)
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn tool_failure_returns_error_and_details_json() {
+    let (_cfg, dir) = fake_failing_mkvmerge();
+    let res = test_app()
+        .oneshot(post_json(
+            "/api/subtitle/enumerate",
+            serde_json::json!({ "file_path": "junk.txt" }),
+        ))
+        .await
+        .unwrap();
+    let _ = std::fs::remove_dir_all(&dir);
+    assert_eq!(res.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    let body = body_json(res).await;
+    assert_eq!(
+        body["error"],
+        "mkvmerge failed: The type of file 'junk.txt' could not be recognized."
+    );
+    assert!(
+        body["details"]
+            .as_str()
+            .unwrap()
+            .contains("mkvmerge v102.0"),
+        "{body}"
+    );
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn batch_extract_tool_failure_returns_error_and_details_json() {
+    let (_cfg, dir) = fake_failing_mkvmerge();
+    let res = test_app()
+        .oneshot(post_json(
+            "/api/batch/extract",
+            serde_json::json!({ "files": ["junk.txt"], "output_dir": "", "languages": [] }),
+        ))
+        .await
+        .unwrap();
+    let _ = std::fs::remove_dir_all(&dir);
+    assert_eq!(res.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    let body = body_json(res).await;
+    assert!(
+        body["error"]
+            .as_str()
+            .unwrap()
+            .contains("could not be recognized"),
+        "{body}"
+    );
+    assert!(body["details"].is_string(), "{body}");
+}
+
+#[tokio::test]
+async fn invalid_custom_tool_path_is_503_naming_the_setting() {
+    let _cfg = TestConfigDir::new();
+    AppConfig {
+        mkvmerge_path: Some("/nope/mkvmerge".into()),
+        ..AppConfig::default()
+    }
+    .save()
+    .unwrap();
+    let res = test_app()
+        .oneshot(post_json(
+            "/api/subtitle/enumerate",
+            serde_json::json!({ "file_path": "x.mkv" }),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::SERVICE_UNAVAILABLE);
+    let body = body_json(res).await;
+    assert!(
+        body["error"].as_str().unwrap().contains("Settings"),
+        "{body}"
+    );
+}
+
+#[tokio::test]
+async fn convert_unknown_format_is_400_with_readable_body() {
+    let res = test_app()
+        .oneshot(post_json(
+            "/api/subtitle/convert",
+            serde_json::json!({ "input": "a.srt", "output": "a.xyz", "format": "xyz" }),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::BAD_REQUEST);
+    let body = body_json(res).await;
+    let msg = body["error"].as_str().unwrap();
+    assert!(msg.contains("Unsupported subtitle format 'xyz'"), "{msg}");
+    assert!(msg.contains("srt, ass, ssa, vtt"), "{msg}");
+}
+
 #[tokio::test]
 async fn whisper_download_rejects_unknown_model() {
     let res = test_app()

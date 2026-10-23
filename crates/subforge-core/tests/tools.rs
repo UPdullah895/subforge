@@ -200,7 +200,7 @@ mod fake_mkv {
                 details,
             } => {
                 assert_eq!(tool, ToolId::Mkvmerge);
-                assert!(summary.contains("Error: bad file"), "{summary}");
+                assert_eq!(summary, "bad file");
                 assert!(details.contains("Error: bad file"), "{details}");
                 assert!(details.contains("stderr text"), "{details}");
             }
@@ -297,6 +297,146 @@ mod fake_mkv {
         );
         let args = std::fs::read_to_string(&log).unwrap();
         assert!(args.starts_with("-hide_banner\n-v\nerror\n"), "{args}");
+    }
+
+    fn failed_parts(err: ToolError) -> (ToolId, String, String) {
+        match err {
+            ToolError::Failed {
+                tool,
+                summary,
+                details,
+            } => (tool, summary, details),
+            other => panic!("expected Failed, got {other:?}"),
+        }
+    }
+
+    // Output captured from the real mkvmerge v102.0 (`mkvmerge -o out.mkv junk.txt`).
+    #[test]
+    fn mkv_failure_summary_skips_banner_and_uses_error_line() {
+        let _g = serial();
+        let d = tempfile::tempdir().unwrap();
+        let body = "echo \"mkvmerge v102.0 ('Little Houses') 64-bit\"\n\
+                    echo \"Error: The type of file 'junk.txt' could not be recognized.\"\n\
+                    exit 2";
+        let paths = paths_with(d.path(), ToolId::Mkvmerge, body);
+        let err = mkvtoolnix::remove_tracks(&paths, "junk.txt", &[2], "out.mkv").unwrap_err();
+        assert_eq!(err.details().map(|s| s.contains("v102.0")), Some(true));
+        let (tool, summary, details) = failed_parts(err);
+        assert_eq!(tool, ToolId::Mkvmerge);
+        assert_eq!(
+            summary,
+            "The type of file 'junk.txt' could not be recognized."
+        );
+        assert!(details.contains("mkvmerge v102.0"), "{details}");
+    }
+
+    // `--gui-mode` output of the same failure.
+    #[test]
+    fn mkv_failure_summary_understands_gui_mode_errors() {
+        let _g = serial();
+        let d = tempfile::tempdir().unwrap();
+        let body = "echo \"mkvmerge v102.0 ('Little Houses') 64-bit\"\n\
+                    echo \"#GUI#warning something minor\"\n\
+                    echo \"#GUI#error The type of file 'junk.txt' could not be recognized.\"\n\
+                    exit 2";
+        let paths = paths_with(d.path(), ToolId::Mkvmerge, body);
+        let err = mkvtoolnix::remove_tracks(&paths, "junk.txt", &[2], "out.mkv").unwrap_err();
+        let (_, summary, _) = failed_parts(err);
+        assert_eq!(
+            summary,
+            "The type of file 'junk.txt' could not be recognized."
+        );
+    }
+
+    // `mkvmerge -J nonexist.mkv`: exit 2 with the reason in the JSON `errors[]`.
+    #[test]
+    fn mkv_identify_failure_summary_comes_from_json_errors() {
+        let _g = serial();
+        let d = tempfile::tempdir().unwrap();
+        let body = r#"cat <<'JSON'
+{
+  "errors": [
+    "The file 'nonexist.mkv' could not be opened for reading: open file error.\n"
+  ],
+  "warnings": []
+}
+JSON
+exit 2"#;
+        let paths = paths_with(d.path(), ToolId::Mkvmerge, body);
+        let err = mkvtoolnix::enumerate_tracks(&paths, "nonexist.mkv").unwrap_err();
+        let (_, summary, details) = failed_parts(err);
+        assert_eq!(
+            summary,
+            "The file 'nonexist.mkv' could not be opened for reading: open file error."
+        );
+        assert!(details.contains("\"errors\""), "{details}");
+    }
+
+    // `-J` exits 0 but reports errors: an error, not "no tracks".
+    #[test]
+    fn mkv_identify_exit_0_with_errors_is_a_failure() {
+        let _g = serial();
+        let d = tempfile::tempdir().unwrap();
+        let body = r#"echo '{"errors":["Some reason."],"warnings":[],"tracks":[]}'"#;
+        let paths = paths_with(d.path(), ToolId::Mkvmerge, body);
+        let err = mkvtoolnix::enumerate_tracks(&paths, "x.mkv").unwrap_err();
+        let (_, summary, _) = failed_parts(err);
+        assert_eq!(summary, "Some reason.");
+    }
+
+    // Real mkvmerge v102 on a text file: exit 0, `errors: []`, `recognized: false`.
+    #[test]
+    fn mkv_identify_unrecognized_file_is_a_failure() {
+        let _g = serial();
+        let d = tempfile::tempdir().unwrap();
+        let body = r#"cat <<'JSON'
+{
+  "container": {
+    "recognized": false,
+    "supported": false
+  },
+  "errors": [],
+  "file_name": "junk.txt",
+  "identification_format_version": 20,
+  "warnings": []
+}
+JSON"#;
+        let paths = paths_with(d.path(), ToolId::Mkvmerge, body);
+        let err = mkvtoolnix::enumerate_tracks(&paths, "junk.txt").unwrap_err();
+        let (_, summary, _) = failed_parts(err);
+        assert!(summary.contains("junk.txt"), "{summary}");
+        assert!(summary.contains("not recognized"), "{summary}");
+    }
+
+    /// Same checks against the installed mkvmerge, when there is one.
+    #[test]
+    fn real_mkvmerge_errors_are_summarised() {
+        let Some(real) = subforge_deps::find_executable("mkvmerge", &SearchEnv::from_process())
+        else {
+            eprintln!("mkvmerge not installed; skipping");
+            return;
+        };
+        let d = tempfile::tempdir().unwrap();
+        let junk = d.path().join("junk file.txt");
+        std::fs::write(&junk, "not a video").unwrap();
+        let paths = ToolPaths {
+            custom: HashMap::from([(ToolId::Mkvmerge, real)]),
+            bundled_dir: None,
+        };
+        let junk_s = junk.to_string_lossy().into_owned();
+        let (_, summary, _) =
+            failed_parts(mkvtoolnix::enumerate_tracks(&paths, &junk_s).unwrap_err());
+        assert!(summary.contains("junk file.txt"), "{summary}");
+        let missing = d.path().join("missing.mkv").to_string_lossy().into_owned();
+        let (_, summary, _) =
+            failed_parts(mkvtoolnix::enumerate_tracks(&paths, &missing).unwrap_err());
+        assert!(summary.contains("could not be opened"), "{summary}");
+        let out = d.path().join("out.mkv").to_string_lossy().into_owned();
+        let (_, summary, _) =
+            failed_parts(mkvtoolnix::remove_tracks(&paths, &junk_s, &[1], &out).unwrap_err());
+        assert!(!summary.starts_with("mkvmerge v"), "{summary}");
+        // remove_tracks identifies the file first, so either wording may come back.
+        assert!(summary.contains("recognized"), "{summary}");
     }
 
     /// Fake mkvmerge: answers `-J` with four tracks (0 video, 1 audio, 2 and 3

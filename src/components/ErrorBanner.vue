@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { AlertTriangle, X } from "lucide-vue-next";
-defineProps<{ message: string | null }>();
+import ErrorDetails from "./ErrorDetails.vue";
+defineProps<{ message: string | null; details?: string | null }>();
 const emit = defineEmits<{ dismiss: [] }>();
 </script>
 
@@ -12,6 +13,7 @@ const emit = defineEmits<{ dismiss: [] }>();
     <AlertTriangle class="w-5 h-5 text-error shrink-0 mt-0.5" />
     <div class="flex-1 min-w-0">
       <p class="text-sm font-medium text-error">{{ message }}</p>
+      <ErrorDetails :details="details" />
     </div>
     <button
       class="text-error/60 hover:text-error transition-colors shrink-0"

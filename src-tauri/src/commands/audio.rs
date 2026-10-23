@@ -1,4 +1,4 @@
-use super::blocking;
+use super::{blocking, CommandError};
 use crate::tools::tool_paths;
 use serde::{Deserialize, Serialize};
 use subforge_core::tools::ffmpeg::{self, FfprobeStream};
@@ -30,10 +30,10 @@ impl From<&FfprobeStream> for AudioTrackInfo {
 }
 
 #[tauri::command]
-pub async fn list_audio_tracks(file_path: String) -> Result<Vec<AudioTrackInfo>, String> {
+pub async fn list_audio_tracks(file_path: String) -> Result<Vec<AudioTrackInfo>, CommandError> {
     blocking(move || {
         let streams =
-            ffmpeg::probe_audio_tracks(&tool_paths(), &file_path).map_err(|e| e.to_string())?;
+            ffmpeg::probe_audio_tracks(&tool_paths(), &file_path).map_err(CommandError::from)?;
         Ok(streams.iter().map(|s| s.into()).collect())
     })
     .await
@@ -45,7 +45,7 @@ pub async fn extract_audio_track(
     track_index: u64,
     output_path: String,
     format: Option<String>,
-) -> Result<(), String> {
+) -> Result<(), CommandError> {
     blocking(move || {
         ffmpeg::extract_audio(
             &tool_paths(),
@@ -54,7 +54,7 @@ pub async fn extract_audio_track(
             &output_path,
             format.as_deref(),
         )
-        .map_err(|e| e.to_string())
+        .map_err(CommandError::from)
     })
     .await
 }
@@ -64,19 +64,22 @@ pub async fn merge_audio_track(
     video_path: String,
     audio_path: String,
     output_path: String,
-) -> Result<(), String> {
+) -> Result<(), CommandError> {
     blocking(move || {
         ffmpeg::merge_audio(&tool_paths(), &video_path, &audio_path, &output_path)
-            .map_err(|e| e.to_string())
+            .map_err(CommandError::from)
     })
     .await
 }
 
 #[tauri::command]
-pub async fn remove_audio_tracks(file_path: String, output_path: String) -> Result<(), String> {
+pub async fn remove_audio_tracks(
+    file_path: String,
+    output_path: String,
+) -> Result<(), CommandError> {
     blocking(move || {
         mkvtoolnix::remove_all_audio(&tool_paths(), &file_path, &output_path)
-            .map_err(|e| e.to_string())
+            .map_err(CommandError::from)
     })
     .await
 }

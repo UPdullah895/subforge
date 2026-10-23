@@ -13,10 +13,12 @@ export interface JobResult {
 interface ProgressEvent {
   job_id: string;
   progress?: number;
+  message?: string | null;
 }
 
 export interface StartAndWaitOptions {
-  onProgress?: (percent: number) => void;
+  /** `message` is the backend status line, e.g. MB done and speed of a download. */
+  onProgress?: (percent: number, message?: string) => void;
   /** Receives the job id as soon as the backend has accepted the job. */
   onStarted?: (jobId: string) => void;
 }
@@ -48,7 +50,7 @@ export async function startAndWait(
 
   const offProgress = await apiListen<ProgressEvent>("job-progress", (p) => {
     if ((wantedId === null || p.job_id === wantedId) && typeof p.progress === "number") {
-      options.onProgress?.(p.progress);
+      options.onProgress?.(p.progress, p.message ?? undefined);
     }
   });
   const offCompleted = await apiListen<JobResult>("job-completed", (p) => {

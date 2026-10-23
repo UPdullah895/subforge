@@ -144,21 +144,19 @@ pub enum ToolError {
 }
 
 impl ToolError {
+    /// Raw tool output for a "details" disclosure, when there is any.
+    pub fn details(&self) -> Option<&str> {
+        match self {
+            ToolError::Failed { details, .. } if !details.is_empty() => Some(details),
+            _ => None,
+        }
+    }
+
     /// Builds a [`ToolError::Failed`] from the raw output text (may be empty).
     pub(crate) fn failed(tool: ToolId, status: &std::process::ExitStatus, details: String) -> Self {
         let details = details.trim().to_string();
-        let mut lines = details
-            .lines()
-            .filter(|l| !l.trim().is_empty() && !is_banner_line(l))
-            .map(str::trim);
-        // ffmpeg prints the actual error last; the MKVToolNix tools print it first.
-        let first = if matches!(tool, ToolId::Ffmpeg | ToolId::Ffprobe) {
-            lines.next_back()
-        } else {
-            lines.next()
-        };
-        let summary = match first {
-            Some(l) => truncate(l, 300),
+        let summary = match summarize(tool, &details) {
+            Some(l) => truncate(&l, 300),
             None => format!("exited with {status}"),
         };
         ToolError::Failed {
@@ -169,14 +167,92 @@ impl ToolError {
     }
 }
 
-/// ffmpeg/ffprobe start-up banner lines, which are never the reason for a failure.
+/// The one line of tool output that best explains a failure.
+fn summarize(tool: ToolId, details: &str) -> Option<String> {
+    let is_mkv = !matches!(tool, ToolId::Ffmpeg | ToolId::Ffprobe);
+    if is_mkv {
+        // `mkvmerge -J` reports failures in the JSON `errors` array.
+        if let Some(e) = json_errors(details).into_iter().next() {
+            return Some(e);
+        }
+        // Plain (`Error: ...`) and `--gui-mode` (`#GUI#error ...`) error lines.
+        if let Some(e) = details.lines().find_map(mkv_error_line) {
+            return Some(e);
+        }
+    }
+    let mut lines = details
+        .lines()
+        .filter(|l| !l.trim().is_empty() && !is_banner_line(l))
+        .map(str::trim);
+    // ffmpeg prints the actual error last; the MKVToolNix tools print it first.
+    let line = if is_mkv {
+        lines.next()
+    } else {
+        lines.next_back()
+    };
+    line.map(str::to_string)
+}
+
+/// The message of an MKVToolNix `Error:` / `#GUI#error` line, without the
+/// prefix and the optional `(mkvextract)` tool tag.
+fn mkv_error_line(l: &str) -> Option<String> {
+    let t = l.trim();
+    let rest = t
+        .strip_prefix("Error:")
+        .or_else(|| t.strip_prefix("#GUI#error"))?
+        .trim_start();
+    let rest = match rest.strip_prefix('(') {
+        Some(r) if r.starts_with("mkv") => r.split_once(')').map_or(rest, |(_, m)| m.trim_start()),
+        _ => rest,
+    };
+    (!rest.is_empty()).then(|| rest.to_string())
+}
+
+/// Non-empty entries of the `errors` array in `mkvmerge -J` output (which may be
+/// followed by stderr text).
+pub(crate) fn json_errors(text: &str) -> Vec<String> {
+    let json = match (text.find('{'), text.rfind('}')) {
+        (Some(a), Some(b)) if a < b => &text[a..=b],
+        _ => return Vec::new(),
+    };
+    let Ok(v) = serde_json::from_str::<serde_json::Value>(json) else {
+        return Vec::new();
+    };
+    v.get("errors")
+        .and_then(|e| e.as_array())
+        .map(|a| {
+            a.iter()
+                .filter_map(|e| e.as_str())
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// Start-up banner lines (ffmpeg/ffprobe build info, `mkvmerge v102.0 (...)`),
+/// which are never the reason for a failure.
 fn is_banner_line(l: &str) -> bool {
     let t = l.trim_start();
-    t.starts_with("ffmpeg version")
+    is_mkv_banner(t)
+        || t.starts_with("ffmpeg version")
         || t.starts_with("ffprobe version")
         || t.starts_with("built with")
         || t.starts_with("configuration:")
         || (l.starts_with(' ') && t.starts_with("lib"))
+}
+
+/// `mkv<name> v<digit>...`, e.g. `mkvmerge v102.0 ('Little Houses') 64-bit`.
+fn is_mkv_banner(t: &str) -> bool {
+    let Some(rest) = t.strip_prefix("mkv") else {
+        return false;
+    };
+    let name_len = rest
+        .find(|c: char| !c.is_ascii_alphanumeric())
+        .unwrap_or(rest.len());
+    rest[name_len..]
+        .strip_prefix(" v")
+        .is_some_and(|v| v.starts_with(|c: char| c.is_ascii_digit()))
 }
 
 fn truncate(s: &str, max: usize) -> String {
@@ -315,4 +391,31 @@ pub fn tool_status(paths: &ToolPaths) -> Vec<ToolStatus> {
             },
         })
         .collect()
+}
+
+#[cfg(test)]
+mod summary_tests {
+    use super::*;
+
+    #[test]
+    fn mkv_error_lines_drop_prefix_and_tool_tag() {
+        // Captured from the real mkvextract v102.0 on a missing file.
+        assert_eq!(
+            mkv_error_line("Error: (mkvextract) This file could not be opened or parsed.")
+                .as_deref(),
+            Some("This file could not be opened or parsed.")
+        );
+        assert_eq!(
+            mkv_error_line("#GUI#error Bad thing").as_deref(),
+            Some("Bad thing")
+        );
+        assert_eq!(mkv_error_line("Warning: meh"), None);
+    }
+
+    #[test]
+    fn mkv_banner_is_recognised() {
+        assert!(is_banner_line("mkvmerge v102.0 ('Little Houses') 64-bit"));
+        assert!(is_banner_line("mkvextract v96.0 ('It's My Life') 64-bit"));
+        assert!(!is_banner_line("mkvmerge: the file is broken"));
+    }
 }

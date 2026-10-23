@@ -25,7 +25,8 @@
     "extract": "استخراج",
     "scanFailed": "فشل المسح",
     "cancel": "إلغاء",
-    "close": "إغلاق"
+    "close": "إغلاق",
+    "details": "التفاصيل"
   },
   "trackType": {
     "video": "فيديو",

@@ -1,4 +1,4 @@
-use super::blocking;
+use super::{blocking, CommandError};
 use crate::config::AppConfig;
 use crate::jobs::{Job, JobControlRegistry, JobStatus, JobType, SharedJobQueue};
 use crate::tools::{tool_paths, ToolRegistry};
@@ -67,10 +67,10 @@ pub fn save_config(mut config: AppConfig) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub async fn enumerate_tracks(file_path: String) -> Result<Vec<TrackInfo>, String> {
+pub async fn enumerate_tracks(file_path: String) -> Result<Vec<TrackInfo>, CommandError> {
     blocking(move || {
         let info =
-            mkvtoolnix::enumerate_tracks(&tool_paths(), &file_path).map_err(|e| e.to_string())?;
+            mkvtoolnix::enumerate_tracks(&tool_paths(), &file_path).map_err(CommandError::from)?;
         Ok(info.tracks.iter().map(|t| t.into()).collect())
     })
     .await
@@ -81,10 +81,10 @@ pub async fn extract_subtitle(
     file_path: String,
     track_id: u64,
     output_path: String,
-) -> Result<String, String> {
+) -> Result<String, CommandError> {
     blocking(move || {
         mkvtoolnix::extract_subtitle_track(&tool_paths(), &file_path, track_id, &output_path)
-            .map_err(|e| e.to_string())?;
+            .map_err(CommandError::from)?;
         Ok(output_path)
     })
     .await
@@ -94,10 +94,10 @@ pub async fn extract_subtitle(
 pub async fn extract_all_subtitles(
     file_path: String,
     output_dir: String,
-) -> Result<Vec<String>, String> {
+) -> Result<Vec<String>, CommandError> {
     blocking(move || {
         mkvtoolnix::extract_all_subtitles(&tool_paths(), &file_path, &output_dir)
-            .map_err(|e| e.to_string())
+            .map_err(CommandError::from)
     })
     .await
 }
@@ -189,6 +189,7 @@ pub async fn merge_subtitle_into_video(
                     "job_id": job_id_clone,
                     "status": if cancelled { "cancelled" } else { "failed" },
                     "message": msg,
+                    "details": e.details(),
                 }),
             );
             let mut registry = controls_clone.lock().unwrap();
@@ -219,10 +220,13 @@ pub async fn merge_subtitle_into_video(
 }
 
 #[tauri::command]
-pub async fn remove_subtitle_tracks(file_path: String, output_path: String) -> Result<(), String> {
+pub async fn remove_subtitle_tracks(
+    file_path: String,
+    output_path: String,
+) -> Result<(), CommandError> {
     blocking(move || {
         mkvtoolnix::remove_all_subtitles(&tool_paths(), &file_path, &output_path)
-            .map_err(|e| e.to_string())
+            .map_err(CommandError::from)
     })
     .await
 }
@@ -298,7 +302,7 @@ fn track_flag_props(request: &SetTrackMetaRequest) -> Vec<(String, String)> {
 }
 
 #[tauri::command]
-pub async fn set_track_metadata(request: SetTrackMetaRequest) -> Result<(), String> {
+pub async fn set_track_metadata(request: SetTrackMetaRequest) -> Result<(), CommandError> {
     blocking(move || {
         let props = track_flag_props(&request);
         // mkvpropedit uses 1-indexed track:@N selection.
@@ -309,7 +313,7 @@ pub async fn set_track_metadata(request: SetTrackMetaRequest) -> Result<(), Stri
             number,
             &props,
         )
-        .map_err(|e| e.to_string())
+        .map_err(CommandError::from)
     })
     .await
 }

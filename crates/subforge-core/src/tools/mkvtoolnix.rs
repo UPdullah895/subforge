@@ -188,7 +188,29 @@ pub fn enumerate_tracks(paths: &ToolPaths, file_path: &str) -> Result<MkvInfo, T
     let output = check(ToolId::Mkvmerge, output)?;
 
     let stdout = String::from_utf8_lossy(&output.stdout);
-    serde_json::from_str(&stdout).map_err(|e| ToolError::Json(e.to_string()))
+    identify_result(file_path, &stdout, &mkv_error_text(&output))
+}
+
+/// Interprets `mkvmerge -J` output from a run that exited successfully. It can
+/// still describe a failure: a non-empty `errors` array, or a file whose
+/// container was not recognised (reported with `errors: []`).
+fn identify_result(file_path: &str, stdout: &str, details: &str) -> Result<MkvInfo, ToolError> {
+    let failed = |summary: String| ToolError::Failed {
+        tool: ToolId::Mkvmerge,
+        summary,
+        details: details.to_string(),
+    };
+    if let Some(e) = super::json_errors(stdout).into_iter().next() {
+        return Err(failed(e));
+    }
+    let value: serde_json::Value =
+        serde_json::from_str(stdout).map_err(|e| ToolError::Json(e.to_string()))?;
+    if value.pointer("/container/recognized") == Some(&serde_json::Value::Bool(false)) {
+        return Err(failed(format!(
+            "'{file_path}' was not recognized as a media file mkvmerge can read. Check that it is a video file (MKV, MP4, …)."
+        )));
+    }
+    serde_json::from_value(value).map_err(|e| ToolError::Json(e.to_string()))
 }
 
 pub fn extract_subtitle_track(
