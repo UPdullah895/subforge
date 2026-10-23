@@ -91,3 +91,15 @@ jobs:
           releaseDraft: false
           prerelease: false
           args: ${{ matrix.args }}
+
+      # Corresponding source of the GPL/LGPL programs and libraries the installers redistribute
+      # (packaging/bundled-tools.json "sources"), checksum-verified, attached once per release.
+      - name: Attach GPL/LGPL corresponding sources
+        if: matrix.platform == 'ubuntu-22.04'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          node scripts/fetch-bundled-tools.mjs --sources "$RUNNER_TEMP/third-party-sources"
+          gh release upload "$TAG" "$RUNNER_TEMP"/third-party-sources/* --clobber

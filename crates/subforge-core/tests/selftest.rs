@@ -34,6 +34,43 @@ fn selftest_report_fails_when_tool_not_bundled() {
     assert_eq!(json["steps"][0]["name"], "tools_bundled");
 }
 
+/// Missing fixtures stop the run after `prepare_fixtures`, like a non-bundled tool does.
+#[cfg(unix)]
+#[test]
+fn selftest_stops_when_fixtures_cannot_be_prepared() {
+    use std::os::unix::fs::PermissionsExt;
+    use subforge_core::tools::ToolId;
+
+    let bin = tempfile::tempdir().unwrap();
+    for id in ToolId::ALL {
+        let p = bin.path().join(id.exe_name());
+        std::fs::write(&p, format!("#!/bin/sh\necho '{} version 1'\n", id.name())).unwrap();
+        std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    let paths = ToolPaths {
+        bundled_dir: Some(bin.path().to_path_buf()),
+        ..ToolPaths::default()
+    };
+    let out = tempfile::tempdir().unwrap();
+    let cache = tempfile::tempdir().unwrap();
+    let missing = out.path().join("no fixtures here");
+
+    let report = selftest::run(&paths, &missing, out.path(), cache.path());
+
+    let names: Vec<_> = report
+        .steps
+        .iter()
+        .map(|s| (s.name.as_str(), s.ok))
+        .collect();
+    assert_eq!(
+        names,
+        [("tools_bundled", true), ("prepare_fixtures", false)]
+    );
+    assert!(!report.ok);
+    assert!(report.steps[1].detail.contains("no fixtures here"));
+    assert_eq!(read_report(out.path())["ok"], false);
+}
+
 #[test]
 fn selftest_json_shape() {
     let report = SelfTestReport {

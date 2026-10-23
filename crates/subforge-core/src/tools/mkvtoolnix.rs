@@ -13,8 +13,13 @@ use super::{resolve, ToolError, ToolId, ToolPaths};
 
 /// MKVToolNix decodes its command line with the locale's charset, so under a non-UTF-8 locale
 /// (C/POSIX: services, CI runners, `env -i`) every non-ASCII path reaches it mangled. In that
-/// case the child gets `LC_ALL=C.UTF-8`; a UTF-8 locale is left alone (it keeps translated
-/// messages). Windows passes arguments as UTF-16 and needs nothing.
+/// case the child gets `LC_ALL` set to a UTF-8 locale (see [`pick_utf8_locale`]); a UTF-8 locale
+/// is left alone (it keeps translated messages). Windows passes arguments as UTF-16 and needs
+/// nothing.
+///
+/// Limitation: if the system has no UTF-8 locale at all (a glibc older than 2.35 without
+/// `C.utf8` or `en_US.utf8` installed), setting `LC_ALL` does nothing and such paths still fail;
+/// the user then has to install a UTF-8 locale.
 fn utf8_locale_env() -> Vec<(&'static str, &'static str)> {
     let var = |k| std::env::var(k).ok();
     if cfg!(unix)
@@ -24,9 +29,26 @@ fn utf8_locale_env() -> Vec<(&'static str, &'static str)> {
             var("LANG").as_deref(),
         )
     {
-        vec![("LC_ALL", "C.UTF-8")]
+        static LOCALE: std::sync::OnceLock<&'static str> = std::sync::OnceLock::new();
+        let name = LOCALE.get_or_init(|| {
+            pick_utf8_locale(|name| Path::new("/usr/lib/locale").join(name).is_dir())
+        });
+        vec![("LC_ALL", *name)]
     } else {
         Vec::new()
+    }
+}
+
+/// `C.UTF-8` when it is installed as a locale folder (Debian/Ubuntu, Fedora/EL, Arch), else
+/// `en_US.UTF-8` when that one is, else `C.UTF-8` anyway: glibc 2.35+ has it built in without
+/// any file, and musl treats every locale as UTF-8.
+fn pick_utf8_locale(installed: impl Fn(&str) -> bool) -> &'static str {
+    if installed("C.utf8") || installed("C.UTF-8") {
+        "C.UTF-8"
+    } else if installed("en_US.utf8") || installed("en_US.UTF-8") {
+        "en_US.UTF-8"
+    } else {
+        "C.UTF-8"
     }
 }
 
@@ -638,6 +660,18 @@ mod locale_tests {
         assert!(!locale_is_utf8(None, None, None));
         assert!(!locale_is_utf8(None, None, Some("POSIX")));
         assert!(!locale_is_utf8(None, None, Some("ar_SA.ISO-8859-6")));
+    }
+
+    #[test]
+    fn picks_an_installed_utf8_locale() {
+        assert_eq!(pick_utf8_locale(|n| n == "C.utf8"), "C.UTF-8");
+        assert_eq!(pick_utf8_locale(|n| n == "en_US.utf8"), "en_US.UTF-8");
+        assert_eq!(
+            pick_utf8_locale(|n| n == "en_US.UTF-8" || n == "C.UTF-8"),
+            "C.UTF-8"
+        );
+        // Nothing found: glibc 2.35+ still has C.UTF-8 built in.
+        assert_eq!(pick_utf8_locale(|_| false), "C.UTF-8");
     }
 }
 

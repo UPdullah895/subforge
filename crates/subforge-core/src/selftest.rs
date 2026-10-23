@@ -133,14 +133,16 @@ impl Runner {
 
 /// Runs the self-test and writes `<out>/selftest.json`. Never panics on a failing step; the
 /// report says what failed. If a tool does not resolve to the bundled copy nothing else runs,
-/// since the remaining steps would test the wrong binaries.
+/// since the remaining steps would test the wrong binaries; nor if the fixtures cannot be
+/// copied, since every later step would only fail for that same reason.
 pub fn run(paths: &ToolPaths, fixtures: &Path, out: &Path, whisper_cache: &Path) -> SelfTestReport {
     let mut r = Runner { steps: Vec::new() };
     let mut device_used = None;
 
-    if r.step("tools_bundled", || tools_bundled(paths)) {
-        let w = Work::new(out.join(WORK_DIR_NAME));
-        r.step("prepare_fixtures", || prepare_fixtures(fixtures, &w));
+    let w = Work::new(out.join(WORK_DIR_NAME));
+    if r.step("tools_bundled", || tools_bundled(paths))
+        && r.step("prepare_fixtures", || prepare_fixtures(fixtures, &w))
+    {
         r.step("list_tracks", || list_tracks(paths, &w));
         r.step("extract_subtitles", || extract_subtitles(paths, &w));
         r.step("extract_audio", || extract_audio(paths, &w));

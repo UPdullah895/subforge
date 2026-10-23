@@ -9,6 +9,7 @@
 //
 //   node scripts/fetch-bundled-tools.mjs <windows-x64|linux-x64>
 //   node scripts/fetch-bundled-tools.mjs --verify-only        # check the manifest only
+//   node scripts/fetch-bundled-tools.mjs --sources <dir>      # GPL/LGPL corresponding sources
 //   options: --manifest <file>   (default packaging/bundled-tools.json)
 //
 // Downloads are cached in $SUBFORGE_TOOLS_CACHE (default src-tauri/binaries/.cache) and reused
@@ -40,7 +41,9 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const OUT = path.join(ROOT, "src-tauri", "binaries");
 const DEFAULT_MANIFEST = path.join(ROOT, "packaging", "bundled-tools.json");
 const PLATFORMS = ["windows-x64", "linux-x64"];
-const ARCHIVES = ["zip", "7z", "tar.xz", "appimage", "deb"];
+const ARCHIVES = ["zip", "7z", "tar", "tar.xz", "appimage", "deb"];
+// Archives a licence file can be taken from (`extra_licenses[].archive`).
+const LICENCE_ARCHIVES = ["zip", "7z", "tar"];
 const TOOLS = ["ffmpeg", "ffprobe", "mkvmerge", "mkvextract", "mkvpropedit"];
 // Bump to force a re-layout when this script changes how it writes the output.
 const LAYOUT_VERSION = 1;
@@ -50,7 +53,11 @@ class UserError extends Error {}
 // ---------------------------------------------------------------- manifest validation
 
 const isSha256 = (s) => typeof s === "string" && /^[0-9a-f]{64}$/.test(s);
-const isUrl = (s) => typeof s === "string" && /^https?:\/\/\S+$/.test(s);
+/** https only; plain http is accepted for loopback hosts (the tests' local server). */
+const isUrl = (s) =>
+  typeof s === "string" &&
+  (/^https:\/\/\S+$/.test(s) || /^http:\/\/(127\.0\.0\.1|localhost|\[::1\])(:\d+)?\/\S*$/.test(s));
+const isPlatformKey = (k) => !k.startsWith("$") && k !== "sources";
 
 /** A relative path that stays inside its base folder. */
 function isSafeRelative(p) {
@@ -61,7 +68,7 @@ function isSafeRelative(p) {
 /** Returns a list of problems; empty when the manifest is usable. */
 export function validateManifest(manifest) {
   const errors = [];
-  const platforms = Object.keys(manifest).filter((k) => !k.startsWith("$"));
+  const platforms = Object.keys(manifest).filter(isPlatformKey);
   for (const p of PLATFORMS) if (!platforms.includes(p)) errors.push(`${p}: platform missing`);
   for (const platform of platforms) {
     if (!PLATFORMS.includes(platform)) {
@@ -73,7 +80,7 @@ export function validateManifest(manifest) {
     for (const [group, e] of Object.entries(manifest[platform])) {
       const at = `${platform}.${group}`;
       if (typeof e.version !== "string" || !e.version) errors.push(`${at}: version missing`);
-      if (!isUrl(e.url)) errors.push(`${at}: url missing or not http(s)`);
+      if (!isUrl(e.url)) errors.push(`${at}: url missing or not https`);
       if (!isSha256(e.sha256)) errors.push(`${at}: sha256 missing or not 64 lowercase hex digits`);
       if (!ARCHIVES.includes(e.archive)) errors.push(`${at}: archive must be one of ${ARCHIVES.join(", ")}`);
       if (!e.files || typeof e.files !== "object" || !Object.keys(e.files).length) {
@@ -96,9 +103,17 @@ export function validateManifest(manifest) {
       }
       (e.extra_licenses ?? []).forEach((l, i) => {
         const li = `${at}.extra_licenses[${i}]`;
-        if (!isSafeRelative(l.name) || l.name.includes("/")) errors.push(`${li}: bad name`);
-        if (!isUrl(l.url)) errors.push(`${li}: url missing or not http(s)`);
+        if (!isSafeRelative(l.name)) errors.push(`${li}: bad name`);
+        if (!isUrl(l.url)) errors.push(`${li}: url missing or not https`);
         if (!isSha256(l.sha256)) errors.push(`${li}: sha256 missing or not 64 lowercase hex digits`);
+        if (l.archive !== undefined) {
+          if (!LICENCE_ARCHIVES.includes(l.archive)) {
+            errors.push(`${li}: archive must be one of ${LICENCE_ARCHIVES.join(", ")}`);
+          }
+          if (!isSafeRelative(l.path)) errors.push(`${li}: path inside the archive missing or unsafe`);
+        } else if (l.path !== undefined) {
+          errors.push(`${li}: path needs an archive`);
+        }
       });
       if (!(e.license_files ?? []).length && !(e.extra_licenses ?? []).length) {
         errors.push(`${at}: no licence files`);
@@ -108,6 +123,29 @@ export function validateManifest(manifest) {
       if (!provided.has(`bin/${tool}${exe}`)) errors.push(`${platform}: nothing provides bin/${tool}${exe}`);
     }
   }
+  errors.push(...validateSources(manifest.sources));
+  return errors;
+}
+
+/** `sources`: the corresponding source archives of the GPL/LGPL code we redistribute. */
+function validateSources(sources) {
+  if (!Array.isArray(sources) || !sources.length) return ["sources: missing or empty list"];
+  const errors = [];
+  const files = new Set();
+  sources.forEach((s, i) => {
+    const at = `sources[${i}]`;
+    if (typeof s.name !== "string" || !s.name) errors.push(`${at}: name missing`);
+    if (typeof s.version !== "string" || !s.version) errors.push(`${at}: version missing`);
+    if (!isUrl(s.url)) errors.push(`${at}: url missing or not https`);
+    if (!isSha256(s.sha256)) errors.push(`${at}: sha256 missing or not 64 lowercase hex digits`);
+    if (!isSafeRelative(s.file) || /[\\/]/.test(s.file)) errors.push(`${at}: file must be a plain file name`);
+    else if (files.has(s.file)) errors.push(`${at}: duplicate file ${s.file}`);
+    else files.add(s.file);
+    const badPlatforms =
+      s.platforms !== undefined &&
+      (!Array.isArray(s.platforms) || s.platforms.some((p) => !PLATFORMS.includes(p)));
+    if (badPlatforms) errors.push(`${at}: platforms must list known platforms`);
+  });
   return errors;
 }
 
@@ -134,7 +172,7 @@ function download(url, dest, redirects = 0) {
       }
       if (res.statusCode !== 200) {
         res.resume();
-        return reject(new Error(`download of ${url} failed: HTTP ${res.statusCode}`));
+        return reject(new UserError(`download of ${url} failed: HTTP ${res.statusCode}`));
       }
       const out = createWriteStream(dest);
       res.pipe(out);
@@ -156,7 +194,12 @@ async function fetchVerified(cache, url, sha256) {
   console.log(`  downloading ${url}`);
   const part = `${file}.part`;
   rmSync(part, { force: true });
-  await download(url, part);
+  try {
+    await download(url, part);
+  } catch (e) {
+    rmSync(part, { force: true });
+    throw e;
+  }
   const actual = await sha256File(part);
   if (actual !== sha256) {
     rmSync(part, { force: true });
@@ -217,6 +260,7 @@ function extract(entry, archive, cache) {
     case "7z":
       run(find7z(), ["x", "-y", `-o${dir}`, archive]);
       break;
+    case "tar":
     case "tar.xz":
       run("tar", ["-xf", archive, "-C", dir]);
       break;
@@ -308,7 +352,9 @@ async function fetchPlatform(manifest, platform) {
     const licenses = path.join(OUT, "licenses", group);
     for (const f of e.license_files) copyInto(path.join(root, f), path.join(licenses, path.basename(f)), false);
     for (const l of e.extra_licenses ?? []) {
-      copyInto(await fetchVerified(cache, l.url, l.sha256), path.join(licenses, l.name), false);
+      const file = await fetchVerified(cache, l.url, l.sha256);
+      const from = l.archive ? path.join(extract(l, file, cache), l.path) : file;
+      copyInto(from, path.join(licenses, l.name), false);
     }
     writeFileSync(
       path.join(licenses, "SOURCE.txt"),
@@ -322,20 +368,41 @@ async function fetchPlatform(manifest, platform) {
 
 // ---------------------------------------------------------------- CLI
 
+/**
+ * Downloads every `sources` archive into `dir`, checksum-verified. Fails on the first problem;
+ * a file only appears in `dir` once it has been verified.
+ */
+async function fetchSources(manifest, dir) {
+  const cache = path.resolve(process.env.SUBFORGE_TOOLS_CACHE || path.join(OUT, ".cache"));
+  mkdirSync(dir, { recursive: true });
+  for (const s of manifest.sources) {
+    console.log(`${s.name} ${s.version}`);
+    const file = await fetchVerified(cache, s.url, s.sha256);
+    const dest = path.join(dir, s.file);
+    copyFileSync(file, `${dest}.part`);
+    renameSync(`${dest}.part`, dest);
+  }
+  console.log(`${manifest.sources.length} source archives verified in ${dir}`);
+}
+
 async function main(argv) {
   let manifestPath = DEFAULT_MANIFEST;
   let verifyOnly = false;
+  let sourcesDir;
   let platform;
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === "--verify-only") verifyOnly = true;
     else if (a === "--manifest") manifestPath = path.resolve(argv[++i] ?? "");
-    else if (!platform) platform = a;
+    else if (a === "--sources") {
+      if (!argv[i + 1]) throw new UserError("--sources needs a folder");
+      sourcesDir = path.resolve(argv[++i]);
+    } else if (!platform) platform = a;
     else throw new UserError(`unexpected argument ${a}`);
   }
-  if (!verifyOnly && !PLATFORMS.includes(platform)) {
+  if (!verifyOnly && !sourcesDir && !PLATFORMS.includes(platform)) {
     throw new UserError(
-      `unknown platform ${JSON.stringify(platform ?? "")}; usage: fetch-bundled-tools.mjs <${PLATFORMS.join("|")}> | --verify-only`,
+      `unknown platform ${JSON.stringify(platform ?? "")}; usage: fetch-bundled-tools.mjs <${PLATFORMS.join("|")}> | --verify-only | --sources <dir>`,
     );
   }
   const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
@@ -345,7 +412,13 @@ async function main(argv) {
     for (const p of PLATFORMS) {
       console.log(`${p}: ${Object.entries(manifest[p]).map(([g, e]) => `${g} ${e.version}`).join(", ")}`);
     }
+    const names = manifest.sources.map((s) => `${s.name} ${s.version}`).join(", ");
+    console.log(`sources: ${manifest.sources.length} archives (${names})`);
     console.log("Manifest OK: every entry has a version, url and sha256.");
+    return;
+  }
+  if (sourcesDir) {
+    await fetchSources(manifest, sourcesDir);
     return;
   }
   await fetchPlatform(manifest, platform);
