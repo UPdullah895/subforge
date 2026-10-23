@@ -2,6 +2,7 @@
 
 pub mod lines;
 pub mod progress;
+pub mod selftest;
 pub mod subtitle;
 pub mod tools;
 pub mod translate;

@@ -1,0 +1,158 @@
+{
+  "$comment": "Tools shipped inside the Windows installer and the AppImage (deb/rpm/AUR use system packages). Fetched and verified by scripts/fetch-bundled-tools.mjs. To bump a tool: change version, url and sha256 (and the in-archive paths if the folder name changes). 'files' maps a path inside the extracted archive to a path under src-tauri/binaries/; 'license_files' are copied to licenses/<tool>/; 'extra_licenses' are single files downloaded next to them; 'wrappers' are generated launcher scripts (Linux).",
+  "windows-x64": {
+    "ffmpeg": {
+      "version": "9.0.2",
+      "source": "https://www.gyan.dev/ffmpeg/builds/ (GPL-3.0 essentials build, mirrored on GitHub)",
+      "url": "https://github.com/GyanD/codexffmpeg/releases/download/9.0.2/ffmpeg-9.0.2-essentials_build.7z",
+      "sha256": "4705843ccaaf54257c16ad90f3e952ece33c17df964ecf7bfdbb0f49c7171077",
+      "archive": "7z",
+      "files": {
+        "ffmpeg-9.0.2-essentials_build/bin/ffmpeg.exe": "bin/ffmpeg.exe",
+        "ffmpeg-9.0.2-essentials_build/bin/ffprobe.exe": "bin/ffprobe.exe"
+      },
+      "license_files": [
+        "ffmpeg-9.0.2-essentials_build/LICENSE",
+        "ffmpeg-9.0.2-essentials_build/README.txt"
+      ]
+    },
+    "mkvtoolnix": {
+      "version": "103.0",
+      "source": "https://mkvtoolnix.download/ (portable 64-bit build)",
+      "url": "https://mkvtoolnix.download/windows/releases/103.0/mkvtoolnix-64-bit-103.0.7z",
+      "sha256": "01d76dbfdbd5615d9e02f69b0710d1429a902d47a98c8eee33bd884c4fcb3cbf",
+      "archive": "7z",
+      "files": {
+        "mkvtoolnix/mkvmerge.exe": "bin/mkvmerge.exe",
+        "mkvtoolnix/mkvextract.exe": "bin/mkvextract.exe",
+        "mkvtoolnix/mkvpropedit.exe": "bin/mkvpropedit.exe"
+      },
+      "license_files": [
+        "mkvtoolnix/doc/COPYING.txt",
+        "mkvtoolnix/doc/licenses/Boost-1.0.txt",
+        "mkvtoolnix/doc/licenses/LGPL-2.1.txt",
+        "mkvtoolnix/doc/licenses/LGPL-3.0.txt",
+        "mkvtoolnix/doc/licenses/nlohmann-json-MIT.txt",
+        "mkvtoolnix/doc/licenses/pugixml-MIT.txt"
+      ]
+    },
+    "vulkan-loader": {
+      "version": "1.4.304.0",
+      "source": "https://vulkan.lunarg.com/sdk/home (Vulkan Runtime components; loader from https://github.com/KhronosGroup/Vulkan-Loader)",
+      "url": "https://sdk.lunarg.com/sdk/download/1.4.304.0/windows/VulkanRT-1.4.304.0-Components.zip",
+      "sha256": "671f956c12ec0042d82c934ed47d146812b181459389f63666a95b702195437c",
+      "archive": "zip",
+      "files": {
+        "VulkanRT-1.4.304.0-Components/x64/vulkan-1.dll": "beside-exe/vulkan-1.dll"
+      },
+      "license_files": [
+        "VulkanRT-1.4.304.0-Components/VulkanRT-License.txt"
+      ],
+      "extra_licenses": [
+        {
+          "name": "LICENSE.txt",
+          "url": "https://raw.githubusercontent.com/KhronosGroup/Vulkan-Loader/v1.4.304/LICENSE.txt",
+          "sha256": "43c0a37e6a0fa7ff3c843b3ec5a4fac84b712558ddac103fbd4c1649662a9ece"
+        }
+      ]
+    }
+  },
+  "linux-x64": {
+    "ffmpeg": {
+      "version": "n9.0.2-17-g2a571b6068",
+      "source": "https://github.com/BtbN/FFmpeg-Builds (static GPL build; monthly release autobuild-2026-09-30-13-08)",
+      "url": "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-09-30-13-08/ffmpeg-n9.0.2-17-g2a571b6068-linux64-gpl-9.0.tar.xz",
+      "sha256": "68ee646831adaae2495618346f3bba94ff207ff83bbd34d643e7004730d66269",
+      "archive": "tar.xz",
+      "files": {
+        "ffmpeg-n9.0.2-17-g2a571b6068-linux64-gpl-9.0/bin/ffmpeg": "bin/ffmpeg",
+        "ffmpeg-n9.0.2-17-g2a571b6068-linux64-gpl-9.0/bin/ffprobe": "bin/ffprobe"
+      },
+      "license_files": [
+        "ffmpeg-n9.0.2-17-g2a571b6068-linux64-gpl-9.0/LICENSE.txt"
+      ]
+    },
+    "mkvtoolnix": {
+      "version": "103.0",
+      "source": "https://mkvtoolnix.download/ (official AppImage; the CLI tools and the libraries they load from it)",
+      "url": "https://mkvtoolnix.download/appimage/MKVToolNix_GUI-103.0-x86_64.AppImage",
+      "sha256": "fefc571382f090d65b1038ba36383222167d248ff9c9a54f6678aa21182a03ee",
+      "archive": "appimage",
+      "files": {
+        "usr/bin/mkvmerge": "mkvtoolnix/mkvmerge",
+        "usr/bin/mkvextract": "mkvtoolnix/mkvextract",
+        "usr/bin/mkvpropedit": "mkvtoolnix/mkvpropedit",
+        "usr/lib/libboost_atomic.so.1.85.0": "mkvtoolnix/lib/libboost_atomic.so.1.85.0",
+        "usr/lib/libboost_filesystem.so.1.85.0": "mkvtoolnix/lib/libboost_filesystem.so.1.85.0",
+        "usr/lib/libcmark.so.0.28.3": "mkvtoolnix/lib/libcmark.so.0.28.3",
+        "usr/lib/libdvdread.so.4": "mkvtoolnix/lib/libdvdread.so.4",
+        "usr/lib/libffi.so.6": "mkvtoolnix/lib/libffi.so.6",
+        "usr/lib/libFLAC.so.8": "mkvtoolnix/lib/libFLAC.so.8",
+        "usr/lib/libglib-2.0.so.0": "mkvtoolnix/lib/libglib-2.0.so.0",
+        "usr/lib/libgnutls.so.30": "mkvtoolnix/lib/libgnutls.so.30",
+        "usr/lib/libgthread-2.0.so.0": "mkvtoolnix/lib/libgthread-2.0.so.0",
+        "usr/lib/libhogweed.so.4": "mkvtoolnix/lib/libhogweed.so.4",
+        "usr/lib/libicudata.so.56": "mkvtoolnix/lib/libicudata.so.56",
+        "usr/lib/libicui18n.so.56": "mkvtoolnix/lib/libicui18n.so.56",
+        "usr/lib/libicuuc.so.56": "mkvtoolnix/lib/libicuuc.so.56",
+        "usr/lib/libidn2.so.0": "mkvtoolnix/lib/libidn2.so.0",
+        "usr/lib/libnettle.so.6": "mkvtoolnix/lib/libnettle.so.6",
+        "usr/lib/libogg.so.0": "mkvtoolnix/lib/libogg.so.0",
+        "usr/lib/libp11-kit.so.0": "mkvtoolnix/lib/libp11-kit.so.0",
+        "usr/lib/libpcre.so.1": "mkvtoolnix/lib/libpcre.so.1",
+        "usr/lib/libQt6Core.so.6": "mkvtoolnix/lib/libQt6Core.so.6",
+        "usr/lib/libtasn1.so.6": "mkvtoolnix/lib/libtasn1.so.6",
+        "usr/lib/libunistring.so.2": "mkvtoolnix/lib/libunistring.so.2",
+        "usr/lib/libvorbis.so.0": "mkvtoolnix/lib/libvorbis.so.0"
+      },
+      "wrappers": {
+        "bin/mkvmerge": "mkvtoolnix/mkvmerge",
+        "bin/mkvextract": "mkvtoolnix/mkvextract",
+        "bin/mkvpropedit": "mkvtoolnix/mkvpropedit"
+      },
+      "license_files": [],
+      "extra_licenses": [
+        {
+          "name": "COPYING",
+          "url": "https://codeberg.org/mbunkus/mkvtoolnix/raw/tag/release-103.0/COPYING",
+          "sha256": "8177f97513213526df2cf6184d8ff986c675afb514d4e68a404010521b880643"
+        },
+        {
+          "name": "Boost-1.0.txt",
+          "url": "https://codeberg.org/mbunkus/mkvtoolnix/raw/tag/release-103.0/doc/licenses/Boost-1.0.txt",
+          "sha256": "c9bff75738922193e67fa726fa225535870d2aa1059f91452c411736284ad566"
+        },
+        {
+          "name": "LGPL-2.1.txt",
+          "url": "https://codeberg.org/mbunkus/mkvtoolnix/raw/tag/release-103.0/doc/licenses/LGPL-2.1.txt",
+          "sha256": "dc626520dcd53a22f727af3ee42c770e56c97a64fe3adb063799d8ab032fe551"
+        },
+        {
+          "name": "LGPL-3.0.txt",
+          "url": "https://codeberg.org/mbunkus/mkvtoolnix/raw/tag/release-103.0/doc/licenses/LGPL-3.0.txt",
+          "sha256": "da7eabb7bafdf7d3ae5e9f223aa5bdc1eece45ac569dc21b3b037520b4464768"
+        }
+      ]
+    },
+    "vulkan-loader": {
+      "version": "1.3.204.1-2",
+      "source": "Ubuntu 22.04 libvulkan1 (https://packages.ubuntu.com/jammy/libvulkan1), built from https://github.com/KhronosGroup/Vulkan-Loader",
+      "url": "http://archive.ubuntu.com/ubuntu/pool/main/v/vulkan-loader/libvulkan1_1.3.204.1-2_amd64.deb",
+      "sha256": "192adcff489996b3398e7e7c0012b98e9586b46fe9a9eb13fb02c0feba88548b",
+      "archive": "deb",
+      "files": {
+        "usr/lib/x86_64-linux-gnu/libvulkan.so.1.3.204": "lib/libvulkan.so.1"
+      },
+      "license_files": [
+        "usr/share/doc/libvulkan1/copyright"
+      ],
+      "extra_licenses": [
+        {
+          "name": "LICENSE.txt",
+          "url": "https://raw.githubusercontent.com/KhronosGroup/Vulkan-Loader/v1.4.304/LICENSE.txt",
+          "sha256": "43c0a37e6a0fa7ff3c843b3ec5a4fac84b712558ddac103fbd4c1649662a9ece"
+        }
+      ]
+    }
+  }
+}

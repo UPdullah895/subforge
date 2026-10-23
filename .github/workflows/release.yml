@@ -67,6 +67,12 @@ jobs:
       - name: Install frontend deps
         run: npm ci
 
+      # FFmpeg, MKVToolNix and the Vulkan loader for the Windows installer and the AppImage
+      # (pinned + sha256-verified in packaging/bundled-tools.json; deb/rpm use system packages).
+      - name: Fetch bundled tools
+        shell: bash
+        run: node scripts/fetch-bundled-tools.mjs ${{ matrix.platform == 'windows-latest' && 'windows-x64' || 'linux-x64' }}
+
       - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -80,7 +86,7 @@ jobs:
             - **Windows:** run the `.msi` or `-setup.exe`.
             - **Linux:** `.AppImage` (any distro), `.deb` or `.rpm`.
 
-            SubForge needs MKVToolNix and FFmpeg — it checks on first launch and can install them for you.
+            The Windows installer and the AppImage include MKVToolNix and FFmpeg; the `.deb` and `.rpm` install them as dependencies.
             See the [README](https://github.com/UPdullah895/subforge#readme) for details.
           releaseDraft: false
           prerelease: false

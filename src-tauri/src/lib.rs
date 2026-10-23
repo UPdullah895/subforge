@@ -2,6 +2,7 @@ pub mod commands;
 pub mod config;
 pub mod credentials;
 pub mod jobs;
+pub mod self_test;
 pub mod tools;
 
 use commands::{
@@ -18,6 +19,12 @@ use tauri::Manager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    let context = tauri::generate_context!();
+    // Hidden CI entry point; exits before any window or plugin is created.
+    if let Some(args) = self_test::parse(std::env::args_os().skip(1)) {
+        std::process::exit(self_test::run(args, context.package_info()));
+    }
+
     #[cfg(target_os = "linux")]
     {
         // SAFETY: called before any threads are spawned, at the very start of run().
@@ -52,7 +59,8 @@ pub fn run() {
         .manage(credential_store)
         .setup(|app| {
             config::migrate_saved_config();
-            // Tools shipped with the app (none are bundled yet).
+            // Tools shipped with the app (Windows installer and AppImage; deb/rpm use system
+            // packages). `self_test::run` resolves them the same way.
             if let Ok(resources) = app.path().resource_dir() {
                 let bin = resources.join("bin");
                 if bin.is_dir() {
@@ -112,6 +120,6 @@ pub fn run() {
             jobs_cmds::pause_job,
             jobs_cmds::resume_job,
         ])
-        .run(tauri::generate_context!())
+        .run(context)
         .expect("error while running tauri application");
 }

@@ -11,6 +11,45 @@ use tokio_util::sync::CancellationToken;
 
 use super::{resolve, ToolError, ToolId, ToolPaths};
 
+/// MKVToolNix decodes its command line with the locale's charset, so under a non-UTF-8 locale
+/// (C/POSIX: services, CI runners, `env -i`) every non-ASCII path reaches it mangled. In that
+/// case the child gets `LC_ALL=C.UTF-8`; a UTF-8 locale is left alone (it keeps translated
+/// messages). Windows passes arguments as UTF-16 and needs nothing.
+fn utf8_locale_env() -> Vec<(&'static str, &'static str)> {
+    let var = |k| std::env::var(k).ok();
+    if cfg!(unix)
+        && !locale_is_utf8(
+            var("LC_ALL").as_deref(),
+            var("LC_CTYPE").as_deref(),
+            var("LANG").as_deref(),
+        )
+    {
+        vec![("LC_ALL", "C.UTF-8")]
+    } else {
+        Vec::new()
+    }
+}
+
+/// Whether the effective character-set locale (the first non-empty of `LC_ALL`, `LC_CTYPE`,
+/// `LANG`) is UTF-8. No setting at all means the C locale.
+fn locale_is_utf8(lc_all: Option<&str>, lc_ctype: Option<&str>, lang: Option<&str>) -> bool {
+    [lc_all, lc_ctype, lang]
+        .into_iter()
+        .flatten()
+        .find(|v| !v.is_empty())
+        .is_some_and(|v| {
+            let v = v.to_ascii_lowercase();
+            v.contains("utf-8") || v.contains("utf8")
+        })
+}
+
+/// A hidden-window MKVToolNix command with the locale fix applied.
+fn mkv_command(program: &Path) -> std::process::Command {
+    let mut cmd = std::process::Command::new(program);
+    cmd.hide_window().envs(utf8_locale_env());
+    cmd
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TrackProperties {
     #[serde(default)]
@@ -121,8 +160,7 @@ fn check(tool: ToolId, output: Output) -> Result<Output, ToolError> {
 pub fn enumerate_tracks(paths: &ToolPaths, file_path: &str) -> Result<MkvInfo, ToolError> {
     let mkvmerge = resolve(ToolId::Mkvmerge, paths)?;
 
-    let output = std::process::Command::new(&mkvmerge.path)
-        .hide_window()
+    let output = mkv_command(&mkvmerge.path)
         .args(["-J", file_path])
         .output()?;
     let output = check(ToolId::Mkvmerge, output)?;
@@ -139,8 +177,7 @@ pub fn extract_subtitle_track(
 ) -> Result<String, ToolError> {
     let mkvextract = resolve(ToolId::Mkvextract, paths)?;
 
-    let output = std::process::Command::new(&mkvextract.path)
-        .hide_window()
+    let output = mkv_command(&mkvextract.path)
         .args([
             "tracks",
             file_path,
@@ -344,10 +381,7 @@ pub fn merge_subtitles(
 ) -> Result<(), ToolError> {
     let mkvmerge = resolve(ToolId::Mkvmerge, paths)?;
     let args = merge_args(video_path, subtitles, output_path, false);
-    let output = std::process::Command::new(&mkvmerge.path)
-        .hide_window()
-        .args(&args)
-        .output()?;
+    let output = mkv_command(&mkvmerge.path).args(&args).output()?;
     check(ToolId::Mkvmerge, output)?;
     Ok(())
 }
@@ -389,10 +423,7 @@ pub fn remove_tracks(
     }
 
     args.push(video_path.to_string());
-    let output = std::process::Command::new(&mkvmerge.path)
-        .hide_window()
-        .args(&args)
-        .output()?;
+    let output = mkv_command(&mkvmerge.path).args(&args).output()?;
     check(ToolId::Mkvmerge, output)?;
     Ok(())
 }
@@ -404,8 +435,7 @@ fn mkvmerge_simple(
     output_path: &str,
 ) -> Result<(), ToolError> {
     let mkvmerge = resolve(ToolId::Mkvmerge, paths)?;
-    let output = std::process::Command::new(&mkvmerge.path)
-        .hide_window()
+    let output = mkv_command(&mkvmerge.path)
         .args(["-o", output_path, flag, video_path])
         .output()?;
     check(ToolId::Mkvmerge, output)?;
@@ -449,10 +479,7 @@ pub fn set_track_flags(
         args.push(format!("{key}={value}").into());
     }
 
-    let output = std::process::Command::new(&mkvpropedit.path)
-        .hide_window()
-        .args(&args)
-        .output()?;
+    let output = mkv_command(&mkvpropedit.path).args(&args).output()?;
     check(ToolId::Mkvpropedit, output)?;
     Ok(())
 }
@@ -484,6 +511,7 @@ pub async fn merge_subtitles_async(
 
     let mut child = tokio::process::Command::new(&mkvmerge.path)
         .hide_window()
+        .envs(utf8_locale_env())
         .args(&args)
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
@@ -591,6 +619,25 @@ mod track_serde_tests {
             Some("subtitles")
         );
         assert!(json.get("type").is_none());
+    }
+}
+
+#[cfg(test)]
+mod locale_tests {
+    use super::*;
+
+    #[test]
+    fn utf8_locale_detection_follows_posix_precedence() {
+        assert!(locale_is_utf8(None, None, Some("en_US.UTF-8")));
+        assert!(locale_is_utf8(None, Some("ar_SA.utf8"), Some("C")));
+        assert!(locale_is_utf8(Some("C.UTF-8"), None, Some("C")));
+        // LC_ALL wins over LANG; empty values are skipped.
+        assert!(!locale_is_utf8(Some("C"), None, Some("en_US.UTF-8")));
+        assert!(locale_is_utf8(Some(""), None, Some("en_US.UTF-8")));
+        // Nothing set is the C locale.
+        assert!(!locale_is_utf8(None, None, None));
+        assert!(!locale_is_utf8(None, None, Some("POSIX")));
+        assert!(!locale_is_utf8(None, None, Some("ar_SA.ISO-8859-6")));
     }
 }
 

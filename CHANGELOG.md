@@ -5,6 +5,13 @@ All notable changes to this project are documented here. Format based on
 
 ## [Unreleased]
 
+### Added
+- The Windows installer and the AppImage bundle FFmpeg 9.0.2 and MKVToolNix 103.0 (plus the Vulkan loader), so they work without installing anything else. The `.deb`, `.rpm` and AUR packages keep using the system packages. Licences are installed in `licenses/`; see `THIRD_PARTY_NOTICES.md`.
+- Hidden `subforge --self-test <fixtures_dir> <out_dir> [--whisper-cache <dir>]` mode that runs the core operations against the installed build and writes `selftest.json` (used by CI).
+
+### Fixed
+- Linux: MKVToolNix calls no longer fail on paths with non-ASCII characters (e.g. Arabic folder names) when SubForge runs under a non-UTF-8 locale such as `C`/`POSIX`.
+
 ### Removed
 - **No Python required.** Speech-to-text is the built-in whisper.cpp engine, and the subtitle conversion, retiming and translation helpers are native. SubForge no longer detects, installs or bundles Python, `pysubs2` or `faster-whisper`.
 - The old virtual environment at `~/.local/share/subforge/venv` (`%LOCALAPPDATA%\subforge\venv` on Windows) is no longer used and can be deleted.

@@ -1,0 +1,3 @@
+# Filled by scripts/fetch-bundled-tools.mjs (FFmpeg, MKVToolNix, Vulkan loader); never committed.
+*
+!.gitignore
