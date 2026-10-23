@@ -445,8 +445,11 @@
     "state": {
       "ok": "Installed",
       "missing": "Missing",
-      "outdated": "Too old"
+      "outdated": "Too old",
+      "invalid": "Broken path"
     },
+    "invalidHint": "Fix or clear this path in Settings → Tool Paths. SubForge will not fall back to another copy while it is set.",
+    "bannerInvalid": "A tool path set in Settings is broken, so parts of SubForge will not work.",
     "install": "Install",
     "installing": "Installing…",
     "installAll": "Install all missing",

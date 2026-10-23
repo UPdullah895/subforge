@@ -1,12 +1,14 @@
 use crate::error::{blocking, err400, err403, err500, AppError};
 use crate::jobs::JobStatus;
+use crate::tools::tool_paths;
 use crate::{jobs, AppState};
 use axum::{extract::State, Json};
 use serde::Deserialize;
-use subforge_deps::{check_all, plan_for, run_plan, Context, DepId, DepReport};
+use subforge_core::tools::dependency_report;
+use subforge_deps::{plan_for, run_plan, Context, DepId, DepReport};
 
 pub async fn get_deps() -> Result<Json<DepReport>, AppError> {
-    let report = blocking(|| check_all(&Context::from_process()))
+    let report = blocking(|| dependency_report(&tool_paths()))
         .await
         .map_err(|_| err500("dependency check failed"))?;
     Ok(Json(report))
@@ -75,7 +77,7 @@ pub async fn install_dep(
             Err(e) => (JobStatus::Failed, e.to_string()),
         };
         emit(&sender, "dep-install-done", &id, Some(status), message);
-        result.map(|_| check_all(&Context::from_process()))
+        result.map(|_| dependency_report(&tool_paths()))
     })
     .await
     .map_err(|_| err500("install task crashed"))?;

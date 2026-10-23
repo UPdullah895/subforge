@@ -1,9 +1,11 @@
-use subforge_deps::{check_all, plan_for, run_plan, Context, DepId, DepReport};
+use crate::tools::tool_paths;
+use subforge_core::tools::dependency_report;
+use subforge_deps::{plan_for, run_plan, Context, DepId, DepReport};
 use tauri::{AppHandle, Emitter};
 
 #[tauri::command]
 pub async fn check_dependencies() -> Result<DepReport, String> {
-    tokio::task::spawn_blocking(|| check_all(&Context::from_process()))
+    tokio::task::spawn_blocking(|| dependency_report(&tool_paths()))
         .await
         .map_err(|e| e.to_string())
 }
@@ -47,7 +49,7 @@ pub async fn install_dependency(app: AppHandle, id: String) -> Result<DepReport,
 
         result.map_err(|e| e.to_string())?;
         // Fresh context: PATH-independent lookups now see the new install.
-        Ok(check_all(&Context::from_process()))
+        Ok(dependency_report(&tool_paths()))
     })
     .await
     .map_err(|e| e.to_string())?

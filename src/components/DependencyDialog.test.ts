@@ -98,6 +98,58 @@ describe("DependencyDialog behavior", () => {
   });
 });
 
+describe("DependencyDialog with bundled and custom tools", () => {
+  beforeEach(() => {
+    document.body.innerHTML = "";
+  });
+
+  const ok = (id: string, source: string) => ({
+    id, label: id, severity: id === "mkvpropedit" ? "optional" : "required", state: "ok",
+    source, path: `/app/bin/${id}`, purpose: "p", download_url: "https://example.com",
+    can_auto_install: false,
+  });
+
+  it("stays hidden when every tool resolves (bundled or system)", () => {
+    const { pinia, store } = setup();
+    store.report = {
+      os: "windows",
+      has_missing_required: false,
+      has_invalid_custom: false,
+      items: [ok("mkvmerge", "bundled"), ok("mkvextract", "bundled"), ok("mkvpropedit", "bundled"),
+        ok("ffmpeg", "bundled"), ok("ffprobe", "system")],
+    } as never;
+    mount(DependencyDialog, { global: { plugins: [pinia, i18n] }, attachTo: document.body });
+    expect(document.body.querySelector('[data-testid="deps-dialog"]')).toBeNull();
+  });
+
+  it("opens for a broken custom path and shows its error without install help", () => {
+    const { pinia, store } = setup();
+    store.report = {
+      os: "windows",
+      has_missing_required: false,
+      has_invalid_custom: true,
+      items: [
+        ok("mkvmerge", "bundled"),
+        {
+          id: "mkvpropedit", label: "mkvpropedit", severity: "optional", state: "invalid",
+          source: "custom", path: "C:\\gone\\mkvpropedit.exe", purpose: "p",
+          download_url: "https://example.com", can_auto_install: false,
+          error: "mkvpropedit path set in Settings → Tool Paths does not exist: C:\\gone\\mkvpropedit.exe. Fix or clear it.",
+        },
+      ],
+    } as never;
+    mount(DependencyDialog, { global: { plugins: [pinia, i18n] }, attachTo: document.body });
+    expect(document.body.querySelector('[data-testid="deps-dialog"]')).not.toBeNull();
+    const err = document.body.querySelector('[data-testid="invalid-mkvpropedit"]') as HTMLElement;
+    expect(err.textContent).toContain("Fix or clear it");
+    expect(document.body.querySelector('[data-testid="install-mkvpropedit"]')).toBeNull();
+    expect(document.body.querySelector('[data-testid="download-mkvpropedit"]')).toBeNull();
+    expect(document.body.querySelector('[data-testid="status-mkvpropedit"]')!.textContent).toBe(
+      i18n.global.t("deps.state.invalid")
+    );
+  });
+});
+
 describe("DependencyBanner", () => {
   it("only shows after the dialog was dismissed, and Fix now reopens it", async () => {
     const { pinia, store } = setup();

@@ -473,6 +473,109 @@ fn tool_ids_have_platform_exe_names() {
     }
 }
 
+#[cfg(unix)]
+mod dependency_report {
+    use super::*;
+    use subforge_core::tools::dependency_report_with;
+    use subforge_deps::{Context, DepId, DepSource, DepState};
+
+    fn ctx_with(env: SearchEnv) -> Context {
+        Context {
+            os: Os::Linux,
+            env,
+            package_manager: None,
+            has_pkexec: false,
+        }
+    }
+
+    fn bundled_all(dir: &Path) {
+        for id in ToolId::ALL {
+            fake_tool(dir, id, &format!("echo '{} version 9.9'", id.name()));
+        }
+    }
+
+    #[test]
+    fn bundled_only_tools_count_as_present() {
+        let bundled = tempfile::tempdir().unwrap();
+        bundled_all(bundled.path());
+        let paths = ToolPaths {
+            custom: HashMap::new(),
+            bundled_dir: Some(bundled.path().to_path_buf()),
+        };
+        // Nothing on the system PATH.
+        let report = dependency_report_with(&paths, &ctx_with(empty_env()));
+        assert!(!report.has_missing_required, "{report:?}");
+        assert!(!report.has_invalid_custom);
+        for item in &report.items {
+            assert_eq!(item.state, DepState::Ok, "{item:?}");
+            assert_eq!(item.source, Some(DepSource::Bundled), "{item:?}");
+        }
+        let mkv = report
+            .items
+            .iter()
+            .find(|i| i.id == DepId::Mkvmerge)
+            .unwrap();
+        assert_eq!(mkv.version.as_deref(), Some("mkvmerge version 9.9"));
+    }
+
+    #[test]
+    fn invalid_custom_path_is_a_failure_even_with_bundled_copy() {
+        let bundled = tempfile::tempdir().unwrap();
+        bundled_all(bundled.path());
+        let missing = bundled.path().join("gone").join("mkvpropedit");
+        let paths = ToolPaths {
+            custom: HashMap::from([(ToolId::Mkvpropedit, missing.clone())]),
+            bundled_dir: Some(bundled.path().to_path_buf()),
+        };
+        let report = dependency_report_with(&paths, &ctx_with(empty_env()));
+        assert!(report.has_invalid_custom);
+        let item = report
+            .items
+            .iter()
+            .find(|i| i.id == DepId::Mkvpropedit)
+            .unwrap();
+        assert_eq!(item.state, DepState::Invalid);
+        assert_eq!(item.source, Some(DepSource::Custom));
+        assert_eq!(
+            item.path.as_deref(),
+            Some(missing.to_string_lossy().as_ref())
+        );
+        assert!(item.error.as_deref().unwrap().contains("Fix or clear it"));
+        assert!(item.install_command.is_none());
+    }
+
+    #[test]
+    fn system_and_custom_sources_are_reported() {
+        let sys = tempfile::tempdir().unwrap();
+        let custom = tempfile::tempdir().unwrap();
+        bundled_all(sys.path());
+        let c = fake_tool(
+            custom.path(),
+            ToolId::Ffmpeg,
+            "echo 'ffmpeg version custom'",
+        );
+        let paths = ToolPaths {
+            custom: HashMap::from([(ToolId::Ffmpeg, c)]),
+            bundled_dir: None,
+        };
+        let env = SearchEnv {
+            dirs: vec![sys.path().to_path_buf()],
+            os: Os::current(),
+        };
+        let report = dependency_report_with(&paths, &ctx_with(env));
+        let src = |id: DepId| report.items.iter().find(|i| i.id == id).unwrap().source;
+        assert_eq!(src(DepId::Ffmpeg), Some(DepSource::Custom));
+        assert_eq!(src(DepId::Ffprobe), Some(DepSource::System));
+    }
+
+    #[test]
+    fn nothing_anywhere_is_missing_required() {
+        let report = dependency_report_with(&ToolPaths::default(), &ctx_with(empty_env()));
+        assert!(report.has_missing_required);
+        assert!(!report.has_invalid_custom);
+    }
+}
+
 #[test]
 fn tool_status_reports_error_for_invalid_custom_path() {
     let paths = ToolPaths {

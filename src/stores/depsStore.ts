@@ -4,7 +4,8 @@ import { apiInvoke } from "../api/client";
 import { apiListen } from "../api/events";
 
 export type DepId = "mkvmerge" | "mkvextract" | "mkvpropedit" | "ffmpeg" | "ffprobe";
-export type DepState = "ok" | "missing" | "outdated";
+export type DepState = "ok" | "missing" | "outdated" | "invalid";
+export type DepSource = "custom" | "bundled" | "system";
 export type DepSeverity = "required" | "optional";
 
 export interface DepStatus {
@@ -12,6 +13,8 @@ export interface DepStatus {
   label: string;
   severity: DepSeverity;
   state: DepState;
+  source?: DepSource | null;
+  error?: string | null;
   path?: string | null;
   version?: string | null;
   purpose: string;
@@ -24,6 +27,7 @@ export interface DepReport {
   os: string;
   items: DepStatus[];
   has_missing_required: boolean;
+  has_invalid_custom?: boolean;
 }
 
 function messageOf(e: unknown): string {
@@ -40,8 +44,13 @@ export const useDepsStore = defineStore("deps", () => {
 
   const missing = computed(() => report.value?.items.filter((i) => i.state !== "ok") ?? []);
   const missingRequired = computed(() => missing.value.filter((i) => i.severity === "required"));
-  const showDialog = computed(() => !!report.value?.has_missing_required && !dialogDismissed.value);
-  const showBanner = computed(() => !!report.value?.has_missing_required && dialogDismissed.value);
+  // Bundled tools count as present (the backend resolves custom → bundled → system),
+  // so this only fires for a truly missing required tool or a broken custom path.
+  const needsAttention = computed(
+    () => !!report.value?.has_missing_required || !!report.value?.has_invalid_custom
+  );
+  const showDialog = computed(() => needsAttention.value && !dialogDismissed.value);
+  const showBanner = computed(() => needsAttention.value && dialogDismissed.value);
 
   async function check() {
     checking.value = true;

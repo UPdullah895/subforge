@@ -16,7 +16,9 @@ const DepStatusSchema = z.looseObject({
   id: z.string(),
   label: z.string(),
   severity: z.enum(["required", "optional"]),
-  state: z.enum(["ok", "missing", "outdated"]),
+  state: z.enum(["ok", "missing", "outdated", "invalid"]),
+  source: z.enum(["custom", "bundled", "system"]).nullish(),
+  error: z.string().nullish(),
   path: z.string().nullish(),
   version: z.string().nullish(),
   purpose: z.string(),
@@ -29,6 +31,7 @@ const DepReportSchema = z.looseObject({
   os: z.string(),
   items: z.array(DepStatusSchema),
   has_missing_required: z.boolean(),
+  has_invalid_custom: z.boolean().optional(),
 });
 
 export const commandSchemas: Record<string, z.ZodTypeAny> = {

@@ -245,6 +245,55 @@ pub struct ToolStatus {
     pub error: Option<String>,
 }
 
+impl ToolId {
+    fn from_dep(id: subforge_deps::DepId) -> Self {
+        use subforge_deps::DepId;
+        match id {
+            DepId::Ffmpeg => ToolId::Ffmpeg,
+            DepId::Ffprobe => ToolId::Ffprobe,
+            DepId::Mkvmerge => ToolId::Mkvmerge,
+            DepId::Mkvextract => ToolId::Mkvextract,
+            DepId::Mkvpropedit => ToolId::Mkvpropedit,
+        }
+    }
+}
+
+/// The startup dependency report, using the same resolution as every tool
+/// call (custom -> bundled -> system). A tool is OK when it resolves from any
+/// source; a broken custom path is reported as [`subforge_deps::DepState::Invalid`].
+pub fn dependency_report(paths: &ToolPaths) -> subforge_deps::DepReport {
+    dependency_report_with(paths, &subforge_deps::Context::from_process())
+}
+
+/// Like [`dependency_report`] with an explicit host context (used by tests).
+pub fn dependency_report_with(
+    paths: &ToolPaths,
+    ctx: &subforge_deps::Context,
+) -> subforge_deps::DepReport {
+    use subforge_deps::{DepSource, Resolution};
+    subforge_deps::check_all_with(ctx, |dep| {
+        match resolve_with_env(ToolId::from_dep(dep), paths, &ctx.env) {
+            Ok(r) => Resolution::Found {
+                path: r.path,
+                source: match r.source {
+                    ToolSource::Custom => DepSource::Custom,
+                    ToolSource::Bundled => DepSource::Bundled,
+                    ToolSource::System => DepSource::System,
+                },
+            },
+            Err(ToolError::CustomPathInvalid { tool, path }) => Resolution::Invalid {
+                message: ToolError::CustomPathInvalid {
+                    tool,
+                    path: path.clone(),
+                }
+                .to_string(),
+                path,
+            },
+            Err(_) => Resolution::Missing,
+        }
+    })
+}
+
 /// Resolution result and version for every tool, for the Settings screen.
 pub fn tool_status(paths: &ToolPaths) -> Vec<ToolStatus> {
     ToolId::ALL
