@@ -1,7 +1,9 @@
 //! Model catalog (names, sizes, checksums) and the resumable download job.
 
+use std::collections::HashMap;
 use std::io;
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 use sha2::{Digest, Sha256};
@@ -145,6 +147,15 @@ pub enum WhisperError {
     NoAudio { path: PathBuf },
     #[error("Could not write the subtitle file: {0}")]
     Subtitle(#[from] crate::subtitle::SubtitleError),
+    #[error(
+        "Could not delete the old model folder {}: {source}. Close other programs using it and try again.",
+        path.display()
+    )]
+    Delete {
+        path: PathBuf,
+        #[source]
+        source: io::Error,
+    },
 }
 
 impl WhisperError {
@@ -164,6 +175,14 @@ pub fn default_cache_dir() -> PathBuf {
 /// `<cache dir>/subforge/whisper-models`, where the old faster-whisper models lived.
 pub fn legacy_cache_dir() -> PathBuf {
     base_dir().join("whisper-models")
+}
+
+/// `dir`, or [`default_cache_dir`] when it is `None`, empty or only whitespace.
+pub fn resolve_cache_dir(dir: Option<&Path>) -> PathBuf {
+    match dir {
+        Some(d) if !d.as_os_str().to_string_lossy().trim().is_empty() => d.to_path_buf(),
+        _ => default_cache_dir(),
+    }
 }
 
 fn base_dir() -> PathBuf {
@@ -324,6 +343,16 @@ fn content_range_start(resp: &reqwest::Response) -> Option<u64> {
         .ok()
 }
 
+/// Process-wide lock for one destination file.
+fn file_lock(path: &Path) -> Arc<tokio::sync::Mutex<()>> {
+    static LOCKS: OnceLock<Mutex<HashMap<PathBuf, Arc<tokio::sync::Mutex<()>>>>> = OnceLock::new();
+    let mut locks = LOCKS
+        .get_or_init(Default::default)
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+    locks.entry(path.to_path_buf()).or_default().clone()
+}
+
 async fn fetch(
     client: &reqwest::Client,
     spec: &ModelSpec,
@@ -333,6 +362,13 @@ async fn fetch(
     cancel: &CancellationToken,
 ) -> Result<PathBuf, WhisperError> {
     let final_path = model_path(cache, spec);
+    // One writer per file: two downloads into the same cache (e.g. two models that both need
+    // the VAD model) must not share a `.part`. The second waits, then finds the file complete.
+    let lock = file_lock(&final_path);
+    let _guard = tokio::select! {
+        g = lock.lock() => g,
+        _ = cancel.cancelled() => return Err(WhisperError::Cancelled),
+    };
     if is_complete(cache, spec) {
         if let Some(cb) = progress {
             cb(100.0, None);

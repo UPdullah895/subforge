@@ -159,6 +159,9 @@ pub struct JobEvent {
     pub message: Option<String>,
     pub stage: Option<String>,
     pub output_path: Option<String>,
+    /// Raw tool / network output for a failed job (omitted when there is none).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub details: Option<String>,
 }
 
 pub type EventSender = broadcast::Sender<JobEvent>;

@@ -122,6 +122,7 @@ export const useTranscribeStore = defineStore("transcribe", () => {
       );
       if (result.status === "failed") {
         error.value = `Failed to download model: ${result.message ?? "unknown error"}`;
+        if (result.details) console.warn("Model download details:", result.details);
       }
       await loadModels();
     } catch (e) {

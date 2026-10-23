@@ -2,6 +2,7 @@
 //! `SUBFORGE_WHISPER_TEST=1` (see tests/fixtures/media/README.md).
 
 use std::path::{Path, PathBuf};
+use std::time::Instant;
 
 use subforge_core::subtitle::{Format, SubtitleDoc};
 use subforge_core::tools::ToolPaths;
@@ -137,12 +138,35 @@ fn transcribe_word_timestamps_vtt_with_vad() {
 fn transcribe_cancel_mid_run_returns_cancelled() {
     require_model();
     let dir = tempfile::tempdir().unwrap();
+
+    // Baseline: how long the whisper.cpp phase (10 % reported -> return) takes uncancelled.
+    let mut whisper_start = None;
+    let mut cb = |p: f64, _: Option<&str>| {
+        if p >= 10.0 && whisper_start.is_none() {
+            whisper_start = Some(Instant::now());
+        }
+    };
+    transcribe(
+        &ToolPaths::default(),
+        &options(dir.path().join("full.srt"), model_cache()),
+        &mut cb,
+        CancellationToken::new(),
+    )
+    .unwrap();
+    let full_whisper = whisper_start.unwrap().elapsed();
+
+    // 10 % is reported right before whisper.cpp starts and nothing checks the token between
+    // that report and `full()`, so only the abort callback can stop this run early.
     let out = dir.path().join("cancelled.srt");
     let cancel = CancellationToken::new();
     let trigger = cancel.clone();
-    // 10 % is reported right before whisper.cpp starts, so this exercises the abort callback.
+    let mut cancelled_at = None;
+    let mut after_cancel = Vec::new();
     let mut cb = |p: f64, _: Option<&str>| {
-        if p >= 10.0 {
+        if cancelled_at.is_some() {
+            after_cancel.push(p);
+        } else if p >= 10.0 {
+            cancelled_at = Some(Instant::now());
             trigger.cancel();
         }
     };
@@ -153,8 +177,18 @@ fn transcribe_cancel_mid_run_returns_cancelled() {
         cancel,
     )
     .unwrap_err();
+    let stopped_after = cancelled_at.unwrap().elapsed();
     assert!(matches!(err, WhisperError::Cancelled), "{err:?}");
     assert!(!out.exists(), "a cancelled run must not write output");
+    assert!(
+        after_cancel.iter().all(|&p| p <= 10.0),
+        "whisper kept reporting progress after cancel: {after_cancel:?}"
+    );
+    assert!(
+        stopped_after * 2 < full_whisper,
+        "abort did not cut the run short: {stopped_after:?} after cancel vs {full_whisper:?} for a full run"
+    );
+    eprintln!("abort: stopped {stopped_after:?} after cancel; full whisper phase {full_whisper:?}");
 }
 
 #[test]

@@ -1601,6 +1601,7 @@ dependencies = [
  "thiserror",
  "tokio",
  "tokio-util",
+ "uuid",
  "whisper-rs",
 ]
 

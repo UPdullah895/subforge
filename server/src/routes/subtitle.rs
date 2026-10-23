@@ -109,6 +109,7 @@ pub async fn merge_subtitle(
             message: None,
             stage: None,
             output_path: None,
+            details: None,
         },
     );
 
@@ -148,6 +149,7 @@ pub async fn merge_subtitle(
                     message: None,
                     stage: None,
                     output_path: None,
+                    details: None,
                 },
             );
         }).await;
@@ -169,6 +171,7 @@ pub async fn merge_subtitle(
                     message: Some(msg),
                     stage: None,
                     output_path: None,
+                    details: None,
                 },
             );
             let mut registry = controls_clone.lock().unwrap();
@@ -191,6 +194,7 @@ pub async fn merge_subtitle(
                 message: Some("Merge complete".to_string()),
                 stage: None,
                 output_path: Some(output_path),
+                details: None,
             },
         );
 

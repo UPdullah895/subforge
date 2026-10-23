@@ -37,6 +37,3 @@ subforge-core = { path = "../crates/subforge-core" }
 subforge-metadata = { path = "../crates/subforge-metadata" }
 subforge-deps = { path = "../crates/subforge-deps", features = ["tokio"] }
 subforge-subtitle-sources = { path = "../crates/subforge-subtitle-sources" }
-
-[dev-dependencies]
-tempfile = "3"

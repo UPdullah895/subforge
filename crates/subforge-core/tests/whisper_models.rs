@@ -1,146 +1,62 @@
-//! Download job tests against a local axum stub (supports Range, can stall).
+//! Download job tests against the local stub in `support` (supports Range, can stall).
 
-use std::net::SocketAddr;
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex};
-use std::time::Duration;
+mod support;
 
-use axum::body::Body;
-use axum::extract::State;
-use axum::http::{header, HeaderMap, StatusCode};
-use axum::response::Response;
-use axum::routing::get;
-use axum::Router;
-use sha2::{Digest, Sha256};
+use std::sync::atomic::Ordering;
+
 use subforge_core::whisper::{
     default_cache_dir, download, download_with, legacy_cache_dir, list_downloaded,
-    list_downloaded_specs, ModelSpec, WhisperError, MODELS, VAD_MODEL,
+    list_downloaded_specs, resolve_cache_dir, ModelSpec, WhisperError, MODELS, VAD_MODEL,
 };
 use subforge_core::CancellationToken;
+use support::*;
 
-const SIZE: usize = 5 * 1024 * 1024;
-const CHUNK: usize = 64 * 1024;
-
-struct Stub {
-    body: Vec<u8>,
-    /// Bytes sent so far across all responses.
-    sent: AtomicUsize,
-    /// A response stalls (never finishes) once it has sent this many bytes.
-    stall_at: AtomicUsize,
-    /// 0 normal, 1 ignore Range (always 200), 2 answer 206 with the wrong Content-Range start.
-    mode: AtomicUsize,
-    ranges: Mutex<Vec<String>>,
-    paths: Mutex<Vec<String>>,
-}
-
-fn body_bytes() -> Vec<u8> {
-    (0..SIZE).map(|i| (i % 251) as u8).collect()
-}
-
-async fn serve(State(st): State<Arc<Stub>>, uri: axum::http::Uri, headers: HeaderMap) -> Response {
-    st.paths.lock().unwrap().push(uri.path().to_string());
-    let mut start = 0usize;
-    let mut partial = false;
-    if let Some(r) = headers.get(header::RANGE).and_then(|v| v.to_str().ok()) {
-        st.ranges.lock().unwrap().push(r.to_string());
-        start = r
-            .trim_start_matches("bytes=")
-            .trim_end_matches('-')
-            .parse()
-            .unwrap();
-        if start >= SIZE {
-            return Response::builder()
-                .status(StatusCode::RANGE_NOT_SATISFIABLE)
-                .body(Body::empty())
-                .unwrap();
-        }
-        partial = true;
-        match st.mode.load(Ordering::SeqCst) {
-            1 => {
-                start = 0;
-                partial = false;
-            }
-            2 => start = 0,
-            _ => {}
-        }
-    }
-    let stream =
-        futures_util::stream::unfold((st.clone(), start, 0usize), |(st, pos, sent)| async move {
-            if pos >= SIZE {
-                return None;
-            }
-            if sent >= st.stall_at.load(Ordering::SeqCst) {
-                std::future::pending::<()>().await;
-            }
-            let end = (pos + CHUNK).min(SIZE);
-            tokio::time::sleep(Duration::from_millis(1)).await;
-            st.sent.fetch_add(end - pos, Ordering::SeqCst);
-            let data = st.body[pos..end].to_vec();
-            Some((Ok::<_, std::io::Error>(data), (st, end, sent + (end - pos))))
-        });
-    let mut b = Response::builder()
-        .status(if partial {
-            StatusCode::PARTIAL_CONTENT
-        } else {
-            StatusCode::OK
-        })
-        .header(header::CONTENT_LENGTH, SIZE - start);
-    if partial {
-        b = b.header(
-            header::CONTENT_RANGE,
-            format!("bytes {start}-{}/{SIZE}", SIZE - 1),
-        );
-    }
-    b.body(Body::from_stream(stream)).unwrap()
-}
-
-async fn start_stub() -> (String, Arc<Stub>) {
-    let st = Arc::new(Stub {
-        body: body_bytes(),
-        sent: AtomicUsize::new(0),
-        stall_at: AtomicUsize::new(usize::MAX),
-        mode: AtomicUsize::new(0),
-        ranges: Mutex::new(vec![]),
-        paths: Mutex::new(vec![]),
-    });
-    let app = Router::new().fallback(get(serve)).with_state(st.clone());
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let addr: SocketAddr = listener.local_addr().unwrap();
-    tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
-    (format!("http://{addr}"), st)
-}
-
-fn sha(data: &[u8]) -> &'static str {
-    Box::leak(format!("{:x}", Sha256::digest(data)).into_boxed_str())
-}
-
-fn spec(sha256: Option<&'static str>) -> ModelSpec {
-    ModelSpec {
-        name: "test",
-        file: "ggml-test.bin",
-        size_mb: 5,
-        size_bytes: Some(SIZE as u64),
-        sha256,
-    }
-}
-
-fn vad_spec() -> ModelSpec {
-    ModelSpec {
-        sha256: Some(sha(&body_bytes())),
-        size_bytes: Some(SIZE as u64),
-        ..VAD_MODEL
-    }
-}
-
-/// Cancels `cancel` once the stub has sent half the body.
-fn cancel_at_half(st: &Arc<Stub>, cancel: &CancellationToken) {
-    let (st, cancel) = (st.clone(), cancel.clone());
-    tokio::spawn(async move {
-        while st.sent.load(Ordering::SeqCst) < SIZE / 2 {
-            tokio::time::sleep(Duration::from_millis(5)).await;
-        }
-        cancel.cancel();
-    });
+#[tokio::test]
+async fn concurrent_downloads_share_one_vad_fetch() {
+    let (url, st) = start_stub().await;
+    let dir = tempfile::tempdir().unwrap();
+    let a = spec(Some(sha(&body_bytes())));
+    let b = ModelSpec {
+        name: "test2",
+        file: "ggml-test2.bin",
+        ..a
+    };
+    let vad = vad_spec();
+    let mut cb1 = |_: f64, _: Option<&str>| {};
+    let mut cb2 = |_: f64, _: Option<&str>| {};
+    let (r1, r2) = tokio::join!(
+        download_with(
+            &a,
+            Some(&vad),
+            dir.path(),
+            &url,
+            &mut cb1,
+            CancellationToken::new()
+        ),
+        download_with(
+            &b,
+            Some(&vad),
+            dir.path(),
+            &url,
+            &mut cb2,
+            CancellationToken::new()
+        ),
+    );
+    r1.unwrap();
+    r2.unwrap();
+    let vad_gets = st
+        .paths
+        .lock()
+        .unwrap()
+        .iter()
+        .filter(|p| p.ends_with(VAD_MODEL.file))
+        .count();
+    assert_eq!(
+        vad_gets, 1,
+        "the VAD model must be fetched by one download only"
+    );
+    assert!(dir.path().join(VAD_MODEL.file).is_file());
+    assert!(!dir.path().join(format!("{}.part", VAD_MODEL.file)).exists());
 }
 
 #[tokio::test]
@@ -277,6 +193,21 @@ fn catalog_and_dirs() {
     assert_ne!(default_cache_dir(), legacy_cache_dir());
     assert!(default_cache_dir().ends_with("subforge/whisper-ggml"));
     assert!(legacy_cache_dir().ends_with("subforge/whisper-models"));
+}
+
+#[test]
+fn blank_cache_dir_means_default() {
+    use std::path::Path;
+    assert_eq!(resolve_cache_dir(None), default_cache_dir());
+    assert_eq!(resolve_cache_dir(Some(Path::new(""))), default_cache_dir());
+    assert_eq!(
+        resolve_cache_dir(Some(Path::new("  "))),
+        default_cache_dir()
+    );
+    assert_eq!(
+        resolve_cache_dir(Some(Path::new("/x/my cache"))),
+        Path::new("/x/my cache")
+    );
 }
 
 #[tokio::test]

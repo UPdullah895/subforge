@@ -26,7 +26,7 @@ pub struct AppState {
     pub job_queue: SharedJobQueue,
     pub event_sender: jobs::EventSender,
     pub job_controls: JobControlRegistry,
-    pub whisper_downloads: routes::transcribe::ActiveDownloads,
+    pub whisper_downloads: subforge_core::whisper::ActiveDownloads,
 }
 
 #[tokio::main]

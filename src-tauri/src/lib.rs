@@ -46,7 +46,7 @@ pub fn run() {
     tauri::Builder::default()
         .manage(job_queue)
         .manage(job_controls)
-        .manage(transcribe_cmds::ActiveDownloads::default())
+        .manage(subforge_core::whisper::ActiveDownloads::default())
         .manage(credential_store)
         .setup(|app| {
             config::migrate_saved_config();

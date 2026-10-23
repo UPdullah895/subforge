@@ -28,6 +28,7 @@ fn emit(sender: &jobs::EventSender, event_type: &str, id: &str, status: Option<J
             message: Some(message),
             stage: None,
             output_path: None,
+            details: None,
         },
     );
 }

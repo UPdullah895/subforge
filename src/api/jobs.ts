@@ -5,6 +5,8 @@ export interface JobResult {
   job_id: string;
   status: string;
   message?: string;
+  /** Raw tool / network output of a failed job, when the backend has it. */
+  details?: string | null;
   output_path?: string;
 }
 

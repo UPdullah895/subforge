@@ -16,7 +16,7 @@ use subforge_deps::HideWindow;
 use whisper_rs::{FullParams, SamplingStrategy, WhisperContext, WhisperContextParameters};
 
 use super::device::{self, Device};
-use super::models::{default_cache_dir, list_downloaded, model_path, spec_for, WhisperError};
+use super::models::{list_downloaded, model_path, resolve_cache_dir, spec_for, WhisperError};
 use super::VAD_MODEL;
 use crate::progress::{CancellationToken, ProgressFn};
 use crate::subtitle::{Cue, Format, SubtitleDoc};
@@ -50,7 +50,7 @@ pub struct TranscribeOptions {
     /// Skip non-speech with the Silero VAD model.
     #[serde(default)]
     pub vad_filter: bool,
-    /// Model cache; `None` means [`default_cache_dir`].
+    /// Model cache; `None` or blank means [`super::default_cache_dir`].
     #[serde(default)]
     pub cache_dir: Option<PathBuf>,
 }
@@ -88,7 +88,7 @@ pub fn transcribe(
 
     let spec =
         spec_for(&opts.model).ok_or_else(|| WhisperError::UnknownModel(opts.model.clone()))?;
-    let cache = opts.cache_dir.clone().unwrap_or_else(default_cache_dir);
+    let cache = resolve_cache_dir(opts.cache_dir.as_deref());
     if !list_downloaded(&cache).iter().any(|m| m == spec.name) {
         return Err(WhisperError::ModelNotDownloaded {
             model: spec.name.to_string(),

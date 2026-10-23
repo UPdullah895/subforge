@@ -18,7 +18,7 @@ async fn handle_socket(mut socket: WebSocket, state: AppState) {
     loop {
         tokio::select! {
             Ok(event) = rx.recv() => {
-                let msg = serde_json::json!({
+                let mut msg = serde_json::json!({
                     "type": event.event_type,
                     "payload": {
                         "job_id": event.job_id,
@@ -29,6 +29,10 @@ async fn handle_socket(mut socket: WebSocket, state: AppState) {
                         "output_path": event.output_path,
                     }
                 });
+                // Only failed jobs with raw tool/network output carry `details`.
+                if let Some(details) = event.details {
+                    msg["payload"]["details"] = details.into();
+                }
                 if socket.send(axum::extract::ws::Message::Text(msg.to_string().into())).await.is_err() {
                     break;
                 }

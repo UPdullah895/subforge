@@ -132,6 +132,7 @@ pub async fn translate_subtitles(
             message: None,
             stage: None,
             output_path: None,
+            details: None,
         },
     );
 
@@ -171,6 +172,7 @@ pub async fn translate_subtitles(
                 message: Some("Extracting lines...".to_string()),
                 stage: None,
                 output_path: None,
+                details: None,
             },
         );
 
@@ -189,6 +191,7 @@ pub async fn translate_subtitles(
                         message: Some(e.to_string()),
                         stage: None,
                         output_path: None,
+                        details: None,
                     },
                 );
                 return;
@@ -220,6 +223,7 @@ pub async fn translate_subtitles(
                         message: Some("Translation cancelled".to_string()),
                         stage: None,
                         output_path: None,
+                        details: None,
                     },
                 );
                 let mut registry = controls_clone.lock().unwrap();
@@ -259,6 +263,7 @@ pub async fn translate_subtitles(
                     )),
                     stage: None,
                     output_path: None,
+                    details: None,
                 },
             );
 
@@ -303,6 +308,7 @@ pub async fn translate_subtitles(
                             message: Some("Unknown engine".to_string()),
                             stage: None,
                             output_path: None,
+                            details: None,
                         },
                     );
                     let mut registry = controls_clone.lock().unwrap();
@@ -326,6 +332,7 @@ pub async fn translate_subtitles(
                             message: Some(e.to_string()),
                             stage: None,
                             output_path: None,
+                            details: None,
                         },
                     );
                     let mut registry = controls_clone.lock().unwrap();
@@ -365,6 +372,7 @@ pub async fn translate_subtitles(
                     message: Some(e.to_string()),
                     stage: None,
                     output_path: None,
+                    details: None,
                 },
             );
             let mut registry = controls_clone.lock().unwrap();
@@ -391,6 +399,7 @@ pub async fn translate_subtitles(
                 message: Some(format!("Translated {} lines", total)),
                 stage: None,
                 output_path: None,
+                details: None,
             },
         );
 
@@ -454,6 +463,7 @@ fn emit_stage(sender: &jobs::EventSender, job_id: &str, stage: &str, progress: i
             message: Some(message.to_string()),
             stage: Some(stage.to_string()),
             output_path: None,
+            details: None,
         },
     );
 }
@@ -491,6 +501,7 @@ pub async fn run_translation_pipeline(
             message: None,
             stage: None,
             output_path: None,
+            details: None,
         },
     );
 
@@ -526,6 +537,7 @@ pub async fn run_translation_pipeline(
                         message: Some(__msg),
                         stage: Some("error".to_string()),
                         output_path: None,
+                        details: None,
                     },
                 );
                 let mut registry = controls_clone.lock().unwrap();
@@ -604,6 +616,7 @@ pub async fn run_translation_pipeline(
                         message: Some("Translation cancelled".to_string()),
                         stage: Some("error".to_string()),
                         output_path: None,
+                        details: None,
                     },
                 );
                 let mut registry = controls_clone.lock().unwrap();
@@ -697,6 +710,7 @@ pub async fn run_translation_pipeline(
                     message: Some("Translation cancelled".to_string()),
                     stage: Some("error".to_string()),
                     output_path: None,
+                    details: None,
                 },
             );
             let mut registry = controls_clone.lock().unwrap();
@@ -747,6 +761,7 @@ pub async fn run_translation_pipeline(
                 message: Some(format!("Saved to {}", output_path)),
                 stage: Some("done".to_string()),
                 output_path: Some(output_path),
+                details: None,
             },
         );
 

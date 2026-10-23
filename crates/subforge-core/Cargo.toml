@@ -16,10 +16,14 @@ dirs = "6"
 sha2 = "0.10"
 reqwest = { version = "0.12", features = ["json"] }
 serde_json = "1"
-tokio = { version = "1", features = ["process", "fs", "io-util", "time", "macros", "rt"] }
+tokio = { version = "1", features = ["process", "fs", "io-util", "time", "macros", "rt", "sync"] }
 subforge-deps = { path = "../subforge-deps", features = ["tokio"] }
 subforge-metadata = { path = "../subforge-metadata" }
-whisper-rs = "0.16"
+# Pinned exactly: transcribe.rs works around 0.16.0's set_abort_callback_safe, which stores a
+# Box<dyn FnMut> but reads it back as `F`. The fix depends on that storage layout; re-check
+# transcribe.rs (abort callback) before changing this version.
+whisper-rs = "=0.16.0"
+uuid = { version = "1", features = ["v4"] }
 
 [dev-dependencies]
 tempfile = "3"
