@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use subforge_core::CancellationToken;
 use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicBool, Ordering};
 use tokio::sync::broadcast;
@@ -87,6 +88,8 @@ pub struct JobControl {
     cancelled: AtomicBool,
     paused: AtomicBool,
     notify: Notify,
+    /// Cancelled together with the job; handed to `subforge-core` operations.
+    token: CancellationToken,
 }
 
 impl JobControl {
@@ -95,11 +98,17 @@ impl JobControl {
             cancelled: AtomicBool::new(false),
             paused: AtomicBool::new(false),
             notify: Notify::new(),
+            token: CancellationToken::new(),
         }
+    }
+
+    pub fn token(&self) -> &CancellationToken {
+        &self.token
     }
 
     pub fn cancel(&self) {
         self.cancelled.store(true, Ordering::SeqCst);
+        self.token.cancel();
         self.notify.notify_waiters();
     }
 

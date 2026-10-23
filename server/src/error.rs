@@ -25,10 +25,6 @@ pub fn err403(msg: impl ToString) -> AppError {
     AppError(StatusCode::FORBIDDEN, msg.to_string())
 }
 
-pub fn err503(msg: impl ToString) -> AppError {
-    AppError(StatusCode::SERVICE_UNAVAILABLE, msg.to_string())
-}
-
 /// Runs a blocking closure (std `Command`, sync file IO) on tokio's blocking
 /// pool so it can't stall the async worker threads.
 pub async fn blocking<T: Send + 'static>(

@@ -8,6 +8,7 @@ repository = "https://github.com/UPdullah895/subforge"
 edition = "2021"
 
 [dependencies]
+subforge-core = { path = "../crates/subforge-core" }
 subforge-deps = { path = "../crates/subforge-deps", features = ["tokio"] }
 axum = { version = "0.8", features = ["ws", "multipart"] }
 tokio = { version = "1", features = ["full"] }
@@ -26,6 +27,9 @@ hyper = { version = "1", features = ["full"] }
 http-body-util = "0.1"
 subforge-metadata = { path = "../crates/subforge-metadata" }
 subforge-subtitle-sources = { path = "../crates/subforge-subtitle-sources" }
+
+[dev-dependencies]
+tower = { version = "0.5", features = ["util"] }
 
 [profile.release]
 opt-level = 3

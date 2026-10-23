@@ -1,5 +1,5 @@
 use crate::config::AppConfig;
-use crate::tools::translate as translate_tools;
+use subforge_core::translate as translate_tools;
 use axum::{http::StatusCode, Json};
 use serde::Deserialize;
 use subforge_metadata::{tmdb::TmdbClient, tvmaze::TvmazeClient};

@@ -144,9 +144,13 @@ impl AppConfig {
     }
 
     pub fn config_dir() -> anyhow::Result<PathBuf> {
-        let dir = dirs::config_dir()
-            .ok_or_else(|| anyhow::anyhow!("Could not find config directory"))?
-            .join("subforge");
+        // `SUBFORGE_CONFIG_DIR` relocates the config (containers, tests).
+        let dir = match std::env::var_os("SUBFORGE_CONFIG_DIR").filter(|d| !d.is_empty()) {
+            Some(dir) => PathBuf::from(dir),
+            None => dirs::config_dir()
+                .ok_or_else(|| anyhow::anyhow!("Could not find config directory"))?
+                .join("subforge"),
+        };
         std::fs::create_dir_all(&dir)?;
         Ok(dir)
     }
@@ -174,6 +178,34 @@ impl AppConfig {
         let contents = serde_json::to_string_pretty(self)?;
         std::fs::write(path, contents)?;
         Ok(())
+    }
+}
+
+/// Points `SUBFORGE_CONFIG_DIR` at a fresh temp dir for the guard's lifetime.
+/// Holding the guard also serialises tests that touch the process environment.
+#[cfg(test)]
+pub(crate) struct TestConfigDir {
+    dir: PathBuf,
+    _lock: std::sync::MutexGuard<'static, ()>,
+}
+
+#[cfg(test)]
+impl TestConfigDir {
+    pub(crate) fn new() -> Self {
+        static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+        let lock = LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let dir = std::env::temp_dir().join(format!("subforge_cfg_{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::env::set_var("SUBFORGE_CONFIG_DIR", &dir);
+        Self { dir, _lock: lock }
+    }
+}
+
+#[cfg(test)]
+impl Drop for TestConfigDir {
+    fn drop(&mut self) {
+        std::env::remove_var("SUBFORGE_CONFIG_DIR");
+        let _ = std::fs::remove_dir_all(&self.dir);
     }
 }
 

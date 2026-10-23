@@ -14,6 +14,8 @@ mod config;
 mod error;
 mod jobs;
 mod routes;
+#[cfg(test)]
+mod tests;
 mod tools;
 mod ws;
 
@@ -83,6 +85,7 @@ fn api_routes() -> Router<AppState> {
         .route("/fs/list", get(routes::fs::list_dir))
         // ── Tool registry ────────────────────────────────────────────────────
         .route("/tools/registry", get(routes::tools::get_registry))
+        .route("/tools/status", get(routes::tools::get_status))
         // ── Dependencies (startup check + one-click install) ─────────────────
         .route("/deps", get(routes::deps::get_deps))
         .route("/deps/install", post(routes::deps::install_dep))

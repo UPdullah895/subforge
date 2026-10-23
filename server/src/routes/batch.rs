@@ -1,5 +1,6 @@
-use crate::tools::mkvtoolnix::{ExternalSub, VideoFileInfo};
-use crate::tools::mkvtoolnix;
+use crate::tools::tool_paths;
+use subforge_core::tools::mkvtoolnix::{self, ExternalSub, VideoFileInfo};
+use subforge_core::tools::{ToolError, ToolPaths};
 use crate::{AppState, jobs};
 use axum::{extract::{Json, State}, http::StatusCode};
 use serde::Deserialize;
@@ -62,12 +63,12 @@ fn detect_external_subs(video_path: &Path) -> Vec<ExternalSub> {
 }
 
 pub async fn scan_directory(Json(req): Json<ScanRequest>) -> Result<Json<Vec<VideoFileInfo>>, StatusCode> {
-    crate::error::blocking(move || scan_directory_blocking(req))
+    crate::error::blocking(move || scan_directory_blocking(req, &tool_paths()))
         .await?
         .map(Json)
 }
 
-fn scan_directory_blocking(req: ScanRequest) -> Result<Vec<VideoFileInfo>, StatusCode> {
+fn scan_directory_blocking(req: ScanRequest, paths: &ToolPaths) -> Result<Vec<VideoFileInfo>, StatusCode> {
     let exts: HashSet<String> = req.extensions.into_iter().map(|e| e.to_lowercase().trim_start_matches('.').to_string()).collect();
     let mut files = Vec::new();
 
@@ -86,7 +87,7 @@ fn scan_directory_blocking(req: ScanRequest) -> Result<Vec<VideoFileInfo>, Statu
         if !exts.is_empty() && !exts.contains(&ext) { continue; }
 
         let path_str = path.to_string_lossy().to_string();
-        match mkvtoolnix::enumerate_tracks(&path_str) {
+        match mkvtoolnix::enumerate_tracks(paths, &path_str) {
             Ok(info) => {
                 let subtitle_count = info.tracks.iter().filter(|t| t.track_type == "subtitles").count();
                 let audio_count = info.tracks.iter().filter(|t| t.track_type == "audio").count();
@@ -134,13 +135,14 @@ pub async fn batch_extract_subtitles(
     Json(req): Json<BatchExtractRequest>,
 ) -> Result<Json<Vec<String>>, StatusCode> {
     crate::error::blocking(move || {
+        let paths = tool_paths();
         let mut all_paths: Vec<String> = Vec::new();
         for file in &req.files {
             let output_dir = effective_output_dir(file, &req.output_dir);
             let result = if req.languages.is_empty() {
-                mkvtoolnix::extract_all_subtitles(file, &output_dir)
+                mkvtoolnix::extract_all_subtitles(&paths, file, &output_dir)
             } else {
-                mkvtoolnix::extract_subtitles_by_language(file, &output_dir, &req.languages)
+                mkvtoolnix::extract_subtitles_by_language(&paths, file, &output_dir, &req.languages)
             };
             match result {
                 Ok(paths) => all_paths.extend(paths),
@@ -226,6 +228,7 @@ pub async fn merge_external_subs(
         },
     );
 
+    let paths = tool_paths();
     let queue_clone = state.job_queue.clone();
     let controls_clone = state.job_controls.clone();
     let job_id_clone = job_id.clone();
@@ -260,7 +263,7 @@ pub async fn merge_external_subs(
             q.update_status(&job_id_clone, jobs::JobStatus::Running);
         }
 
-        let result = mkvtoolnix::merge_subtitles_async(&video_path_str, &subs, &output_path, Some(&control), |pct| {
+        let result = mkvtoolnix::merge_subtitles_async(&paths, &video_path_str, &subs, &output_path, Some(control.token()), |pct| {
             let mut q = queue_clone.lock().unwrap();
             q.update_progress(&job_id_clone, pct, None);
             jobs::emit_event(
@@ -278,7 +281,7 @@ pub async fn merge_external_subs(
         }).await;
 
         if let Err(e) = result {
-            let cancelled = matches!(e, mkvtoolnix::MkvError::Cancelled);
+            let cancelled = matches!(e, ToolError::Cancelled);
             let msg = e.to_string();
             let status = if cancelled { jobs::JobStatus::Cancelled } else { jobs::JobStatus::Failed };
             let mut q = queue_clone.lock().unwrap();
