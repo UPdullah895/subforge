@@ -75,7 +75,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ runner.temp }}/tools-cache
-          key: bundled-tools-${{ runner.os }}-${{ hashFiles('packaging/bundled-tools.json') }}
+          key: bundled-tools-${{ runner.os }}-${{ hashFiles('packaging/bundled-tools.json', 'scripts/fetch-bundled-tools.mjs') }}
 
       # FFmpeg, MKVToolNix and the Vulkan loader for the Windows installer and the AppImage
       # (pinned + sha256-verified in packaging/bundled-tools.json; deb/rpm use system packages).

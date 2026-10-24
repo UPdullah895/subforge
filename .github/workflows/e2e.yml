@@ -6,13 +6,20 @@ name: E2E
 
 on:
   pull_request:
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
   push:
     branches: [main]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
   workflow_dispatch:
 
 concurrency:
   group: e2e-${{ github.ref }}
-  cancel-in-progress: true
+  # Superseded PR runs are cancelled; every push to main runs to completion.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
@@ -64,7 +71,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ runner.temp }}/tools-cache
-          key: bundled-tools-${{ runner.os }}-${{ hashFiles('packaging/bundled-tools.json') }}
+          key: bundled-tools-${{ runner.os }}-${{ hashFiles('packaging/bundled-tools.json', 'scripts/fetch-bundled-tools.mjs') }}
 
       - name: Cache whisper tiny + VAD models
         uses: actions/cache@v4
@@ -78,10 +85,30 @@ jobs:
       - name: Fetch bundled tools
         run: node scripts/fetch-bundled-tools.mjs windows-x64
 
-      - name: Build the NSIS installer
-        run: npm run tauri build -- --bundles nsis --features gpu-vulkan
+      - name: Build the NSIS and MSI installers
+        run: npm run tauri build -- --bundles nsis,msi --features gpu-vulkan
+
+      # An administrative install only unpacks the MSI, so it checks the MSI payload
+      # without installing a second copy.
+      - name: MSI contains the app and the bundled tools
+        timeout-minutes: 10
+        run: |
+          $msi = Get-ChildItem src-tauri\target\release\bundle\msi\*.msi | Select-Object -First 1
+          if (-not $msi) { throw "no MSI was built" }
+          $dir = Join-Path $env:RUNNER_TEMP 'msi admin'
+          Write-Host "Unpacking $($msi.Name) into $dir"
+          $p = Start-Process -FilePath msiexec.exe -ArgumentList '/a', "`"$($msi.FullName)`"", '/qn', "TARGETDIR=`"$dir`"" -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "msiexec /a exited with code $($p.ExitCode)" }
+          $exe = Get-ChildItem -LiteralPath $dir -Recurse -Filter subforge.exe | Select-Object -First 1
+          if (-not $exe) { throw "subforge.exe is not in the MSI" }
+          $root = $exe.DirectoryName
+          $missing = @('bin', 'vulkan-1.dll', 'bin\ffmpeg.exe', 'bin\mkvmerge.exe') |
+            Where-Object { -not (Test-Path -LiteralPath (Join-Path $root $_)) }
+          if ($missing) { throw "missing from the MSI next to subforge.exe ($root): $($missing -join ', ')" }
+          Write-Host "MSI payload OK in $root"
 
       - name: Silent install
+        timeout-minutes: 10
         run: |
           $setup = Get-ChildItem src-tauri\target\release\bundle\nsis\*-setup.exe | Select-Object -First 1
           if (-not $setup) { throw "no NSIS installer was built" }
@@ -103,15 +130,24 @@ jobs:
       - name: Remove FFmpeg and MKVToolNix from PATH
         run: |
           $tools = 'ffmpeg.exe', 'ffprobe.exe', 'mkvmerge.exe', 'mkvextract.exe', 'mkvpropedit.exe'
-          $keep = $env:PATH -split ';' | Where-Object {
-            $dir = $_
-            $dir -and -not ($tools | Where-Object { Test-Path -LiteralPath (Join-Path $dir $_) -ErrorAction SilentlyContinue })
+          # Join-Path throws (not just errors) for an entry on a drive that does not exist,
+          # so treat any such entry as "no tools here" and keep it.
+          $hasTool = {
+            param($dir)
+            foreach ($t in $tools) {
+              try {
+                if (Test-Path -LiteralPath (Join-Path $dir $t) -ErrorAction Stop) { return $true }
+              } catch { }
+            }
+            return $false
           }
+          $keep = $env:PATH -split ';' | Where-Object { $_ -and -not (& $hasTool $_) }
           $removed = $env:PATH -split ';' | Where-Object { $_ -and $_ -notin $keep }
           Write-Host "Removed from PATH: $($removed -join '; ')"
           "PATH=$($keep -join ';')" >> $env:GITHUB_ENV
 
       - name: Self-test (installed build)
+        timeout-minutes: 20
         run: |
           foreach ($t in 'ffmpeg', 'ffprobe', 'mkvmerge', 'mkvextract', 'mkvpropedit') {
             if (Get-Command $t -ErrorAction SilentlyContinue) { throw "$t is still on PATH" }
@@ -134,6 +170,7 @@ jobs:
           }
 
       - name: GUI smoke (installed build)
+        timeout-minutes: 20
         run: |
           $exe = Join-Path $env:INSTALL_DIR 'subforge.exe'
           $p = Start-Process -FilePath $exe -PassThru `
@@ -229,7 +266,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ runner.temp }}/tools-cache
-          key: bundled-tools-${{ runner.os }}-${{ hashFiles('packaging/bundled-tools.json') }}
+          key: bundled-tools-${{ runner.os }}-${{ hashFiles('packaging/bundled-tools.json', 'scripts/fetch-bundled-tools.mjs') }}
 
       - name: Cache whisper tiny + VAD models
         uses: actions/cache@v4
@@ -264,10 +301,28 @@ jobs:
       - name: Remove FFmpeg and MKVToolNix from the runner
         run: |
           for t in ffmpeg ffprobe mkvmerge mkvextract mkvpropedit; do
-            while p=$(command -v "$t"); do echo "removing $p"; sudo rm -f "$p"; hash -r; done
+            n=0
+            while p=$(command -v "$t"); do
+              if [ "$n" -ge 5 ]; then
+                echo "::error::$t is still on PATH at $p after removing 5 copies"
+                exit 1
+              fi
+              echo "removing $p"; sudo rm -f "$p"; hash -r
+              n=$((n + 1))
+            done
           done
 
+      # Diagnostic only: shows whether the runner has any Vulkan driver (it is expected to have
+      # none or only a software one, so transcription must fall back to the CPU).
+      - name: List Vulkan ICDs
+        run: |
+          for d in /usr/share/vulkan/icd.d /etc/vulkan/icd.d /usr/local/share/vulkan/icd.d; do
+            echo "== $d"; ls -l "$d" 2>/dev/null || echo "(none)"
+          done
+          if command -v vulkaninfo >/dev/null; then vulkaninfo --summary 2>&1 | head -n 40 || true; fi
+
       - name: Self-test (AppImage)
+        timeout-minutes: 20
         run: |
           for t in ffmpeg ffprobe mkvmerge mkvextract mkvpropedit; do
             if command -v "$t"; then echo "$t is still on PATH"; exit 1; fi
@@ -285,6 +340,7 @@ jobs:
           fi
 
       - name: GUI smoke (AppImage under Xvfb)
+        timeout-minutes: 20
         run: xvfb-run -a scripts/ci/gui-smoke-linux.sh "$APP" 15 "$E2E_LOGS/gui.log"
 
       - name: rpm declares its dependencies
