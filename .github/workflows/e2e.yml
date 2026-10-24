@@ -240,6 +240,7 @@ jobs:
             libappindicator3-dev \
             librsvg2-dev \
             libdbus-1-dev \
+            libvulkan-dev \
             patchelf \
             xvfb \
             xdotool \
