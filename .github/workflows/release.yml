@@ -60,9 +60,20 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
 
+      # whisper.cpp's Vulkan shader-generator build nests deep enough under src-tauri\target to
+      # exceed MAX_PATH on Windows (MSBuild FileTracker FTK1011), so build in a short directory.
+      # tauri-action reads CARGO_TARGET_DIR to find the bundles.
+      - name: Use a short Cargo target dir on Windows
+        if: matrix.platform == 'windows-latest'
+        shell: pwsh
+        run: '"CARGO_TARGET_DIR=C:\t" >> $env:GITHUB_ENV'
+
+      # rust-cache only caches target dirs inside the workspace, so on Windows this caches the
+      # cargo registry and git deps only.
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
+          cache-targets: ${{ matrix.platform != 'windows-latest' }}
 
       - name: Install frontend deps
         run: npm ci

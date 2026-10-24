@@ -36,6 +36,9 @@ jobs:
       SUBFORGE_SUBSOURCE_API_KEY: ${{ secrets.SUBFORGE_SUBSOURCE_API_KEY || 'ci-placeholder-key' }}
       # A path with a space on purpose (review focus 2).
       INSTALL_DIR: 'C:\Sub Forge Test'
+      # whisper.cpp's Vulkan shader-generator build nests deep enough under
+      # src-tauri\target to exceed MAX_PATH (MSBuild FileTracker FTK1011).
+      CARGO_TARGET_DIR: 'C:\t'
     steps:
       - uses: actions/checkout@v4
 
@@ -56,9 +59,12 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
 
+      # rust-cache only caches target dirs inside the workspace; C:\t is outside it, so this
+      # caches the cargo registry and git deps only.
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
+          cache-targets: false
 
       - name: Set work directories
         run: |
@@ -93,7 +99,7 @@ jobs:
       - name: MSI contains the app and the bundled tools
         timeout-minutes: 10
         run: |
-          $msi = Get-ChildItem src-tauri\target\release\bundle\msi\*.msi | Select-Object -First 1
+          $msi = Get-ChildItem "$env:CARGO_TARGET_DIR\release\bundle\msi\*.msi" | Select-Object -First 1
           if (-not $msi) { throw "no MSI was built" }
           $dir = Join-Path $env:RUNNER_TEMP 'msi admin'
           Write-Host "Unpacking $($msi.Name) into $dir"
@@ -110,7 +116,7 @@ jobs:
       - name: Silent install
         timeout-minutes: 10
         run: |
-          $setup = Get-ChildItem src-tauri\target\release\bundle\nsis\*-setup.exe | Select-Object -First 1
+          $setup = Get-ChildItem "$env:CARGO_TARGET_DIR\release\bundle\nsis\*-setup.exe" | Select-Object -First 1
           if (-not $setup) { throw "no NSIS installer was built" }
           Write-Host "Installing $($setup.Name) into $env:INSTALL_DIR"
           # NSIS wants /D last and unquoted, even with spaces.
