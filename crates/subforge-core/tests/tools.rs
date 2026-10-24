@@ -850,6 +850,20 @@ fn tools_handle_unicode_space_paths() {
     for f in &extracted {
         assert!(std::fs::metadata(f).unwrap().len() > 0, "{f}");
     }
+    // Files are named after the track's real format: the ASS track stays .ass.
+    let mut exts: Vec<_> = extracted
+        .iter()
+        .map(|f| {
+            Path::new(f)
+                .extension()
+                .unwrap()
+                .to_str()
+                .unwrap()
+                .to_string()
+        })
+        .collect();
+    exts.sort();
+    assert_eq!(exts, ["ass", "srt"]);
 
     // mkvmerge remove + merge, then mkvpropedit
     let stripped = dir.join("بدون ترجمة.mkv");

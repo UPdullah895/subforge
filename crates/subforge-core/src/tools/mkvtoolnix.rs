@@ -353,7 +353,7 @@ fn extract_subtitles_filtered(
             &video_stem,
             &lang,
             flavor,
-            "srt",
+            track.subtitle_format().extension(),
             disambiguator,
         );
         let out = PathBuf::from(output_dir)
