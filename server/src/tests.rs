@@ -29,7 +29,11 @@ async fn tools_status_reports_sources() {
     let _cfg = TestConfigDir::new();
     let bundled = std::env::temp_dir().join(format!("subforge_bundled_{}", uuid::Uuid::new_v4()));
     std::fs::create_dir_all(&bundled).unwrap();
-    std::fs::write(bundled.join("mkvmerge"), b"").unwrap();
+    std::fs::write(
+        bundled.join(format!("mkvmerge{}", std::env::consts::EXE_SUFFIX)),
+        b"",
+    )
+    .unwrap();
     std::env::set_var("SUBFORGE_BUNDLED_DIR", &bundled);
 
     let missing = bundled.join("nope").join("mkvpropedit");
