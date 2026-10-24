@@ -348,7 +348,10 @@ jobs:
 
       - name: GUI smoke (AppImage under Xvfb)
         timeout-minutes: 20
-        run: xvfb-run -a scripts/ci/gui-smoke-linux.sh "$APP" 15 "$E2E_LOGS/gui.log"
+        # 45 s: the GPU-less runner unpacks the 270 MB AppImage and starts WebKit in software.
+        # A private D-Bus session makes portal and accessibility lookups fail fast instead of
+        # waiting on a missing service.
+        run: dbus-run-session -- xvfb-run -a scripts/ci/gui-smoke-linux.sh "$APP" 45 "$E2E_LOGS/gui.log"
 
       - name: rpm declares its dependencies
         run: node scripts/ci/check-rpm-requires.mjs src-tauri/target/release/bundle/rpm/*.rpm

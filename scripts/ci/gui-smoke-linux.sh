@@ -55,6 +55,14 @@ done
 if [ -z "$window" ]; then
   echo "FAIL: no window titled SubForge after ${seconds}s; log:" >&2
   cat "$log" >&2
+  # Diagnostics: every X window (mapped or not) with its title, and the app's processes, to tell
+  # a slow start from a wrong title or a stuck process.
+  echo "--- X windows:" >&2
+  for id in $(xdotool search --name '' 2>/dev/null); do
+    echo "  $id '$(xdotool getwindowname "$id" 2>/dev/null)'" >&2
+  done
+  echo "--- processes in the app's group:" >&2
+  ps -o pid,stat,etime,args -g "$pid" >&2 2>/dev/null || true
   stop
   exit 1
 fi
