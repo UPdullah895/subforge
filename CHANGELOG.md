@@ -5,7 +5,16 @@ All notable changes to this project are documented here. Format based on
 
 ## [Unreleased]
 
+### Added
+- Subsource search can use your own API key from **Settings → Subtitle Sources**; a key set there takes precedence over the one (if any) built into the app.
+
 ### Fixed
+- OpenSubtitles settings now show the saved API key and username when you return to the page (the password stays write-only), the key is masked with a reveal button, and clicking **Save** on an empty form no longer wipes a working configuration.
+- TMDB and Subsource API keys save automatically and **Test** checks the value currently in the form, so neither has to be saved first. Save failures are shown instead of being silently dropped.
+- Subsource reports **Not configured** when there is no key, instead of the misleading **Unreachable**; an invalid key and rate limiting get their own messages.
+
+### Security
+- API keys (TMDB, DeepL, OpenAI, Google Translate, Subsource) are stored in the OS keyring instead of `config.json`, and existing keys are migrated on first launch (a key stays in the file if the keyring is unavailable, so nothing is lost). `config.json` is now owner-only (`0600`).
 - The "Required Programs" dialog no longer appears on installs that bundle FFmpeg and MKVToolNix. It now uses the same lookup as every tool call (custom path, then bundled, then system), shows where each tool was found, and appears when a custom tool path in Settings is broken.
 - Only one transcription runs at a time; others wait with a "Queued" status and can be cancelled while waiting (several at once could run out of memory and crash the app).
 - Translating an ASS/SSA track keeps it ASS/SSA (`{video}.{lang}.ass`) with its styles, instead of writing ASS text into a `.srt` file.

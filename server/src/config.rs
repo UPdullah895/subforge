@@ -51,6 +51,8 @@ pub struct AppConfig {
     pub openai_api_key: Option<String>,
     pub openai_model: Option<String>,
     pub google_translate_api_key: Option<String>,
+    #[serde(default)]
+    pub subsource_api_key: Option<String>,
     pub ollama_base_url: Option<String>,
     pub libretranslate_base_url: Option<String>,
     #[serde(default = "default_search_online_before_translate")]
@@ -86,6 +88,7 @@ impl Default for AppConfig {
             openai_api_key: None,
             openai_model: None,
             google_translate_api_key: None,
+            subsource_api_key: None,
             ollama_base_url: None,
             libretranslate_base_url: None,
             search_online_before_translate: default_search_online_before_translate(),
@@ -104,12 +107,13 @@ impl AppConfig {
         value == SECRET_MASK
     }
 
-    fn secrets_mut(&mut self) -> [&mut Option<String>; 5] {
+    fn secrets_mut(&mut self) -> [&mut Option<String>; 6] {
         [
             &mut self.tmdb_api_key,
             &mut self.deepl_api_key,
             &mut self.openai_api_key,
             &mut self.google_translate_api_key,
+            &mut self.subsource_api_key,
             &mut self.opensubtitles_password,
         ]
     }

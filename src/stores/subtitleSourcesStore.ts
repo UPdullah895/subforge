@@ -9,6 +9,27 @@ export interface OpenSubtitlesCredentials {
   password: string;
 }
 
+export interface OpenSubtitlesStatus {
+  configured: boolean;
+  /** Present on the desktop app; never returned by the HTTP API. */
+  username?: string | null;
+  api_key?: string | null;
+  password_set?: boolean;
+}
+
+export type SubsourceReason =
+  | "ok"
+  | "rate_limited"
+  | "invalid_key"
+  | "unreachable"
+  | "not_configured";
+
+export interface SubsourceStatus {
+  configured: boolean;
+  reachable: boolean;
+  reason: SubsourceReason;
+}
+
 export interface OnlineSubtitleSearchRequest {
   video_path: string;
   title: string;
@@ -24,7 +45,13 @@ export type OnlineSubtitleSearchResult =
 
 export const useSubtitleSourcesStore = defineStore("subtitleSources", () => {
   const opensubtitlesConfigured = ref(false);
+  const opensubtitlesUsername = ref("");
+  const opensubtitlesApiKey = ref("");
+  const opensubtitlesPasswordSet = ref(false);
+
   const subsourceReachable = ref<boolean | null>(null);
+  const subsourceStatus = ref<SubsourceStatus | null>(null);
+
   const testStatus = ref<"idle" | "testing" | "success" | "error">("idle");
   const testError = ref<string | null>(null);
 
@@ -42,27 +69,36 @@ export const useSubtitleSourcesStore = defineStore("subtitleSources", () => {
 
   async function loadStatus() {
     try {
-      const status = await apiInvoke<{ configured: boolean }>("get_opensubtitles_status");
+      const status = await apiInvoke<OpenSubtitlesStatus>("get_opensubtitles_status");
       opensubtitlesConfigured.value = status.configured;
+      opensubtitlesUsername.value = status.username ?? "";
+      opensubtitlesApiKey.value = status.api_key ?? "";
+      opensubtitlesPasswordSet.value = status.password_set ?? status.configured;
     } catch {
       opensubtitlesConfigured.value = false;
     }
     try {
-      const status = await apiInvoke<{ reachable: boolean }>("check_subsource_status");
+      const status = await apiInvoke<SubsourceStatus>("check_subsource_status");
+      subsourceStatus.value = status;
       subsourceReachable.value = status.reachable;
     } catch {
+      subsourceStatus.value = { configured: false, reachable: false, reason: "unreachable" };
       subsourceReachable.value = false;
     }
   }
 
   async function setOpenSubtitlesCredentials(credentials: OpenSubtitlesCredentials) {
     await apiInvoke("set_opensubtitles_credentials", { credentials });
-    opensubtitlesConfigured.value = true;
+    await loadStatus();
   }
 
   async function clearOpenSubtitlesCredentials() {
     await apiInvoke("clear_opensubtitles_credentials");
+    opensubtitlesUsername.value = "";
+    opensubtitlesApiKey.value = "";
+    opensubtitlesPasswordSet.value = false;
     opensubtitlesConfigured.value = false;
+    testStatus.value = "idle";
   }
 
   async function testOpenSubtitlesConnection() {
@@ -85,7 +121,11 @@ export const useSubtitleSourcesStore = defineStore("subtitleSources", () => {
 
   return {
     opensubtitlesConfigured,
+    opensubtitlesUsername,
+    opensubtitlesApiKey,
+    opensubtitlesPasswordSet,
     subsourceReachable,
+    subsourceStatus,
     testStatus,
     testError,
     searchEnabled,

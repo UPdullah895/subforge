@@ -7,14 +7,19 @@ use subforge_metadata::{tmdb::TmdbClient, tvmaze::TvmazeClient};
 #[derive(Deserialize)]
 pub struct TestProviderRequest {
     provider: String,
+    /// Value currently in the form; lets Test work before the settings are saved.
+    #[serde(default)]
+    api_key: Option<String>,
 }
 
 pub async fn test_provider_config(
     Json(req): Json<TestProviderRequest>,
 ) -> Result<StatusCode, (StatusCode, String)> {
     let config = AppConfig::load();
+    let typed = req.api_key.filter(|k| !k.trim().is_empty());
+    let pick = |stored: Option<String>| typed.clone().or(stored).filter(|k| !k.trim().is_empty());
     let result: Result<(), String> = match req.provider.as_str() {
-        "tmdb" => match config.tmdb_api_key.filter(|k| !k.is_empty()) {
+        "tmdb" => match pick(config.tmdb_api_key) {
             Some(key) => TmdbClient::new(key)
                 .test_key()
                 .await
@@ -46,19 +51,19 @@ pub async fn test_provider_config(
                 .map(|_| ())
                 .map_err(|e| e.to_string())
         }
-        "deepl" => match config.deepl_api_key.filter(|k| !k.is_empty()) {
+        "deepl" => match pick(config.deepl_api_key) {
             Some(key) => translate_tools::test_deepl_key(&key)
                 .await
                 .map_err(|e| e.to_string()),
             None => Err("No DeepL API key configured".to_string()),
         },
-        "openai" => match config.openai_api_key.filter(|k| !k.is_empty()) {
+        "openai" => match pick(config.openai_api_key) {
             Some(key) => translate_tools::test_openai_key(&key)
                 .await
                 .map_err(|e| e.to_string()),
             None => Err("No OpenAI API key configured".to_string()),
         },
-        "google" => match config.google_translate_api_key.filter(|k| !k.is_empty()) {
+        "google" => match pick(config.google_translate_api_key) {
             Some(key) => translate_tools::test_google_key(&key)
                 .await
                 .map_err(|e| e.to_string()),

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { localizedLanguageName, TRANSLATE_LANG_CODES } from "../utils/languageNames";
 import { useAppStore } from "../stores/appStore";
@@ -9,6 +9,7 @@ import { apiInvoke } from "../api/client";
 import SetupInstructions from "../components/SetupInstructions.vue";
 import DependenciesPanel from "../components/DependenciesPanel.vue";
 import ToolPathField from "../components/ToolPathField.vue";
+import SecretField from "../components/SecretField.vue";
 import {
   Palette,
   Languages,
@@ -19,8 +20,6 @@ import {
   RotateCcw,
   Search,
   KeyRound,
-  Eye,
-  EyeOff,
   CheckCircle2,
   XCircle,
   Loader2,
@@ -34,9 +33,43 @@ const appStore = useAppStore();
 const translateStore = useTranslateStore();
 const subtitleSourcesStore = useSubtitleSourcesStore();
 
-const osApiKey = ref("");
-const osUsername = ref("");
+// The API key and username are hydrated from the store (which reads the
+// keyring on the desktop). The password is write-only: a blank box means
+// "keep the stored one".
 const osPassword = ref("");
+const osSaved = ref(false);
+const osSaving = ref(false);
+const osError = ref<string | null>(null);
+
+// API keys autosave so leaving Settings never loses one. `ready` stays false
+// until the stored config has been applied, so hydration does not trigger a
+// write.
+const ready = ref(false);
+const autoSaved = ref(false);
+let autoSaveTimer: ReturnType<typeof setTimeout> | undefined;
+let autoSavedTimer: ReturnType<typeof setTimeout> | undefined;
+
+function scheduleAutosave() {
+  if (!ready.value) return;
+  if (autoSaveTimer) clearTimeout(autoSaveTimer);
+  autoSaveTimer = setTimeout(async () => {
+    const ok = await appStore.saveConfig();
+    if (!ok) return;
+    autoSaved.value = true;
+    if (autoSavedTimer) clearTimeout(autoSavedTimer);
+    autoSavedTimer = setTimeout(() => (autoSaved.value = false), 1800);
+  }, 600);
+}
+
+watch(
+  () => [appStore.config?.tmdb_api_key, appStore.config?.subsource_api_key],
+  scheduleAutosave
+);
+
+onBeforeUnmount(() => {
+  if (autoSaveTimer) clearTimeout(autoSaveTimer);
+  if (autoSavedTimer) clearTimeout(autoSavedTimer);
+});
 
 type ProviderId = "tmdb" | "tvmaze" | "deepl" | "openai" | "google" | "ollama";
 
@@ -49,15 +82,6 @@ const providers: { id: ProviderId; label: string; hasKey: boolean }[] = [
   { id: "ollama", label: "Ollama", hasKey: false },
 ];
 
-const showKey = reactive<Record<ProviderId, boolean>>({
-  tmdb: false,
-  tvmaze: false,
-  deepl: false,
-  openai: false,
-  google: false,
-  ollama: false,
-});
-
 const testStatus = reactive<Record<ProviderId, "idle" | "testing" | "success" | "error">>({
   tmdb: "idle",
   tvmaze: "idle",
@@ -69,15 +93,82 @@ const testStatus = reactive<Record<ProviderId, "idle" | "testing" | "success" | 
 
 const showSetupFor = ref<ProviderId | null>(null);
 
+function providerKey(provider: ProviderId): string | undefined {
+  switch (provider) {
+    case "tmdb":
+      return appStore.config?.tmdb_api_key;
+    case "deepl":
+      return translateStore.deeplKey;
+    case "openai":
+      return translateStore.openaiKey;
+    case "google":
+      return translateStore.googleApiKey;
+    default:
+      return undefined;
+  }
+}
+
 async function testProvider(provider: ProviderId) {
   testStatus[provider] = "testing";
   try {
-    await apiInvoke("test_provider_config", { provider });
+    // Test the value in the form so it works before Save/autosave completes.
+    await apiInvoke("test_provider_config", { provider, apiKey: providerKey(provider) });
     testStatus[provider] = "success";
   } catch {
     testStatus[provider] = "error";
   }
 }
+
+async function saveOpenSubtitles() {
+  osError.value = null;
+  osSaved.value = false;
+  // Validate here too so an empty form cannot overwrite a working setup even
+  // if the backend guard is bypassed (server mode, older backend).
+  if (
+    !subtitleSourcesStore.opensubtitlesApiKey.trim() ||
+    !subtitleSourcesStore.opensubtitlesUsername.trim()
+  ) {
+    osError.value = t("settings.openSubtitlesMissing");
+    return;
+  }
+  if (!osPassword.value && !subtitleSourcesStore.opensubtitlesPasswordSet) {
+    osError.value = t("settings.openSubtitlesPasswordMissing");
+    return;
+  }
+  osSaving.value = true;
+  try {
+    await subtitleSourcesStore.setOpenSubtitlesCredentials({
+      api_key: subtitleSourcesStore.opensubtitlesApiKey,
+      username: subtitleSourcesStore.opensubtitlesUsername,
+      password: osPassword.value,
+    });
+    osPassword.value = "";
+    osSaved.value = true;
+    setTimeout(() => (osSaved.value = false), 2000);
+    await subtitleSourcesStore.testOpenSubtitlesConnection();
+  } catch (e) {
+    osError.value = e instanceof Error ? e.message : String(e);
+  } finally {
+    osSaving.value = false;
+  }
+}
+
+const subsourceLabel = computed(() => {
+  const status = subtitleSourcesStore.subsourceStatus;
+  if (!status || status.reason === "not_configured") {
+    return { text: t("settings.subsourceNotConfigured"), cls: "text-text-muted" };
+  }
+  switch (status.reason) {
+    case "ok":
+      return { text: t("settings.subsourceReachable"), cls: "text-success" };
+    case "rate_limited":
+      return { text: t("settings.subsourceRateLimited"), cls: "text-warning" };
+    case "invalid_key":
+      return { text: t("settings.subsourceInvalidKey"), cls: "text-error" };
+    default:
+      return { text: t("settings.subsourceUnreachable"), cls: "text-error" };
+  }
+});
 
 const engines = [
   { id: "ollama", label: "Ollama" },
@@ -173,8 +264,11 @@ function setupContentFor(id: ProviderId) {
   };
 }
 
-onMounted(() => {
-  appStore.loadConfig();
+onMounted(async () => {
+  await appStore.loadConfig();
+  // Let the autosave watcher run once against the hydrated config first.
+  await nextTick();
+  ready.value = true;
   appStore.loadToolStatus();
   subtitleSourcesStore.loadStatus();
 });
@@ -209,6 +303,16 @@ onMounted(() => {
           {{ saved ? t("settings.saved") : t("settings.save") }}
         </button>
       </div>
+    </div>
+
+    <!-- A failed save must never be silent: the user would otherwise think the
+         settings stuck when they did not. -->
+    <div
+      v-if="appStore.saveError"
+      class="mx-6 mt-3 rounded-lg border border-error/40 bg-error/10 px-4 py-2 text-xs text-error"
+      data-testid="save-error"
+    >
+      {{ t("settings.saveFailed", { error: appStore.saveError }) }}
     </div>
 
     <!-- Content -->
@@ -401,21 +505,13 @@ onMounted(() => {
             <!-- TMDB -->
             <div v-if="provider.id === 'tmdb' && appStore.config">
               <label class="block text-xs font-medium text-text-secondary mb-1.5">{{ t("settings.tmdbApiKey") }}</label>
-              <div class="relative">
-                <input
-                  v-model="appStore.config.tmdb_api_key"
-                  :type="showKey.tmdb ? 'text' : 'password'"
-                  :placeholder="t('settings.tmdbPlaceholder')"
-                  class="w-full px-4 py-2.5 pr-10 rounded-lg bg-bg-primary border border-border text-sm text-text-primary placeholder-text-muted focus:outline-none focus:border-accent"
-                />
-                <button
-                  class="absolute right-3 top-1/2 -translate-y-1/2 text-text-muted hover:text-text-secondary"
-                  @click="showKey.tmdb = !showKey.tmdb"
-                >
-                  <EyeOff v-if="showKey.tmdb" class="w-4 h-4" />
-                  <Eye v-else class="w-4 h-4" />
-                </button>
-              </div>
+              <SecretField
+                v-model="appStore.config.tmdb_api_key"
+                testid="input-tmdb-key"
+                :placeholder="t('settings.tmdbPlaceholder')"
+                :saved="autoSaved"
+                :saved-label="t('settings.autosaved')"
+              />
             </div>
 
             <!-- TVmaze -->
@@ -427,21 +523,11 @@ onMounted(() => {
             <div v-else-if="provider.id === 'deepl'" class="space-y-3">
               <div>
                 <label class="block text-xs font-medium text-text-secondary mb-1.5">{{ t("translate.apiKey") }}</label>
-                <div class="relative">
-                  <input
-                    v-model="translateStore.deeplKey"
-                    :type="showKey.deepl ? 'text' : 'password'"
-                    :placeholder="t('translate.deeplPlaceholder')"
-                    class="w-full px-4 py-2.5 pr-10 rounded-lg bg-bg-primary border border-border text-sm text-text-primary placeholder-text-muted focus:outline-none focus:border-accent"
-                  />
-                  <button
-                    class="absolute right-3 top-1/2 -translate-y-1/2 text-text-muted hover:text-text-secondary"
-                    @click="showKey.deepl = !showKey.deepl"
-                  >
-                    <EyeOff v-if="showKey.deepl" class="w-4 h-4" />
-                    <Eye v-else class="w-4 h-4" />
-                  </button>
-                </div>
+                <SecretField
+                  v-model="translateStore.deeplKey"
+                  testid="input-deepl-key"
+                  :placeholder="t('translate.deeplPlaceholder')"
+                />
               </div>
               <label class="flex items-center gap-2 text-xs text-text-secondary">
                 <input v-model="translateStore.deeplPro" type="checkbox" class="accent-accent" />
@@ -453,21 +539,11 @@ onMounted(() => {
             <div v-else-if="provider.id === 'openai'" class="space-y-3">
               <div>
                 <label class="block text-xs font-medium text-text-secondary mb-1.5">{{ t("translate.apiKey") }}</label>
-                <div class="relative">
-                  <input
-                    v-model="translateStore.openaiKey"
-                    :type="showKey.openai ? 'text' : 'password'"
-                    :placeholder="t('translate.openaiPlaceholder')"
-                    class="w-full px-4 py-2.5 pr-10 rounded-lg bg-bg-primary border border-border text-sm text-text-primary placeholder-text-muted focus:outline-none focus:border-accent"
-                  />
-                  <button
-                    class="absolute right-3 top-1/2 -translate-y-1/2 text-text-muted hover:text-text-secondary"
-                    @click="showKey.openai = !showKey.openai"
-                  >
-                    <EyeOff v-if="showKey.openai" class="w-4 h-4" />
-                    <Eye v-else class="w-4 h-4" />
-                  </button>
-                </div>
+                <SecretField
+                  v-model="translateStore.openaiKey"
+                  testid="input-openai-key"
+                  :placeholder="t('translate.openaiPlaceholder')"
+                />
               </div>
               <div>
                 <label class="block text-xs font-medium text-text-secondary mb-1.5">{{ t("translate.modelName") }}</label>
@@ -482,21 +558,11 @@ onMounted(() => {
             <!-- Google Translate -->
             <div v-else-if="provider.id === 'google'">
               <label class="block text-xs font-medium text-text-secondary mb-1.5">{{ t("translate.apiKey") }}</label>
-              <div class="relative">
-                <input
-                  v-model="translateStore.googleApiKey"
-                  :type="showKey.google ? 'text' : 'password'"
-                  :placeholder="t('translate.googlePlaceholder')"
-                  class="w-full px-4 py-2.5 pr-10 rounded-lg bg-bg-primary border border-border text-sm text-text-primary placeholder-text-muted focus:outline-none focus:border-accent"
-                />
-                <button
-                  class="absolute right-3 top-1/2 -translate-y-1/2 text-text-muted hover:text-text-secondary"
-                  @click="showKey.google = !showKey.google"
-                >
-                  <EyeOff v-if="showKey.google" class="w-4 h-4" />
-                  <Eye v-else class="w-4 h-4" />
-                </button>
-              </div>
+              <SecretField
+                v-model="translateStore.googleApiKey"
+                testid="input-google-key"
+                :placeholder="t('translate.googlePlaceholder')"
+              />
             </div>
 
             <!-- Ollama -->
@@ -534,14 +600,23 @@ onMounted(() => {
           {{ t("settings.searchOnlineToggle") }}
         </label>
 
-        <div class="flex items-center justify-between px-3 py-2 rounded-lg bg-bg-primary border border-border mb-3">
-          <span class="text-sm text-text-primary">{{ t("settings.subsourceStatus") }}</span>
-          <span
-            :class="subtitleSourcesStore.subsourceReachable ? 'text-success' : 'text-error'"
-            class="text-xs"
-          >
-            {{ subtitleSourcesStore.subsourceReachable ? t("settings.subsourceReachable") : t("settings.subsourceUnreachable") }}
-          </span>
+        <div class="px-3 py-2 rounded-lg bg-bg-primary border border-border mb-3 space-y-2">
+          <div class="flex items-center justify-between">
+            <span class="text-sm text-text-primary">{{ t("settings.subsourceStatus") }}</span>
+            <span :class="subsourceLabel.cls" class="text-xs" data-testid="subsource-status">
+              {{ subsourceLabel.text }}
+            </span>
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-text-secondary mb-1.5">{{ t("settings.subsourceApiKey") }}</label>
+            <SecretField
+              v-if="appStore.config"
+              v-model="appStore.config.subsource_api_key"
+              testid="input-subsource-key"
+              :placeholder="t('settings.subsourceKeyPlaceholder')"
+            />
+            <p class="mt-1 text-xs text-text-muted">{{ t("settings.subsourceKeyHelp") }}</p>
+          </div>
         </div>
 
         <div class="p-3 rounded-lg bg-bg-secondary border border-border space-y-2">
@@ -557,28 +632,34 @@ onMounted(() => {
             &middot;
             <a href="https://opensubtitles.stoplight.io" target="_blank" rel="noopener" class="text-accent hover:underline">{{ t("settings.openSubtitlesDocsLink") }}</a>
           </p>
-          <input
-            v-model="osApiKey"
-            type="text"
+          <SecretField
+            v-model="subtitleSourcesStore.opensubtitlesApiKey"
+            testid="input-opensubtitles-key"
             :placeholder="t('settings.openSubtitlesApiKey')"
-            class="w-full px-3 py-2 rounded-lg bg-bg-primary border border-border text-sm text-text-primary focus:outline-none focus:border-accent"
           />
           <input
-            v-model="osUsername"
+            v-model="subtitleSourcesStore.opensubtitlesUsername"
             type="text"
+            autocomplete="off"
             :placeholder="t('settings.openSubtitlesUsername')"
-            class="w-full px-3 py-2 rounded-lg bg-bg-primary border border-border text-sm text-text-primary focus:outline-none focus:border-accent"
+            data-testid="input-opensubtitles-username"
+            class="w-full px-4 py-2.5 rounded-lg bg-bg-primary border border-border text-sm text-text-primary focus:outline-none focus:border-accent"
           />
-          <input
+          <SecretField
             v-model="osPassword"
-            type="password"
-            :placeholder="t('settings.openSubtitlesPassword')"
-            class="w-full px-3 py-2 rounded-lg bg-bg-primary border border-border text-sm text-text-primary focus:outline-none focus:border-accent"
+            testid="input-opensubtitles-password"
+            :placeholder="
+              subtitleSourcesStore.opensubtitlesPasswordSet
+                ? t('settings.openSubtitlesPasswordSaved')
+                : t('settings.openSubtitlesPassword')
+            "
           />
           <div class="flex items-center gap-2">
             <button
-              class="px-3 py-1.5 rounded-md bg-accent text-white text-xs font-medium hover:bg-accent-hover transition-colors"
-              @click="async () => { await subtitleSourcesStore.setOpenSubtitlesCredentials({ api_key: osApiKey, username: osUsername, password: osPassword }); await subtitleSourcesStore.testOpenSubtitlesConnection(); }"
+              class="px-3 py-1.5 rounded-md bg-accent text-white text-xs font-medium hover:bg-accent-hover transition-colors disabled:opacity-50"
+              :disabled="osSaving"
+              data-testid="opensubtitles-save"
+              @click="saveOpenSubtitles"
             >
               {{ t("settings.openSubtitlesSave") }}
             </button>
@@ -589,7 +670,9 @@ onMounted(() => {
             >
               {{ t("settings.openSubtitlesClear") }}
             </button>
-            <span v-if="subtitleSourcesStore.testStatus === 'success'" class="text-xs text-success">{{ t("settings.testSuccess") }}</span>
+            <span v-if="osSaved" class="text-xs text-success">{{ t("settings.saved") }}</span>
+            <span v-if="osError" class="text-xs text-error">{{ osError }}</span>
+            <span v-else-if="subtitleSourcesStore.testStatus === 'success'" class="text-xs text-success">{{ t("settings.testSuccess") }}</span>
             <span v-else-if="subtitleSourcesStore.testStatus === 'error'" class="text-xs text-error">{{ subtitleSourcesStore.testError }}</span>
           </div>
         </div>

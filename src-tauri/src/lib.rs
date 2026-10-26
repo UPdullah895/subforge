@@ -2,6 +2,7 @@ pub mod commands;
 pub mod config;
 pub mod credentials;
 pub mod jobs;
+pub mod secrets;
 pub mod self_test;
 pub mod tools;
 

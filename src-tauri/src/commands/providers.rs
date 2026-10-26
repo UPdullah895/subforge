@@ -6,13 +6,15 @@ use subforge_metadata::{tmdb::TmdbClient, tvmaze::TvmazeClient};
 pub async fn test_provider_config(
     credential_store: tauri::State<'_, std::sync::Arc<dyn crate::credentials::CredentialStore>>,
     provider: String,
+    api_key: Option<String>,
 ) -> Result<(), String> {
     let config = AppConfig::load();
+    // Test the value currently in the form, not just whatever was last saved.
+    let typed = api_key.filter(|k| !k.trim().is_empty());
+    let pick = |stored: Option<String>| typed.clone().or(stored).filter(|k| !k.trim().is_empty());
     match provider.as_str() {
         "tmdb" => {
-            let key = config
-                .tmdb_api_key
-                .filter(|k| !k.is_empty())
+            let key = pick(config.tmdb_api_key)
                 .ok_or_else(|| "No TMDB API key configured".to_string())?;
             TmdbClient::new(key)
                 .test_key()
@@ -45,27 +47,21 @@ pub async fn test_provider_config(
                 .map_err(|e| e.to_string())
         }
         "deepl" => {
-            let key = config
-                .deepl_api_key
-                .filter(|k| !k.is_empty())
+            let key = pick(config.deepl_api_key)
                 .ok_or_else(|| "No DeepL API key configured".to_string())?;
             translate_tools::test_deepl_key(&key)
                 .await
                 .map_err(|e| e.to_string())
         }
         "openai" => {
-            let key = config
-                .openai_api_key
-                .filter(|k| !k.is_empty())
+            let key = pick(config.openai_api_key)
                 .ok_or_else(|| "No OpenAI API key configured".to_string())?;
             translate_tools::test_openai_key(&key)
                 .await
                 .map_err(|e| e.to_string())
         }
         "google" => {
-            let key = config
-                .google_translate_api_key
-                .filter(|k| !k.is_empty())
+            let key = pick(config.google_translate_api_key)
                 .ok_or_else(|| "No Google Translate API key configured".to_string())?;
             translate_tools::test_google_key(&key)
                 .await

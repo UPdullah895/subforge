@@ -141,9 +141,18 @@ export const commandSchemas: Record<string, z.ZodTypeAny> = {
 
   batch_extract_subtitles: z.array(z.string()),
 
-  get_opensubtitles_status: z.looseObject({ configured: z.boolean() }),
+  get_opensubtitles_status: z.looseObject({
+    configured: z.boolean(),
+    username: z.string().nullish(),
+    api_key: z.string().nullish(),
+    password_set: z.boolean().nullish(),
+  }),
 
-  check_subsource_status: z.looseObject({ reachable: z.boolean() }),
+  check_subsource_status: z.looseObject({
+    configured: z.boolean(),
+    reachable: z.boolean(),
+    reason: z.enum(["ok", "rate_limited", "invalid_key", "unreachable", "not_configured"]),
+  }),
 
   search_online_subtitle: z.discriminatedUnion("status", [
     z.looseObject({

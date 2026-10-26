@@ -95,7 +95,7 @@ Developers can print the same dependency report in a terminal with `cargo run --
 
 ### Translation
 - **Ollama (local LLM), LibreTranslate, DeepL, OpenAI, Google Translate** — batched, context-aware subtitle translation with automatic engine detection where applicable.
-- **Online subtitle search before translating** — before running machine translation on a file, SubForge searches [Subsource](https://subsource.net) (on by default) and, if you supply your own account, [OpenSubtitles.com](https://www.opensubtitles.com) (file-hash matching for exact-release accuracy) for an existing human-made subtitle in the target language. If one is found it's used directly; if not, translation runs as normal. Toggle this off, or configure OpenSubtitles.com, from Settings → Subtitle Sources.
+- **Online subtitle search before translating** — before running machine translation on a file, SubForge searches [Subsource](https://subsource.net) (on by default) and, if you supply your own account, [OpenSubtitles.com](https://www.opensubtitles.com) (file-hash matching for exact-release accuracy) for an existing human-made subtitle in the target language. If one is found it's used directly; if not, translation runs as normal. Toggle this off, or configure OpenSubtitles.com or your own Subsource key, from Settings → Subtitle Sources. API keys are kept in the operating system's keyring, not in `config.json`.
 
 ### Interface
 - Dark theme, fully responsive layout, English/Arabic localization.
@@ -133,7 +133,7 @@ GPU speech-to-text is the optional `gpu-vulkan` feature (`npm run tauri build --
 
 To bundle FFmpeg and MKVToolNix the way the release installers do (Windows installer and AppImage), fetch the pinned, checksum-verified copies first with `node scripts/fetch-bundled-tools.mjs windows-x64` (or `linux-x64`); versions live in `packaging/bundled-tools.json` and the licences in `THIRD_PARTY_NOTICES.md`. Without this step a Windows build bundles no tools and uses the system ones, and an AppImage build fails (it needs the fetched files); `.deb`/`.rpm` never bundle them. `node scripts/fetch-bundled-tools.mjs --sources <dir>` downloads the corresponding GPL/LGPL source archives that each release attaches.
 
-Optional: set `SUBFORGE_SUBSOURCE_API_KEY` at build time to enable Subsource subtitle search. Without it everything else works and Subsource search is silently skipped.
+Subsource subtitle search needs a Subsource API key. You can paste your own under **Settings → Subtitle Sources** (it is stored in your OS keyring). Distributors can alternatively bake a default key in at build time with `SUBFORGE_SUBSOURCE_API_KEY`; a key set in Settings always wins, and without either Subsource search is skipped while OpenSubtitles and translation keep working.
 
 ### Linux app-menu entry (development checkouts)
 ```bash
