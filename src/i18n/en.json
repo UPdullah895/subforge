@@ -1,5 +1,7 @@
 {
   "app": {
+    "comingSoon": "Coming soon",
+    "comingSoonHint": "This feature is planned for a future release.",
     "title": "SubForge"
   },
   "nav": {
@@ -103,7 +105,15 @@
     "shiftMilliseconds": "Shift milliseconds",
     "shiftHint": "Positive = forward, Negative = backward",
     "shiftTiming": "Shift Timing",
-    "operationCompleted": "Operation completed. Saved to {path}"
+    "operationCompleted": "Operation completed. Saved to {path}",
+    "fixDriftTitle": "Fix drifting subtitles",
+    "fixDriftHint": "Use this when subtitles start in sync but slip further off the longer the video plays. A plain shift can't fix that; the frame rates differ.",
+    "fpsFrom": "Subtitle was made for",
+    "fpsTo": "Your video is",
+    "fpsSame": "Pick two different frame rates.",
+    "fixDriftButton": "Fix drift",
+    "retimeDone": "Subtitle retimed",
+    "convertDone": "Subtitle converted"
   },
   "audio": {
     "title": "Audio",
@@ -151,7 +161,10 @@
     "confirm": "Rename",
     "manualName": "Name",
     "manualNamePlaceholder": "e.g. Among Us",
-    "applyToAll": "Apply to all"
+    "applyToAll": "Apply to all",
+    "done": "Renamed {n} file(s)",
+    "alsoSubtitles": "Also rename their subtitle files",
+    "alsoSubtitlesCount": "{n} found"
   },
   "mergeSubs": {
     "title": "Merge External Subtitles",
@@ -169,14 +182,22 @@
     "rowNeedsAttention": "This file doesn't match the collective default — needs manual review.",
     "adjustManually": "Adjust manually",
     "useCollective": "Use collective default",
-    "newTrack": "new"
+    "newTrack": "new",
+    "replaceOriginal": "Replace the original video with the merged one",
+    "replaceOriginalOff": "Off: the result is saved as “… .merged.mkv” next to the original, so your media server may list the episode twice.",
+    "replaceOriginalOn": "On: the original file is overwritten once the merge succeeds. Video and audio are copied, not re-encoded."
   },
   "extractLangPicker": {
     "title": "Choose Languages to Extract",
     "description": "Pick which subtitle language(s) to extract across the selected files.",
     "noTracks": "No subtitle tracks found in the selected files.",
     "fileCoverage": "{count}/{total} files have this track",
-    "confirm": "Extract Selected"
+    "confirm": "Extract Selected",
+    "selectAll": "Select all languages",
+    "saveTo": "Save subtitles",
+    "beside": "Next to each video",
+    "besideHint": "Recommended: Plex, Jellyfin and Kodi find them automatically.",
+    "chooseFolder": "In one folder I choose…"
   },
   "autoTranslate": {
     "title": "Auto-Translate",
@@ -228,7 +249,11 @@
     "starting": "Starting...",
     "transcriptionJobs": "Transcription Jobs",
     "noMediaSelected": "No media selected",
-    "noMediaSelectedDesc": "Open an audio or video file to transcribe it to subtitles."
+    "noMediaSelectedDesc": "Open an audio or video file to transcribe it to subtitles.",
+    "notInstalledTitle": "Speech-to-text isn't set up yet",
+    "notInstalledBody": "Transcription runs locally with faster-whisper, which wasn't found on this computer. Install it once and this page will unlock.",
+    "notInstalledHint": "Needs Python 3. If your system blocks global pip installs, use a virtual environment (python3 -m venv ~/.venvs/subforge) or pipx. A NVIDIA GPU makes it much faster but isn't required.",
+    "checkAgain": "Check again"
   },
   "translate": {
     "title": "Translate",
@@ -270,6 +295,8 @@
     "autoDetect": "Auto-detect running Ollama instance",
     "modelLabel": "Model",
     "noModels": "No models found. Make sure Ollama is running.",
+    "autoDetectLanguage": "Auto-detect",
+    "detectingModels": "Looking for models…",
     "libreSection": "LibreTranslate",
     "autoDetectLibre": "Auto-detect running LibreTranslate instance",
     "deeplSection": "DeepL",
@@ -352,6 +379,85 @@
     "tmdbSecurity": "Cloud service — series/episode searches are sent to TMDB over HTTPS.",
     "tvmazeDesc": "TVmaze provides series and episode metadata as a free, public API.",
     "tvmazeSetup": "No setup needed — TVmaze's API (https://www.tvmaze.com/api) requires no registration or key.",
-    "tvmazeSecurity": "Cloud service — series/episode searches are sent to TVmaze over HTTPS. No key is ever transmitted since none is required."
+    "tvmazeSecurity": "Cloud service — series/episode searches are sent to TVmaze over HTTPS. No key is ever transmitted since none is required.",
+    "fixRtlPunctuation": "Fix punctuation in Arabic, Persian and Hebrew subtitles",
+    "fixRtlPunctuationHint": "Adds invisible right-to-left marks to translated lines so players don't put question marks and full stops at the wrong end. Turn off if a player shows stray boxes."
+  },
+  "filePicker": {
+    "saveTitle": "Save as",
+    "folderTitle": "Choose a folder",
+    "filesTitle": "Choose files",
+    "fileTitle": "Choose a file",
+    "up": "Up one folder",
+    "path": "Folder path",
+    "home": "Home",
+    "filter": "Filter by name…",
+    "showHidden": "Hidden files",
+    "allFiles": "All file types",
+    "selectAll": "Select all",
+    "selectNone": "Select none",
+    "loading": "Loading…",
+    "empty": "Nothing to show here.",
+    "truncated": "Very large folder — only the first 5000 items are shown.",
+    "hiddenByFilter": "{n} other file(s) hidden by the file-type filter.",
+    "fileName": "File name",
+    "willOverwrite": "A file with this name already exists and will be replaced.",
+    "save": "Save",
+    "overwrite": "Replace",
+    "selectFolder": "Use this folder",
+    "open": "Open",
+    "openN": "Open {n} files",
+    "selectedCount": "{n} selected",
+    "emptyFolderMode": "No subfolders here. You can still use this folder."
+  },
+  "toast": {
+    "jobDone": "Finished",
+    "jobFailed": "Something went wrong",
+    "jobCancelled": "Cancelled",
+    "subtitleSaved": "Subtitle saved",
+    "extractFailed": "Could not extract the subtitle",
+    "batchExtracted": "Extracted {n} subtitle files",
+    "batchExtractedNone": "No matching subtitle tracks were found",
+    "extractedTo": "Saved next to the video in {dir}",
+    "audioDone": "Audio saved",
+    "audioFailed": "Audio operation failed"
+  },
+  "deps": {
+    "title": "Required Programs",
+    "intro": "SubForge needs a few free programs to do its job. Anything missing is listed below. Click Install and SubForge will set it up for you, or use the download link.",
+    "checking": "Checking your system…",
+    "allGood": "Everything SubForge needs is installed.",
+    "required": "Required",
+    "optional": "Optional",
+    "state": {
+      "ok": "Installed",
+      "missing": "Missing",
+      "outdated": "Too old"
+    },
+    "install": "Install",
+    "installing": "Installing…",
+    "installAll": "Install all missing",
+    "recheck": "Re-check",
+    "later": "Continue anyway",
+    "copy": "Copy command",
+    "copied": "Copied",
+    "download": "Download page",
+    "command": "Or run this in a terminal:",
+    "manualHint": "This needs administrator rights, and no graphical password prompt (pkexec) was found. Run the command above in a terminal.",
+    "needPython": "Install Python first, then this can be installed automatically.",
+    "noPackageManager": "No supported package manager was found on this system. Use the download page below to install it manually.",
+    "details": "Details",
+    "bannerText": "Some required programs are missing, so parts of SubForge will not work.",
+    "fixNow": "Fix now",
+    "purpose": {
+      "mkvmerge": "Merging subtitle and audio tracks into MKV files",
+      "mkvextract": "Extracting subtitle and audio tracks from MKV files",
+      "mkvpropedit": "Editing track names, languages and flags without remuxing",
+      "ffmpeg": "Extracting, converting and merging audio",
+      "ffprobe": "Reading audio track information",
+      "python": "Running the subtitle conversion, translation and transcription helpers",
+      "pysubs2": "Converting and retiming subtitle formats (SRT, ASS, VTT)",
+      "faster_whisper": "Speech-to-text transcription"
+    }
   }
 }

@@ -1,13 +1,14 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, watch } from "vue";
 import { useI18n } from "vue-i18n";
-import { open } from "@tauri-apps/plugin-dialog";
+import { open } from "../utils/dialog";
+import { baseName, externalSubFilename, parseSubtitleFilename } from "../utils/subtitleNaming";
 import { apiListen } from "../api/events";
 import type { UnlistenFn } from "@tauri-apps/api/event";
 import { useTranslateStore, type EngineType, mapJobErrorMessage } from "../stores/translateStore";
-import { isDeeplSupported } from "../utils/languageNames";
+import { isDeeplSupported, localizedLanguageName, TRANSLATE_LANG_CODES } from "../utils/languageNames";
 
-const { t } = useI18n();
+const { t, locale } = useI18n();
 import { JOB_STATUS, type JobStatus } from "../constants/jobStatus";
 import { useAppStore } from "../stores/appStore";
 import ErrorBanner from "../components/ErrorBanner.vue";
@@ -84,31 +85,18 @@ const engineKeyPrefix: Record<EngineType, string> = {
   google: "google",
 };
 
-const languageOptions = [
-  { code: "auto", label: "Auto-detect" },
-  { code: "en", label: "English" },
-  { code: "ar", label: "Arabic" },
-  { code: "es", label: "Spanish" },
-  { code: "fr", label: "French" },
-  { code: "de", label: "German" },
-  { code: "ja", label: "Japanese" },
-  { code: "ko", label: "Korean" },
-  { code: "zh", label: "Chinese" },
-  { code: "ru", label: "Russian" },
-  { code: "pt", label: "Portuguese" },
-  { code: "it", label: "Italian" },
-  { code: "tr", label: "Turkish" },
-  { code: "hi", label: "Hindi" },
-  { code: "fa", label: "Persian" },
-  { code: "ur", label: "Urdu" },
-];
+const languageOptions = computed(() => [
+  { code: "auto", label: t("translate.autoDetectLanguage") },
+  ...TRANSLATE_LANG_CODES.map((code) => ({ code, label: localizedLanguageName(code, locale.value) })),
+]);
+// "Auto-detect" only makes sense for the source language.
+const targetLanguageOptions = computed(() => languageOptions.value.filter((l) => l.code !== "auto"));
 
-const knownLangCodes = languageOptions.map((l) => l.code).filter((c) => c !== "auto");
-const langPattern = new RegExp(`\\.(${knownLangCodes.join("|")})\\.(srt|ass|ssa|vtt)$`, "i");
+const selectableLangs = new Set<string>(TRANSLATE_LANG_CODES);
 
 function detectLangFromFileName(name: string): string | null {
-  const m = name.match(langPattern);
-  return m ? m[1].toLowerCase() : null;
+  const lang = parseSubtitleFilename(name).lang;
+  return lang && selectableLangs.has(lang) ? lang : null;
 }
 
 function buildOutputPath(inputPath: string, targetLang: string): string {
@@ -116,14 +104,10 @@ function buildOutputPath(inputPath: string, targetLang: string): string {
   const dir = inputPath.substring(0, lastSlash + 1);
   const name = inputPath.substring(lastSlash + 1);
 
-  const extMatch = name.match(/\.(srt|ass|ssa|vtt)$/i);
-  const ext = extMatch ? extMatch[1] : "srt";
-
-  // Strip the real extension first, then strip an existing language code if present
-  const withoutExt = name.replace(/\.[^.]+$/, "");
-  const base = withoutExt.replace(new RegExp(`\\.(${knownLangCodes.join("|")})$`, "i"), "");
-
-  return `${dir}${base}.${targetLang}.${ext}`;
+  // `Show.eng.sdh.srt` -> `Show.ar.sdh.srt`: swap the language tag, keep the
+  // SDH/forced flavor, so the result is still `{video}.{lang}[.flavor].ext`.
+  const { stem, flavor, ext } = parseSubtitleFilename(name);
+  return `${dir}${externalSubFilename(stem, targetLang, ext, flavor)}`;
 }
 
 async function pickFiles() {
@@ -198,7 +182,7 @@ onMounted(async () => {
     if (appStore.config.default_source_lang) {
       translateStore.sourceLang = appStore.config.default_source_lang;
     }
-    if (appStore.config.default_target_lang) {
+    if (appStore.config.default_target_lang && appStore.config.default_target_lang !== "auto") {
       translateStore.targetLang = appStore.config.default_target_lang;
     }
   }
@@ -368,7 +352,7 @@ onUnmounted(() => {
                 :title="t('translate.autoDetect')"
                 @click="translateStore.detectOllama"
               >
-                <RefreshCw class="w-4 h-4" />
+                <RefreshCw class="w-4 h-4" :class="{ 'animate-spin': translateStore.ollamaDetecting }" />
               </button>
             </div>
           </div>
@@ -380,7 +364,10 @@ onUnmounted(() => {
             >
               <option v-for="m in translateStore.ollamaModels" :key="m" :value="m">{{ m }}</option>
             </select>
-            <p v-if="translateStore.ollamaModels.length === 0" class="text-xs text-warning mt-1">
+            <p v-if="translateStore.ollamaDetecting && translateStore.ollamaModels.length === 0" class="text-xs text-text-secondary mt-1">
+              {{ t("translate.detectingModels") }}
+            </p>
+            <p v-else-if="translateStore.ollamaModels.length === 0" class="text-xs text-warning mt-1">
               {{ t("translate.noModels") }}
             </p>
           </div>
@@ -494,7 +481,7 @@ onUnmounted(() => {
                 class="w-full px-4 py-2.5 rounded-lg bg-bg-secondary border border-border text-sm text-text-primary focus:outline-none focus:border-accent"
               >
                 <option
-                  v-for="lang in languageOptions"
+                  v-for="lang in targetLanguageOptions"
                   :key="lang.code"
                   :value="lang.code"
                   :disabled="translateStore.selectedEngine === 'deepl' && !isDeeplSupported(lang.code)"
@@ -585,7 +572,7 @@ onUnmounted(() => {
               />
               <Loader2 v-else class="w-4 h-4 text-accent animate-spin shrink-0" />
               <div class="flex-1 min-w-0">
-                <p class="text-xs text-text-muted font-mono truncate">{{ job.id.slice(0, 24) }}…</p>
+                <p class="text-xs text-text-primary truncate" dir="auto" :title="job.input_file">{{ baseName(job.input_file) }}</p>
                 <p v-if="job.message" class="text-xs text-text-secondary truncate">{{ job.message }}</p>
               </div>
               <button

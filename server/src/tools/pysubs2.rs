@@ -1,3 +1,4 @@
+use subforge_deps::HideWindow;
 use std::path::PathBuf;
 use std::process::Command;
 use thiserror::Error;
@@ -12,30 +13,8 @@ pub enum Pysubs2Error {
     Io(#[from] std::io::Error),
 }
 
-fn find_python() -> Option<PathBuf> {
-    for cmd in ["python3", "python"] {
-        if let Ok(paths) = std::env::var("PATH") {
-            for dir in paths.split(':') {
-                let full = PathBuf::from(dir).join(cmd);
-                if full.is_file() {
-                    return Some(full);
-                }
-            }
-        }
-    }
-    None
-}
-
 fn get_python() -> Result<PathBuf, Pysubs2Error> {
-    find_python().ok_or(Pysubs2Error::PythonNotFound)
-}
-
-fn script_path() -> String {
-    // Assume the script is in the project root's scripts/ directory
-    // In dev mode, this is relative to the CWD; in production, we'd bundle it.
-    std::env::current_dir()
-        .map(|cwd| cwd.join("scripts").join("subtitle_ops.py").to_string_lossy().to_string())
-        .unwrap_or_else(|_| "scripts/subtitle_ops.py".to_string())
+    super::find_python().ok_or(Pysubs2Error::PythonNotFound)
 }
 
 pub fn convert_format(
@@ -44,9 +23,9 @@ pub fn convert_format(
     target_format: &str,
 ) -> Result<(), Pysubs2Error> {
     let python = get_python()?;
-    let script = script_path();
+    let script = super::script_path("subtitle_ops.py");
 
-    let output_cmd = Command::new(&python)
+    let output_cmd = Command::new(&python).hide_window()
         .args([
             &script,
             "convert",
@@ -71,9 +50,9 @@ pub fn shift_subtitles(
     milliseconds: i64,
 ) -> Result<(), Pysubs2Error> {
     let python = get_python()?;
-    let script = script_path();
+    let script = super::script_path("subtitle_ops.py");
 
-    let output_cmd = Command::new(&python)
+    let output_cmd = Command::new(&python).hide_window()
         .args([
             &script,
             "shift",
@@ -81,6 +60,36 @@ pub fn shift_subtitles(
             output,
             "--ms",
             &milliseconds.to_string(),
+        ])
+        .output()?;
+
+    if !output_cmd.status.success() {
+        let stderr = String::from_utf8_lossy(&output_cmd.stderr).to_string();
+        return Err(Pysubs2Error::ScriptFailed(stderr));
+    }
+
+    Ok(())
+}
+
+pub fn stretch_framerate(
+    input: &str,
+    output: &str,
+    from_fps: f64,
+    to_fps: f64,
+) -> Result<(), Pysubs2Error> {
+    let python = get_python()?;
+    let script = super::script_path("subtitle_ops.py");
+
+    let output_cmd = Command::new(&python).hide_window()
+        .args([
+            &script,
+            "stretch",
+            input,
+            output,
+            "--from-fps",
+            &from_fps.to_string(),
+            "--to-fps",
+            &to_fps.to_string(),
         ])
         .output()?;
 

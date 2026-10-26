@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "subforge",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "identifier": "com.updullah.subforge",
   "build": {
     "beforeDevCommand": "npm run dev",
@@ -31,6 +31,13 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "publisher": "UPdullah895",
+    "copyright": "Copyright (c) UPdullah895. GPL-3.0-only.",
+    "category": "Utility",
+    "shortDescription": "Subtitle and audio toolkit",
+    "longDescription": "Extract, merge, convert, transcribe and translate subtitles and audio tracks. Uses MKVToolNix, FFmpeg and Python.",
+    "license": "GPL-3.0-only",
+    "licenseFile": "../LICENSE",
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -39,7 +46,17 @@
       "icons/icon.ico"
     ],
     "resources": {
-      "../scripts/*": "scripts/"
+      "../scripts/subtitle_ops.py": "scripts/subtitle_ops.py",
+      "../scripts/subtitle_lines.py": "scripts/subtitle_lines.py",
+      "../scripts/transcribe.py": "scripts/transcribe.py"
+    },
+    "linux": {
+      "deb": {
+        "depends": ["mkvtoolnix", "ffmpeg", "python3", "python3-venv"]
+      },
+      "rpm": {
+        "depends": ["mkvtoolnix", "python3"]
+      }
     }
   }
 }

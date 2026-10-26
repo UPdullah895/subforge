@@ -3,10 +3,11 @@ import { computed, reactive, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import Modal from "./Modal.vue";
 import { apiInvoke } from "../api/client";
-import { apiListen } from "../api/events";
+import { startAndWait } from "../api/jobs";
 import { useBatchStore } from "../stores/batchStore";
 import { useJobQueue } from "../composables/useJobQueue";
-import { trackDisplayName } from "../utils/languageNames";
+import { englishName, normalizeLangCode, trackDisplayName } from "../utils/languageNames";
+import { baseName } from "../utils/subtitleNaming";
 import { AlertTriangle, Loader2, Square } from "lucide-vue-next";
 
 const { t } = useI18n();
@@ -42,6 +43,7 @@ const languageOptions = [
 ];
 
 const deleteOriginals = ref(false);
+const replaceOriginal = ref(false);
 const merging = ref(false);
 const mergeProgress = ref(0);
 const currentJobId = ref<string | null>(null);
@@ -69,7 +71,9 @@ const globalDefaultSubtitleLang = ref<string | null>(null);
 interface FileRow {
   path: string;
   name: string;
-  subs: { lang: string; path: string; flavor?: string }[];
+  // `lang` is normalised to ISO 639-1 so it matches the dropdown and the
+  // existing-track comparisons; `rawLang` is what the scan reported.
+  subs: { lang: string; rawLang: string; path: string; flavor?: string }[];
   audioTracks: { id: number; language: string; trackName?: string; isDefault: boolean }[];
   subtitleTracks: { id: number; language: string; trackName?: string; isDefault: boolean }[];
 }
@@ -81,13 +85,13 @@ const rows = computed<FileRow[]>(() =>
       if (!file) return null;
       const subs = file.external_subs
         .filter((s) => s.status === "ok")
-        .map((s) => ({ lang: s.lang, path: s.path, flavor: s.flavor }));
+        .map((s) => ({ lang: normalizeLangCode(s.lang), rawLang: s.lang, path: s.path, flavor: s.flavor }));
       if (subs.length === 0) return null;
       const audioTracks = file.tracks
         .filter((tr) => tr.track_type === "audio")
         .map((tr) => ({
           id: tr.id,
-          language: tr.properties?.language || "und",
+          language: normalizeLangCode(tr.properties?.language || "und"),
           trackName: tr.properties?.track_name,
           isDefault: tr.properties?.default_track ?? false,
         }));
@@ -95,7 +99,7 @@ const rows = computed<FileRow[]>(() =>
         .filter((tr) => tr.track_type === "subtitles")
         .map((tr) => ({
           id: tr.id,
-          language: tr.properties?.language || "und",
+          language: normalizeLangCode(tr.properties?.language || "und"),
           trackName: tr.properties?.track_name,
           isDefault: tr.properties?.default_track ?? false,
         }));
@@ -204,6 +208,7 @@ watch(
   (isOpen) => {
     if (!isOpen) return;
     deleteOriginals.value = false;
+    replaceOriginal.value = false;
     for (const key of Object.keys(selections)) delete selections[key];
     for (const key of Object.keys(subLang)) delete subLang[key];
     for (const key of Object.keys(subHearingImpaired)) delete subHearingImpaired[key];
@@ -298,46 +303,18 @@ async function applyDefaultOverrides(row: FileRow, mergedPath: string) {
   }
 }
 
-interface MergeJobResult {
-  status: string;
-  message?: string;
-  output_path?: string;
-}
-
-// merge_external_subs now returns a job_id immediately (the merge runs async
-// in the background so large-file remuxes no longer block the UI) — wait for
-// its "job-completed" event, filtered by job_id, instead of the old direct
-// return value.
-function waitForMergeJob(jobId: string): Promise<MergeJobResult> {
-  return new Promise((resolve) => {
-    let unlistenProgress: (() => void) | null = null;
-    let unlistenCompleted: (() => void) | null = null;
-    const cleanup = () => {
-      unlistenProgress?.();
-      unlistenCompleted?.();
-    };
-    apiListen<{ job_id: string; progress: number }>("job-progress", (payload) => {
-      if (payload.job_id === jobId) mergeProgress.value = payload.progress;
-    }).then((fn) => {
-      unlistenProgress = fn;
-    });
-    apiListen<{ job_id: string; status: string; message?: string; output_path?: string }>(
-      "job-completed",
-      (payload) => {
-        if (payload.job_id === jobId) {
-          cleanup();
-          resolve(payload);
-        }
-      }
-    ).then((fn) => {
-      unlistenCompleted = fn;
-    });
-  });
-}
-
 async function stopMerge() {
   stopRequested.value = true;
   if (currentJobId.value) await cancelJob(currentJobId.value);
+}
+
+function langLabel(code: string): string {
+  return englishName(code) ?? code.toUpperCase();
+}
+
+// The batch store tracks external subs by the language the scan reported.
+function rawLangOf(row: FileRow, subPath: string, fallback: string): string {
+  return row.subs.find((s) => s.path === subPath)?.rawLang ?? fallback;
 }
 
 async function confirmMerge() {
@@ -358,18 +335,28 @@ async function confirmMerge() {
         }));
       try {
         mergeProgress.value = 0;
-        const jobId = await apiInvoke<string>("merge_external_subs", {
-          request: { video_path: row.path, subs, delete_originals: deleteOriginals.value },
-        });
-        currentJobId.value = jobId;
-        const result = await waitForMergeJob(jobId);
+        const result = await startAndWait(
+          () =>
+            apiInvoke<string>("merge_external_subs", {
+              request: {
+                video_path: row.path,
+                subs,
+                delete_originals: deleteOriginals.value,
+                replace_original: replaceOriginal.value,
+              },
+            }),
+          {
+            onStarted: (id) => (currentJobId.value = id),
+            onProgress: (pct) => (mergeProgress.value = pct),
+          }
+        );
         if (result.status === "cancelled") {
           stopRequested.value = true;
           break;
         }
         if (result.status === "failed") {
           for (const sub of subs) {
-            batchStore.upsertExternalSub(row.path, sub.lang, "error", result.message ?? "Merge failed");
+            batchStore.upsertExternalSub(row.path, rawLangOf(row, sub.path, sub.lang), "error", result.message ?? "Merge failed");
           }
           continue;
         }
@@ -377,7 +364,7 @@ async function confirmMerge() {
       } catch (e) {
         const message = e instanceof Error ? e.message : String(e);
         for (const sub of subs) {
-          batchStore.upsertExternalSub(row.path, sub.lang, "error", message);
+          batchStore.upsertExternalSub(row.path, rawLangOf(row, sub.path, sub.lang), "error", message);
         }
       }
     }
@@ -406,7 +393,7 @@ async function confirmMerge() {
               class="w-full px-3 py-1.5 rounded-md bg-bg-primary border border-border text-xs text-text-primary focus:outline-none focus:border-accent"
             >
               <option :value="null">{{ t("mergeSubs.pickLanguage") }}</option>
-              <option v-for="lang in audioLangOptions" :key="lang" :value="lang">{{ lang.toUpperCase() }}</option>
+              <option v-for="lang in audioLangOptions" :key="lang" :value="lang">{{ langLabel(lang) }}</option>
             </select>
           </div>
           <div v-if="showGlobalSubtitlePicker">
@@ -416,7 +403,7 @@ async function confirmMerge() {
               class="w-full px-3 py-1.5 rounded-md bg-bg-primary border border-border text-xs text-text-primary focus:outline-none focus:border-accent"
             >
               <option :value="null">{{ t("mergeSubs.pickLanguage") }}</option>
-              <option v-for="lang in subtitleLangOptions" :key="lang" :value="lang">{{ lang.toUpperCase() }}</option>
+              <option v-for="lang in subtitleLangOptions" :key="lang" :value="lang">{{ langLabel(lang) }}</option>
             </select>
           </div>
         </div>
@@ -474,12 +461,19 @@ async function confirmMerge() {
                 class="px-2 py-1 rounded-md bg-bg-primary border border-border text-xs text-text-primary focus:outline-none focus:border-accent"
               >
                 <option v-for="lang in languageOptions" :key="lang.code" :value="lang.code">{{ lang.label }}</option>
+                <option
+                  v-if="subLang[sub.path] && !languageOptions.some((l) => l.code === subLang[sub.path])"
+                  :value="subLang[sub.path]"
+                >
+                  {{ subLang[sub.path].toUpperCase() }}
+                </option>
               </select>
               <label class="flex items-center gap-1 text-[11px] text-text-secondary">
                 <input v-model="subHearingImpaired[sub.path]" type="checkbox" class="accent-accent" />
                 {{ t("mergeSubs.hearingImpaired") }}
               </label>
               <span class="text-[11px] text-text-muted truncate">{{ trackNamePreview(sub.path) }}</span>
+              <span class="basis-full text-[10px] text-text-muted font-mono truncate" dir="ltr" :title="sub.path">{{ baseName(sub.path) }}</span>
             </div>
           </div>
 
@@ -497,7 +491,7 @@ async function confirmMerge() {
                   :value="tr.id"
                   class="accent-accent"
                 />
-                {{ tr.trackName || tr.language.toUpperCase() }}
+                {{ tr.trackName || langLabel(tr.language) }}
               </label>
             </div>
           </div>
@@ -516,7 +510,7 @@ async function confirmMerge() {
                   :value="`existing:${tr.id}`"
                   class="accent-accent"
                 />
-                {{ tr.trackName || tr.language.toUpperCase() }}
+                {{ tr.trackName || langLabel(tr.language) }}
               </label>
               <label
                 v-for="sub in row.subs.filter((s) => isChecked(row.path, s.path))"
@@ -539,6 +533,15 @@ async function confirmMerge() {
           <input v-model="deleteOriginals" type="checkbox" class="accent-accent" />
           {{ t("mergeSubs.deleteOriginals") }}
         </label>
+        <div class="pt-1">
+          <label class="flex items-center gap-2 text-xs text-text-secondary">
+            <input v-model="replaceOriginal" type="checkbox" class="accent-accent" />
+            {{ t("mergeSubs.replaceOriginal") }}
+          </label>
+          <p class="ms-6 mt-0.5 text-[11px] text-text-muted">
+            {{ replaceOriginal ? t("mergeSubs.replaceOriginalOn") : t("mergeSubs.replaceOriginalOff") }}
+          </p>
+        </div>
       </template>
     </div>
 

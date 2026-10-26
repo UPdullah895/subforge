@@ -1,3 +1,4 @@
+use subforge_deps::HideWindow;
 use crate::tools::mkvtoolnix::{self, Track};
 use crate::tools::pysubs2;
 use crate::tools::ToolRegistry;
@@ -16,6 +17,7 @@ pub struct TrackInfo {
     pub track_name: Option<String>,
     pub default_track: bool,
     pub forced_track: bool,
+    pub hearing_impaired: bool,
 }
 
 impl From<&Track> for TrackInfo {
@@ -31,6 +33,7 @@ impl From<&Track> for TrackInfo {
             track_name: props.and_then(|p| p.track_name.clone()),
             default_track: props.and_then(|p| p.default_track).unwrap_or(false),
             forced_track: props.and_then(|p| p.forced_track).unwrap_or(false),
+            hearing_impaired: props.and_then(|p| p.hearing_impaired).unwrap_or(false),
         }
     }
 }
@@ -195,6 +198,16 @@ pub fn shift_subtitle_timing(
     pysubs2::shift_subtitles(&input, &output, milliseconds).map_err(|e| e.to_string())
 }
 
+#[tauri::command]
+pub fn stretch_subtitle_timing(
+    input: String,
+    output: String,
+    from_fps: f64,
+    to_fps: f64,
+) -> Result<(), String> {
+    pysubs2::stretch_framerate(&input, &output, from_fps, to_fps).map_err(|e| e.to_string())
+}
+
 #[derive(serde::Deserialize)]
 pub struct SetTrackMetaRequest {
     pub file_path: String,
@@ -227,7 +240,7 @@ pub async fn set_track_metadata(request: SetTrackMetaRequest) -> Result<(), Stri
         args.push(format!("flag-forced={}", if forced { 1 } else { 0 }));
     }
 
-    let output = std::process::Command::new(&mkvpropedit)
+    let output = std::process::Command::new(&mkvpropedit).hide_window()
         .args(&args)
         .output()
         .map_err(|e| e.to_string())?;

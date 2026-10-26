@@ -1,3 +1,4 @@
+use subforge_deps::HideWindow;
 use serde::{Deserialize, Serialize};
 use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -155,7 +156,7 @@ pub async fn run_command_job(
 
     let _ = app.emit("job-started", &job_id);
 
-    let output = Command::new(program)
+    let output = Command::new(program).hide_window()
         .args(args)
         .output()
         .await

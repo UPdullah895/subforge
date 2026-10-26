@@ -30,6 +30,12 @@ jobs:
           cache: npm
           cache-dependency-path: package-lock.json
 
+      - name: Check version matches tag
+        shell: bash
+        env:
+          TAG: ${{ github.ref_name }}
+        run: node scripts/check-versions.mjs "$TAG"
+
       - name: Install Tauri Linux deps
         if: matrix.platform == 'ubuntu-22.04'
         run: |
@@ -58,7 +64,13 @@ jobs:
           projectPath: .
           tagName: ${{ github.ref_name }}
           releaseName: SubForge ${{ github.ref_name }}
-          releaseBody: 'See the assets below to download this release.'
+          releaseBody: |
+            ## Install
+            - **Windows:** run the `.msi` or `-setup.exe`.
+            - **Linux:** `.AppImage` (any distro), `.deb` or `.rpm`.
+
+            SubForge needs MKVToolNix, FFmpeg and Python — it checks on first launch and can install them for you.
+            See the [README](https://github.com/UPdullah895/subforge#readme) for details.
           releaseDraft: false
           prerelease: false
           args: ${{ matrix.args }}

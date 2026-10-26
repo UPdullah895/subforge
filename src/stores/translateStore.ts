@@ -48,11 +48,12 @@ export const useTranslateStore = defineStore("translate", () => {
   const selectedEngine = ref<EngineType>("ollama");
   const ollamaHost = ref(import.meta.env.VITE_OLLAMA_HOST ?? "http://localhost:11434");
   const ollamaModels = ref<string[]>([]);
+  const ollamaDetecting = ref(false);
   const selectedOllamaModel = ref("");
   const libreHost = ref(import.meta.env.VITE_LIBRE_HOST ?? "http://localhost:5000");
   const libreLanguages = ref<LibreLanguage[]>([]);
   const sourceLang = ref("en");
-  const targetLang = ref("es");
+  const targetLang = ref("ar");
   // Persisted via appStore.config (see hydrate/persist watchers below), not
   // held only for the session anymore — previously these reset every restart.
   const deeplKey = ref("");
@@ -102,6 +103,7 @@ export const useTranslateStore = defineStore("translate", () => {
 
   async function detectOllama() {
     error.value = null;
+    ollamaDetecting.value = true;
     try {
       const info = await apiInvoke<OllamaInfo>("detect_ollama", {
         host: ollamaHost.value,
@@ -119,6 +121,8 @@ export const useTranslateStore = defineStore("translate", () => {
           ? mapJobErrorMessage(msg)!
           : `Cannot reach Ollama at ${ollamaHost.value}: ${msg}`;
       return false;
+    } finally {
+      ollamaDetecting.value = false;
     }
   }
 
@@ -182,6 +186,7 @@ export const useTranslateStore = defineStore("translate", () => {
     selectedEngine,
     ollamaHost,
     ollamaModels,
+    ollamaDetecting,
     selectedOllamaModel,
     libreHost,
     libreLanguages,

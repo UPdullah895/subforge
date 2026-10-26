@@ -1,9 +1,14 @@
 [package]
 name = "subforge-server"
-version = "0.1.0"
+version = "0.2.0"
+description = "SubForge server: REST and WebSocket API for the SubForge subtitle toolkit"
+authors = ["UPdullah895"]
+license = "GPL-3.0-only"
+repository = "https://github.com/UPdullah895/subforge"
 edition = "2021"
 
 [dependencies]
+subforge-deps = { path = "../crates/subforge-deps", features = ["tokio"] }
 axum = { version = "0.8", features = ["ws", "multipart"] }
 tokio = { version = "1", features = ["full"] }
 tower-http = { version = "0.6", features = ["fs", "cors", "trace"] }

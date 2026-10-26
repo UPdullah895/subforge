@@ -1455,6 +1455,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6ce2be8dc25455e1f91df71bfa12ad37d7af1092ae736f3a6cd0e37bc7810596"
 
 [[package]]
+name = "subforge-deps"
+version = "0.1.0"
+dependencies = [
+ "dirs",
+ "serde",
+ "thiserror",
+ "tokio",
+]
+
+[[package]]
 name = "subforge-metadata"
 version = "0.1.0"
 dependencies = [
@@ -1468,7 +1478,7 @@ dependencies = [
 
 [[package]]
 name = "subforge-server"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "axum",
@@ -1479,6 +1489,7 @@ dependencies = [
  "reqwest",
  "serde",
  "serde_json",
+ "subforge-deps",
  "subforge-metadata",
  "subforge-subtitle-sources",
  "thiserror",

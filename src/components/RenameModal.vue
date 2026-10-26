@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import { ref, computed, watch } from "vue";
 import { useI18n } from "vue-i18n";
+import { useToastStore } from "../stores/toastStore";
 import { Search, Loader2, AlertTriangle, Check } from "lucide-vue-next";
 import Modal from "./Modal.vue";
 import { useRenameStore, type Episode } from "../stores/renameStore";
 
 const { t } = useI18n();
+const toastStore = useToastStore();
 
 const props = defineProps<{
   open: boolean;
@@ -108,10 +110,15 @@ const canConfirm = computed(() =>
 
 async function confirmRename() {
   applying.value = true;
+  renameStore.error = null;
   try {
-    await renameStore.apply();
+    const n = await renameStore.apply();
+    toastStore.success(t("rename.done", { n }));
     emit("applied");
     emit("close");
+  } catch (e) {
+    // Keep the dialog open so the user can fix the names; show why.
+    renameStore.error = e instanceof Error ? e.message : String(e);
   } finally {
     applying.value = false;
   }
@@ -272,6 +279,13 @@ async function confirmRename() {
         <h3 class="text-xs font-semibold text-text-secondary uppercase tracking-wide">
           {{ t("rename.preview") }}
         </h3>
+        <label class="flex items-center gap-2 text-xs text-text-secondary cursor-pointer select-none">
+          <input v-model="renameStore.renameSidecars" type="checkbox" class="accent-accent" />
+          {{ t("rename.alsoSubtitles") }}
+          <span v-if="renameStore.renameSidecars && renameStore.sidecarCount() > 0" class="text-text-muted">
+            ({{ t("rename.alsoSubtitlesCount", { n: renameStore.sidecarCount() }) }})
+          </span>
+        </label>
         <div class="max-h-56 overflow-auto space-y-1.5">
           <div
             v-for="row in renameStore.previewRows"

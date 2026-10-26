@@ -9,6 +9,10 @@ fn default_target_langs() -> Vec<String> {
     vec!["ar".to_string()]
 }
 
+fn default_true() -> bool {
+    true
+}
+
 fn default_search_online_before_translate() -> bool {
     true
 }
@@ -43,6 +47,10 @@ pub struct AppConfig {
     pub libretranslate_base_url: Option<String>,
     #[serde(default = "default_search_online_before_translate")]
     pub search_online_before_translate: bool,
+    // Wrap right-to-left (Arabic/Hebrew/Persian) subtitle lines in an RTL
+    // embedding so players put punctuation on the correct side.
+    #[serde(default = "default_true")]
+    pub fix_rtl_punctuation: bool,
     pub opensubtitles_api_key: Option<String>,
     pub opensubtitles_username: Option<String>,
     pub opensubtitles_password: Option<String>,
@@ -71,6 +79,7 @@ impl Default for AppConfig {
             ollama_base_url: None,
             libretranslate_base_url: None,
             search_online_before_translate: default_search_online_before_translate(),
+            fix_rtl_punctuation: true,
             opensubtitles_api_key: None,
             opensubtitles_username: None,
             opensubtitles_password: None,
@@ -78,7 +87,52 @@ impl Default for AppConfig {
     }
 }
 
+pub const SECRET_MASK: &str = "********";
+
 impl AppConfig {
+    pub fn is_mask(value: &str) -> bool {
+        value == SECRET_MASK
+    }
+
+    fn secrets_mut(&mut self) -> [&mut Option<String>; 5] {
+        [
+            &mut self.tmdb_api_key,
+            &mut self.deepl_api_key,
+            &mut self.openai_api_key,
+            &mut self.google_translate_api_key,
+            &mut self.opensubtitles_password,
+        ]
+    }
+
+    /// Copy for the HTTP API: non-empty secrets are replaced with a mask so
+    /// stored keys are never sent back over the wire.
+    pub fn masked(mut self) -> Self {
+        for s in self.secrets_mut() {
+            if s.as_deref().is_some_and(|v| !v.is_empty()) {
+                *s = Some(SECRET_MASK.to_string());
+            }
+        }
+        // The API key is a credential too.
+        if self.opensubtitles_api_key.as_deref().is_some_and(|v| !v.is_empty()) {
+            self.opensubtitles_api_key = Some(SECRET_MASK.to_string());
+        }
+        self
+    }
+
+    /// Inverse of `masked`: any secret still equal to the mask keeps the
+    /// value already stored on disk.
+    pub fn restore_masked(&mut self, mut existing: AppConfig) {
+        let mut old = existing.secrets_mut().map(|s| s.take());
+        for (s, o) in self.secrets_mut().into_iter().zip(old.iter_mut()) {
+            if s.as_deref().is_some_and(Self::is_mask) {
+                *s = o.take();
+            }
+        }
+        if self.opensubtitles_api_key.as_deref().is_some_and(Self::is_mask) {
+            self.opensubtitles_api_key = existing.opensubtitles_api_key.take();
+        }
+    }
+
     pub fn config_dir() -> anyhow::Result<PathBuf> {
         let dir = dirs::config_dir()
             .ok_or_else(|| anyhow::anyhow!("Could not find config directory"))?
@@ -110,5 +164,51 @@ impl AppConfig {
         let contents = serde_json::to_string_pretty(self)?;
         std::fs::write(path, contents)?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn with_secrets() -> AppConfig {
+        AppConfig {
+            deepl_api_key: Some("real-deepl".into()),
+            openai_api_key: Some(String::new()),
+            opensubtitles_password: Some("pw".into()),
+            opensubtitles_api_key: Some("osk".into()),
+            ..AppConfig::default()
+        }
+    }
+
+    #[test]
+    fn masked_hides_non_empty_secrets_only() {
+        let m = with_secrets().masked();
+        assert_eq!(m.deepl_api_key.as_deref(), Some(SECRET_MASK));
+        assert_eq!(m.opensubtitles_password.as_deref(), Some(SECRET_MASK));
+        assert_eq!(m.opensubtitles_api_key.as_deref(), Some(SECRET_MASK));
+        assert_eq!(m.openai_api_key.as_deref(), Some(""));
+        assert_eq!(m.tmdb_api_key, None);
+    }
+
+    #[test]
+    fn restore_masked_keeps_stored_values_and_accepts_new_ones() {
+        let stored = with_secrets();
+        let mut incoming = stored.clone().masked();
+        incoming.tmdb_api_key = Some("new-tmdb".into());
+        incoming.restore_masked(stored);
+        assert_eq!(incoming.deepl_api_key.as_deref(), Some("real-deepl"));
+        assert_eq!(incoming.opensubtitles_password.as_deref(), Some("pw"));
+        assert_eq!(incoming.opensubtitles_api_key.as_deref(), Some("osk"));
+        assert_eq!(incoming.tmdb_api_key.as_deref(), Some("new-tmdb"));
+    }
+
+    #[test]
+    fn cleared_secret_stays_cleared() {
+        let stored = with_secrets();
+        let mut incoming = stored.clone().masked();
+        incoming.deepl_api_key = Some(String::new());
+        incoming.restore_masked(stored);
+        assert_eq!(incoming.deepl_api_key.as_deref(), Some(""));
     }
 }

@@ -23,3 +23,13 @@ target/
 *.njsproj
 *.sln
 *.sw?
+__pycache__/
+*.pyc
+.superpowers/
+.claude/
+# AUR build output
+packaging/aur/*/src/
+packaging/aur/*/pkg/
+packaging/aur/*/*.pkg.tar.*
+packaging/aur/*/*.tar.gz
+packaging/aur/*/*.deb

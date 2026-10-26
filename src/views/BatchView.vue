@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
-import { open } from "@tauri-apps/plugin-dialog";
+import { open } from "../utils/dialog";
 import { useBatchStore } from "../stores/batchStore";
 import { useAppStore } from "../stores/appStore";
 
@@ -71,8 +71,12 @@ function runBatchExtract() {
   langPickerOpen.value = true;
 }
 
-async function confirmExtractLanguages(languages: string[]) {
+async function confirmExtractLanguages(languages: string[], destination: "beside" | "choose") {
   langPickerOpen.value = false;
+  if (destination === "beside") {
+    await batchStore.batchExtract("", languages);
+    return;
+  }
   const outputDir = await open({
     multiple: false,
     directory: true,

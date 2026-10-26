@@ -1,6 +1,8 @@
 pub mod audio;
 pub mod batch;
 pub mod config;
+pub mod deps;
+pub mod fs;
 pub mod health;
 pub mod jobs;
 pub mod providers;

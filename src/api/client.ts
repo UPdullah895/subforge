@@ -16,20 +16,78 @@ export async function apiInvoke<T>(cmd: string, args?: Record<string, unknown>):
 
   // Map command to REST endpoint
   const endpoint = cmdToEndpoint(cmd);
-  const resp = await fetch(endpoint, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(args?.request ?? args),
-  });
+  const resp = GET_COMMANDS.has(cmd)
+    ? await fetch(endpoint)
+    : await fetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(restBody(cmd, args)),
+      });
 
-  if (!resp.ok) {
-    const text = await resp.text();
-    throw new Error(text || `HTTP ${resp.status}`);
-  }
+  if (!resp.ok) throw new Error(await errorMessage(resp));
 
-  const data = await resp.json();
+  const data = await readBody(resp);
   const schema = commandSchemas[cmd];
-  return schema ? (schema.parse(data) as T) : (data as T);
+  if (!schema) return data as T;
+  const parsed = schema.safeParse(data);
+  if (!parsed.success) {
+    // Keep the detail for debugging; show people something they can act on.
+    console.warn(`Unexpected response shape from ${cmd}`, parsed.error.issues);
+    throw new Error(`The server sent an unexpected response for "${cmd}". Please update SubForge or report this.`);
+  }
+  return parsed.data as T;
+}
+
+// Tauri commands take either named camelCase args (`{ filePath }`) or one
+// struct under a wrapper key (`{ request }`, `{ options }`, `{ config }`,
+// `{ credentials }`); the REST handlers expect the bare snake_case payload as
+// the body. A single plain-object argument is therefore always a wrapper.
+function restBody(cmd: string, args?: Record<string, unknown>): unknown {
+  if (!args || KEEP_WRAPPED.has(cmd)) return args;
+  const entries = Object.entries(args);
+  if (entries.length === 1) {
+    const [, value] = entries[0];
+    if (value !== null && typeof value === "object" && !Array.isArray(value)) return value;
+  }
+  return Object.fromEntries(
+    entries.map(([k, v]) => [k.replace(/[A-Z]/g, (c) => `_${c.toLowerCase()}`), v])
+  );
+}
+
+// REST handlers whose body really is `{ <wrapper>: {...} }`.
+const KEEP_WRAPPED = new Set(["set_opensubtitles_credentials"]);
+
+// Commands whose REST route is a GET (the POST on the same path is "save").
+const GET_COMMANDS = new Set(["load_config", "get_tool_registry", "check_dependencies"]);
+
+// Many handlers answer a bare `200 OK` with no body (the Tauri equivalents
+// return `()`); treat an empty body as "no value" instead of a JSON error.
+async function readBody(resp: Response): Promise<unknown> {
+  const text = await resp.text();
+  return text.trim() === "" ? undefined : JSON.parse(text);
+}
+
+// Handlers answer with `{"error": "..."}`, a plain-text body, or just a
+// status code; reduce all three to a sentence.
+async function errorMessage(resp: Response): Promise<string> {
+  const text = (await resp.text()).trim();
+  if (text) {
+    try {
+      const body = JSON.parse(text) as { error?: unknown };
+      if (typeof body.error === "string" && body.error) return body.error;
+    } catch {
+      return text;
+    }
+  }
+  const reasons: Record<number, string> = {
+    400: "The request was rejected (bad input or unreadable file).",
+    404: "Not found.",
+    422: "Some of the information sent was invalid.",
+    500: "The server hit an error while processing this. Check that the file exists and the tools are installed.",
+    502: "A remote service could not be reached.",
+    503: "A required tool is unavailable.",
+  };
+  return reasons[resp.status] ?? `Request failed (HTTP ${resp.status}).`;
 }
 
 export async function apiGet<T>(cmd: string, params?: Record<string, string>): Promise<T> {
@@ -41,12 +99,9 @@ export async function apiGet<T>(cmd: string, params?: Record<string, string>): P
   const query = params ? "?" + new URLSearchParams(params).toString() : "";
   const resp = await fetch(endpoint + query);
 
-  if (!resp.ok) {
-    const text = await resp.text();
-    throw new Error(text || `HTTP ${resp.status}`);
-  }
+  if (!resp.ok) throw new Error(await errorMessage(resp));
 
-  return resp.json();
+  return (await readBody(resp)) as T;
 }
 
 function cmdToEndpoint(cmd: string): string {
@@ -60,6 +115,7 @@ function cmdToEndpoint(cmd: string): string {
     remove_subtitle_tracks: "/api/subtitle/remove",
     convert_subtitle_format: "/api/subtitle/convert",
     shift_subtitle_timing: "/api/subtitle/shift",
+    stretch_subtitle_timing: "/api/subtitle/stretch",
     list_audio_tracks: "/api/audio/tracks",
     extract_audio_track: "/api/audio/extract",
     merge_audio_track: "/api/audio/merge",
@@ -76,6 +132,8 @@ function cmdToEndpoint(cmd: string): string {
     translate_subtitles: "/api/translate",
     run_translation_pipeline: "/api/translate/pipeline",
     get_tool_registry: "/api/tools/registry",
+    check_dependencies: "/api/deps",
+    install_dependency: "/api/deps/install",
     load_config: "/api/config",
     save_config: "/api/config",
     parse_filename: "/api/rename/parse",

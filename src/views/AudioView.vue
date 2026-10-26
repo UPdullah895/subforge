@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
-import { open, save } from "@tauri-apps/plugin-dialog";
+import { open, save } from "../utils/dialog";
+import { dirOf, fileStem, joinPath } from "../utils/subtitleNaming";
 import { useAudioStore } from "../stores/audioStore";
 import { useAppStore } from "../stores/appStore";
 
@@ -85,7 +86,9 @@ async function extractTrack(track: { id: number; codec: string; language: string
   if (!activeFile.value) return;
   const format = "aac";
   const lang = track.language || "und";
-  const suggested = `audio_${track.id}_${lang}.${format}`;
+  // Next to the video as `{video}.{lang}.aac`, so it can't clobber another
+  // episode's audio and sorts beside its source.
+  const suggested = joinPath(dirOf(activeFile.value), `${fileStem(activeFile.value)}.${lang}.${format}`);
 
   const outputPath = await save({
     defaultPath: suggested,
@@ -116,7 +119,7 @@ async function mergeAudio() {
   if (!audio || typeof audio !== "string") return;
 
   const outputPath = await save({
-    defaultPath: "merged.mkv",
+    defaultPath: joinPath(dirOf(video), `${fileStem(video)}.merged.mkv`),
     filters: [{ name: "MKV", extensions: ["mkv"] }],
   });
 

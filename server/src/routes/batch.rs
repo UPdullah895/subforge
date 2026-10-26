@@ -2,7 +2,7 @@ use crate::tools::mkvtoolnix::{ExternalSub, VideoFileInfo};
 use crate::tools::mkvtoolnix;
 use crate::{AppState, jobs};
 use axum::{extract::{Json, State}, http::StatusCode};
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use std::collections::HashSet;
 use std::path::Path;
 use std::sync::Arc;
@@ -62,6 +62,12 @@ fn detect_external_subs(video_path: &Path) -> Vec<ExternalSub> {
 }
 
 pub async fn scan_directory(Json(req): Json<ScanRequest>) -> Result<Json<Vec<VideoFileInfo>>, StatusCode> {
+    crate::error::blocking(move || scan_directory_blocking(req))
+        .await?
+        .map(Json)
+}
+
+fn scan_directory_blocking(req: ScanRequest) -> Result<Vec<VideoFileInfo>, StatusCode> {
     let exts: HashSet<String> = req.extensions.into_iter().map(|e| e.to_lowercase().trim_start_matches('.').to_string()).collect();
     let mut files = Vec::new();
 
@@ -99,7 +105,7 @@ pub async fn scan_directory(Json(req): Json<ScanRequest>) -> Result<Json<Vec<Vid
         }
     }
 
-    Ok(Json(files))
+    Ok(files)
 }
 
 #[derive(Deserialize)]
@@ -110,22 +116,40 @@ pub struct BatchExtractRequest {
     pub languages: Vec<String>,
 }
 
+/// An empty `output_dir` means "next to each video" — where media servers
+/// look for external subtitles, and the only sensible choice when the files
+/// live in separate season folders.
+fn effective_output_dir(video: &str, output_dir: &str) -> String {
+    if !output_dir.trim().is_empty() {
+        return output_dir.to_string();
+    }
+    Path::new(video)
+        .parent()
+        .map(|p| p.to_string_lossy().to_string())
+        .filter(|p| !p.is_empty())
+        .unwrap_or_else(|| ".".to_string())
+}
+
 pub async fn batch_extract_subtitles(
     Json(req): Json<BatchExtractRequest>,
 ) -> Result<Json<Vec<String>>, StatusCode> {
-    let mut all_paths: Vec<String> = Vec::new();
-    for file in &req.files {
-        let result = if req.languages.is_empty() {
-            mkvtoolnix::extract_all_subtitles(file, &req.output_dir)
-        } else {
-            mkvtoolnix::extract_subtitles_by_language(file, &req.output_dir, &req.languages)
-        };
-        match result {
-            Ok(paths) => all_paths.extend(paths),
-            Err(_) => return Err(StatusCode::INTERNAL_SERVER_ERROR),
+    crate::error::blocking(move || {
+        let mut all_paths: Vec<String> = Vec::new();
+        for file in &req.files {
+            let output_dir = effective_output_dir(file, &req.output_dir);
+            let result = if req.languages.is_empty() {
+                mkvtoolnix::extract_all_subtitles(file, &output_dir)
+            } else {
+                mkvtoolnix::extract_subtitles_by_language(file, &output_dir, &req.languages)
+            };
+            match result {
+                Ok(paths) => all_paths.extend(paths),
+                Err(_) => return Err(StatusCode::INTERNAL_SERVER_ERROR),
+            }
         }
-    }
-    Ok(Json(all_paths))
+        Ok(Json(all_paths))
+    })
+    .await?
 }
 
 #[derive(Deserialize, Clone)]
@@ -146,11 +170,10 @@ pub struct MergeSubsRequest {
     pub subs: Vec<SubToMerge>,
     #[serde(default)]
     pub delete_originals: bool,
-}
-
-#[derive(Serialize)]
-pub struct MergeSubsResult {
-    pub job_id: String,
+    /// Swap the merged file in for the original video instead of leaving a
+    /// `.merged.mkv` next to it.
+    #[serde(default)]
+    pub replace_original: bool,
 }
 
 /// Muxes existing external subtitle files (already detected by the batch
@@ -162,7 +185,7 @@ pub struct MergeSubsResult {
 pub async fn merge_external_subs(
     State(state): State<AppState>,
     Json(req): Json<MergeSubsRequest>,
-) -> Result<Json<MergeSubsResult>, StatusCode> {
+) -> Result<Json<String>, StatusCode> {
     let video_path = Path::new(&req.video_path);
     let stem = video_path
         .file_stem()
@@ -208,6 +231,7 @@ pub async fn merge_external_subs(
     let job_id_clone = job_id.clone();
     let sender_clone = state.event_sender.clone();
     let delete_originals = req.delete_originals;
+    let replace_original = req.replace_original;
 
     let subs: Vec<mkvtoolnix::SubtitleMergeSpec> = req
         .subs
@@ -283,10 +307,32 @@ pub async fn merge_external_subs(
             }
         }
 
+        // Optionally swap the merged file in for the original, so the library
+        // doesn't end up with two copies of the same episode. Only after the
+        // merge succeeded and produced a non-empty file; if the swap fails
+        // (file in use, permissions) the merged copy is kept and we say so.
+        let mut final_output = output_path.clone();
+        let mut done_message = "Merge complete".to_string();
+        if replace_original {
+            let produced = std::fs::metadata(&output_path).map(|m| m.len() > 0).unwrap_or(false);
+            if produced {
+                match std::fs::rename(&output_path, &video_path_str) {
+                    Ok(()) => final_output = video_path_str.clone(),
+                    Err(e) => {
+                        done_message =
+                            format!("Merged, but could not replace the original (kept {output_path}): {e}");
+                    }
+                }
+            }
+        }
+
         {
             let mut q = queue_clone.lock().unwrap();
+            if let Some(job) = q.get_mut(&job_id_clone) {
+                job.output_file = Some(final_output.clone());
+            }
             q.update_status(&job_id_clone, jobs::JobStatus::Completed);
-            q.update_progress(&job_id_clone, 100.0, Some("Merge complete".to_string()));
+            q.update_progress(&job_id_clone, 100.0, Some(done_message.clone()));
         }
         jobs::emit_event(
             &sender_clone,
@@ -295,9 +341,9 @@ pub async fn merge_external_subs(
                 job_id: job_id_clone.clone(),
                 status: Some(jobs::JobStatus::Completed),
                 progress: Some(100.0),
-                message: Some("Merge complete".to_string()),
+                message: Some(done_message),
                 stage: None,
-                output_path: Some(output_path),
+                output_path: Some(final_output),
             },
         );
 
@@ -305,5 +351,7 @@ pub async fn merge_external_subs(
         registry.remove(&job_id_clone);
     });
 
-    Ok(Json(MergeSubsResult { job_id }))
+    // A bare job id string, matching the desktop backend and the other job
+    // commands, so the frontend can wait on it uniformly.
+    Ok(Json(job_id))
 }

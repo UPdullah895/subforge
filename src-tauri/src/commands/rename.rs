@@ -129,11 +129,7 @@ pub struct RenameMapping {
 
 #[tauri::command(rename_all = "snake_case")]
 pub fn apply_rename(mapping: Vec<RenameMapping>) -> Result<usize, String> {
-    let mut renamed = 0;
-    for m in &mapping {
-        std::fs::rename(&m.old_path, &m.new_path)
-            .map_err(|e| format!("Failed to rename {}: {e}", m.old_path))?;
-        renamed += 1;
-    }
-    Ok(renamed)
+    // Validates first (no overwrites, no folder escapes), then renames.
+    let mapping: Vec<(String, String)> = mapping.into_iter().map(|m| (m.old_path, m.new_path)).collect();
+    subforge_metadata::renamer::apply_rename_mapping(&mapping)
 }

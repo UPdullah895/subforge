@@ -1,0 +1,21 @@
+[package]
+name = "subforge-deps"
+version = "0.1.0"
+edition = "2021"
+license = "GPL-3.0-only"
+description = "Dependency detection and installation helpers for SubForge"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+thiserror = "2"
+dirs = "6"
+tokio = { version = "1", default-features = false, features = ["process"], optional = true }
+
+[features]
+default = []
+# Implements HideWindow for tokio::process::Command as well.
+tokio = ["dep:tokio"]
+
+[dev-dependencies]
+tempfile = "3"
+serde_json = "1"

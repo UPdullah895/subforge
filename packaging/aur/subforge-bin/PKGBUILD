@@ -1,0 +1,29 @@
+# Maintainer: UPdullah895 <abdullahbomozh@gmail.com>
+pkgname=subforge-bin
+_pkgname=subforge
+pkgver=0.2.0
+pkgrel=1
+pkgdesc='Subtitle and audio toolkit (prebuilt release)'
+arch=('x86_64')
+url='https://github.com/UPdullah895/subforge'
+license=('GPL-3.0-only')
+depends=('webkit2gtk-4.1' 'gtk3' 'mkvtoolnix-cli' 'ffmpeg' 'python')
+optdepends=('python-pysubs2: subtitle conversion (SubForge installs it for you on first run if missing)'
+            'python-faster-whisper: speech-to-text transcription (SubForge can also install it for you)'
+            'ollama: local LLM subtitle translation')
+provides=("$_pkgname")
+conflicts=("$_pkgname")
+options=('!strip')
+source_x86_64=("$_pkgname-$pkgver-amd64.deb::$url/releases/download/v$pkgver/${_pkgname}_${pkgver}_amd64.deb")
+sha256sums_x86_64=('SKIP') # replace with the real sum: run `updpkgsums` after the release is published
+
+package() {
+  bsdtar -xf "$srcdir/$_pkgname-$pkgver-amd64.deb" data.tar.gz
+  bsdtar -xf data.tar.gz -C "$pkgdir"
+  # Tauri's .deb already contains /usr/bin/subforge, /usr/lib/subforge/scripts,
+  # the desktop entry and icons. Put the license where Arch expects it.
+  if [ -f "$pkgdir/usr/share/doc/$_pkgname/copyright" ]; then
+    install -Dm644 "$pkgdir/usr/share/doc/$_pkgname/copyright" \
+      "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+  fi
+}

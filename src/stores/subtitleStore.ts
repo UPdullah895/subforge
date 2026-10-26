@@ -1,7 +1,10 @@
 import { defineStore } from "pinia";
 import { apiInvoke } from "../api/client";
-import { ref } from "vue";
+import { reactive, ref } from "vue";
 import { JOB_STATUS, type JobStatus } from "../constants/jobStatus";
+import { useToastStore } from "./toastStore";
+import { i18n } from "../i18n";
+import { baseName } from "../utils/subtitleNaming";
 
 export interface TrackInfo {
   id: number;
@@ -11,6 +14,7 @@ export interface TrackInfo {
   track_name?: string;
   default_track: boolean;
   forced_track: boolean;
+  hearing_impaired?: boolean;
 }
 
 export interface ExtractJob {
@@ -21,6 +25,7 @@ export interface ExtractJob {
 }
 
 export const useSubtitleStore = defineStore("subtitle", () => {
+  const toast = useToastStore();
   const selectedFile = ref<string | null>(null);
   const tracks = ref<TrackInfo[]>([]);
   const loading = ref(false);
@@ -49,11 +54,12 @@ export const useSubtitleStore = defineStore("subtitle", () => {
       error.value = "No file selected.";
       return;
     }
-    const job: ExtractJob = {
+    // reactive(): the status/message mutated later must be seen by the UI.
+    const job: ExtractJob = reactive<ExtractJob>({
       id: `${trackId}-${Date.now()}`,
       trackId,
       status: JOB_STATUS.RUNNING,
-    };
+    });
     extractJobs.value.push(job);
 
     try {
@@ -64,9 +70,11 @@ export const useSubtitleStore = defineStore("subtitle", () => {
       });
       job.status = JOB_STATUS.COMPLETED;
       job.message = `Saved to ${outputPath}`;
+      toast.success(i18n.global.t("toast.subtitleSaved"), baseName(outputPath));
     } catch (e) {
       job.status = JOB_STATUS.FAILED;
-      job.message = String(e);
+      job.message = e instanceof Error ? e.message : String(e);
+      toast.error(i18n.global.t("toast.extractFailed"), job.message);
     }
   }
 

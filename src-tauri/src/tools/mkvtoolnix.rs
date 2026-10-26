@@ -1,3 +1,4 @@
+use subforge_deps::HideWindow;
 use super::{which, ToolInfo};
 use crate::config::AppConfig;
 use serde::{Deserialize, Serialize};
@@ -35,7 +36,9 @@ pub struct TrackProperties {
     pub forced_track: Option<bool>,
     // mkvmerge's `-J` output calls this "hearing_impaired_flag"; expose it as
     // the plainer `hearing_impaired` name the frontend/track-naming logic use.
-    #[serde(rename(deserialize = "hearing_impaired_flag"), default)]
+    // Newer mkvmerge (v70+) emits "flag_hearing_impaired"; older builds used
+    // "hearing_impaired_flag". Accept both.
+    #[serde(alias = "flag_hearing_impaired", alias = "hearing_impaired_flag", default)]
     pub hearing_impaired: Option<bool>,
 }
 
@@ -99,7 +102,7 @@ pub fn discover_mkvmerge() -> ToolInfo {
     let path = which("mkvmerge");
     let available = path.is_some();
     let version = path.as_ref().and_then(|p| {
-        Command::new(p)
+        Command::new(p).hide_window()
             .args(["--version"])
             .output()
             .ok()
@@ -122,7 +125,7 @@ pub fn discover_mkvextract() -> ToolInfo {
     let path = which("mkvextract");
     let available = path.is_some();
     let version = path.as_ref().and_then(|p| {
-        Command::new(p)
+        Command::new(p).hide_window()
             .args(["--version"])
             .output()
             .ok()
@@ -166,7 +169,7 @@ pub fn get_mkvextract_path() -> Result<PathBuf, MkvError> {
 pub fn enumerate_tracks(file_path: &str) -> Result<MkvInfo, MkvError> {
     let mkvmerge = get_mkvmerge_path()?;
 
-    let output = Command::new(&mkvmerge)
+    let output = Command::new(&mkvmerge).hide_window()
         .args(["-J", file_path])
         .output()?;
 
@@ -189,7 +192,7 @@ pub fn extract_subtitle_track(
 ) -> Result<String, MkvError> {
     let mkvextract = get_mkvextract_path()?;
 
-    let output = Command::new(&mkvextract)
+    let output = Command::new(&mkvextract).hide_window()
         .args(["tracks", file_path, &format!("{}:{}", track_id, output_path)])
         .output()?;
 
@@ -359,10 +362,17 @@ pub fn merge_subtitles(
         args.push("--default-track-flag".to_string());
         args.push(format!("0:{}", if sub.make_default { "yes" } else { "no" }));
 
+        // Real SDH flag (not just "(SDH)" in the name) so players and media
+        // servers can offer/auto-select these tracks for hearing-impaired viewers.
+        if sub.hearing_impaired {
+            args.push("--hearing-impaired-flag".to_string());
+            args.push("0:yes".to_string());
+        }
+
         args.push(sub.path.clone());
     }
 
-    let output = Command::new(&mkvmerge).args(&args).output()?;
+    let output = Command::new(&mkvmerge).hide_window().args(&args).output()?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr).to_string();
@@ -413,7 +423,7 @@ pub fn remove_tracks(
     }
 
     args.push(video_path.to_string());
-    let output = Command::new(&mkvmerge).args(&args).output()?;
+    let output = Command::new(&mkvmerge).hide_window().args(&args).output()?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr).to_string();
@@ -425,7 +435,7 @@ pub fn remove_tracks(
 
 pub fn remove_all_subtitles(video_path: &str, output_path: &str) -> Result<(), MkvError> {
     let mkvmerge = get_mkvmerge_path()?;
-    let output = Command::new(&mkvmerge)
+    let output = Command::new(&mkvmerge).hide_window()
         .args(["-o", output_path, "--no-subtitles", video_path])
         .output()?;
 
@@ -439,7 +449,7 @@ pub fn remove_all_subtitles(video_path: &str, output_path: &str) -> Result<(), M
 
 pub fn remove_all_audio(video_path: &str, output_path: &str) -> Result<(), MkvError> {
     let mkvmerge = get_mkvmerge_path()?;
-    let output = Command::new(&mkvmerge)
+    let output = Command::new(&mkvmerge).hide_window()
         .args(["-o", output_path, "--no-audio", video_path])
         .output()?;
 
@@ -496,10 +506,17 @@ pub async fn merge_subtitles_async(
         args.push("--default-track-flag".to_string());
         args.push(format!("0:{}", if sub.make_default { "yes" } else { "no" }));
 
+        // Real SDH flag (not just "(SDH)" in the name) so players and media
+        // servers can offer/auto-select these tracks for hearing-impaired viewers.
+        if sub.hearing_impaired {
+            args.push("--hearing-impaired-flag".to_string());
+            args.push("0:yes".to_string());
+        }
+
         args.push(sub.path.clone());
     }
 
-    let mut child = tokio::process::Command::new(&mkvmerge)
+    let mut child = tokio::process::Command::new(&mkvmerge).hide_window()
         .args(&args)
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
@@ -573,6 +590,17 @@ mod track_serde_tests {
         let track: Track = serde_json::from_str(raw).unwrap();
         assert_eq!(track.track_type, "subtitles");
         assert_eq!(track.properties.unwrap().language.as_deref(), Some("ita"));
+    }
+
+    #[test]
+    fn reads_hearing_impaired_flag_under_either_mkvmerge_name() {
+        for key in ["flag_hearing_impaired", "hearing_impaired_flag"] {
+            let raw = format!(
+                r#"{{"id":4,"type":"subtitles","codec":"SubRip/SRT","properties":{{"language":"eng","{key}":true}}}}"#
+            );
+            let track: Track = serde_json::from_str(&raw).unwrap();
+            assert_eq!(track.properties.unwrap().hearing_impaired, Some(true), "{key}");
+        }
     }
 
     #[test]

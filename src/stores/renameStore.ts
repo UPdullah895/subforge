@@ -41,6 +41,19 @@ function fileExt(path: string): string {
   return idx > 0 ? name.slice(idx + 1) : "";
 }
 
+// Same reserved-character replacement as `renamer::sanitize_filename` in the
+// shared Rust crate (auto mode already goes through that one); typed
+// manual names must not be able to contain path separators.
+function sanitizeName(name: string): string {
+  return name.replace(/[\\/:*?"<>|]/g, "_").trim();
+}
+
+function stemOf(path: string): string {
+  const name = path.split(/[/\\]/).pop() || path;
+  const idx = name.lastIndexOf(".");
+  return idx > 0 ? name.slice(0, idx) : name;
+}
+
 function fileDir(path: string): string {
   const lastSlash = Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\"));
   return path.substring(0, lastSlash + 1);
@@ -58,6 +71,9 @@ export const useRenameStore = defineStore("rename", () => {
   const manualPattern = ref("{name} - S{s}E{e}");
   const manualPatternName = ref("");
   const loading = ref(false);
+  // Also rename `Video.eng.srt`-style subtitle files sitting next to a video,
+  // so they stay matched to it (Plex/Jellyfin pair them by file name).
+  const renameSidecars = ref(true);
   const error = ref<string | null>(null);
 
   function reset() {
@@ -145,7 +161,7 @@ export const useRenameStore = defineStore("rename", () => {
     error.value = null;
     if (mode.value === "manual") {
       previewRows.value = files.map((f) => {
-        const base = manualNames.value[f];
+        const base = sanitizeName(manualNames.value[f] ?? "");
         const ext = fileExt(f);
         return {
           old_path: f,
@@ -188,12 +204,38 @@ export const useRenameStore = defineStore("rename", () => {
     row.new_name = `${name}${ext ? "." + ext : ""}`;
   }
 
+  // External subtitle files that follow a video's rename.
+  function sidecarMapping(rows: RenamePreviewRow[]): { old_path: string; new_path: string }[] {
+    if (!renameSidecars.value) return [];
+    const files = useBatchStore().scannedFiles;
+    const out: { old_path: string; new_path: string }[] = [];
+    for (const row of rows) {
+      if (!row.new_name) continue;
+      const oldStemPath = `${fileDir(row.old_path)}${stemOf(row.old_path)}`;
+      const newStemPath = `${fileDir(row.old_path)}${stemOf(row.new_name)}`;
+      if (oldStemPath === newStemPath) continue;
+      const file = files.find((f) => f.path === row.old_path);
+      for (const sub of file?.external_subs ?? []) {
+        if (sub.status === "error" || !sub.path.startsWith(`${oldStemPath}.`)) continue;
+        out.push({ old_path: sub.path, new_path: newStemPath + sub.path.slice(oldStemPath.length) });
+      }
+    }
+    return out;
+  }
+
+  function sidecarCount(): number {
+    return sidecarMapping(previewRows.value).length;
+  }
+
   async function apply(): Promise<number> {
     const rows = previewRows.value.filter((r) => r.new_name);
-    const mapping = rows.map((r) => ({
-      old_path: r.old_path,
-      new_path: `${fileDir(r.old_path)}${r.new_name}`,
-    }));
+    const mapping = [
+      ...rows.map((r) => ({
+        old_path: r.old_path,
+        new_path: `${fileDir(r.old_path)}${r.new_name}`,
+      })),
+      ...sidecarMapping(rows),
+    ];
     if (mapping.length === 0) return 0;
 
     const renamed = await apiInvoke<number>("apply_rename", { mapping });
@@ -230,6 +272,8 @@ export const useRenameStore = defineStore("rename", () => {
     manualPatternName,
     loading,
     error,
+    renameSidecars,
+    sidecarCount,
     reset,
     guessQueryFrom,
     search,

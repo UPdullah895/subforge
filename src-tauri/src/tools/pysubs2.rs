@@ -1,3 +1,4 @@
+use subforge_deps::HideWindow;
 use std::path::PathBuf;
 use std::process::Command;
 use thiserror::Error;
@@ -24,7 +25,7 @@ pub fn convert_format(
     let python = get_python()?;
     let script = super::script_path("subtitle_ops.py");
 
-    let output_cmd = Command::new(&python)
+    let output_cmd = Command::new(&python).hide_window()
         .args([
             &script,
             "convert",
@@ -51,7 +52,7 @@ pub fn shift_subtitles(
     let python = get_python()?;
     let script = super::script_path("subtitle_ops.py");
 
-    let output_cmd = Command::new(&python)
+    let output_cmd = Command::new(&python).hide_window()
         .args([
             &script,
             "shift",
@@ -59,6 +60,36 @@ pub fn shift_subtitles(
             output,
             "--ms",
             &milliseconds.to_string(),
+        ])
+        .output()?;
+
+    if !output_cmd.status.success() {
+        let stderr = String::from_utf8_lossy(&output_cmd.stderr).to_string();
+        return Err(Pysubs2Error::ScriptFailed(stderr));
+    }
+
+    Ok(())
+}
+
+pub fn stretch_framerate(
+    input: &str,
+    output: &str,
+    from_fps: f64,
+    to_fps: f64,
+) -> Result<(), Pysubs2Error> {
+    let python = get_python()?;
+    let script = super::script_path("subtitle_ops.py");
+
+    let output_cmd = Command::new(&python).hide_window()
+        .args([
+            &script,
+            "stretch",
+            input,
+            output,
+            "--from-fps",
+            &from_fps.to_string(),
+            "--to-fps",
+            &to_fps.to_string(),
         ])
         .output()?;
 

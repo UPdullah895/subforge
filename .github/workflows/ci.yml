@@ -15,9 +15,33 @@ jobs:
           cache: npm
           cache-dependency-path: package-lock.json
       - run: npm ci
+      - run: npm run check:versions
       - run: npm run lint
       - run: npx vue-tsc --noEmit
       - run: npm test
+
+  shared-crates:
+    # Pure-Rust crates: test them on both platforms we ship for.
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            crates/subforge-deps
+            crates/subforge-metadata
+            crates/subforge-subtitle-sources
+      - run: cargo test --features tokio
+        working-directory: crates/subforge-deps
+      - run: cargo test
+        working-directory: crates/subforge-metadata
+      - run: cargo test
+        working-directory: crates/subforge-subtitle-sources
 
   rust-tauri:
     runs-on: ubuntu-latest
@@ -36,20 +60,37 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
+      - run: cargo test
+        working-directory: src-tauri
+        env:
+          SUBFORGE_SUBSOURCE_API_KEY: ${{ secrets.SUBFORGE_SUBSOURCE_API_KEY || 'ci-placeholder-key' }}
+
+  rust-tauri-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
       - run: cargo check
         working-directory: src-tauri
         env:
           SUBFORGE_SUBSOURCE_API_KEY: ${{ secrets.SUBFORGE_SUBSOURCE_API_KEY || 'ci-placeholder-key' }}
 
   rust-server:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: server
-      - run: cargo check
+      - run: cargo test
         working-directory: server
         env:
           SUBFORGE_SUBSOURCE_API_KEY: ${{ secrets.SUBFORGE_SUBSOURCE_API_KEY || 'ci-placeholder-key' }}

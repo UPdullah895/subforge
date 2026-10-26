@@ -23,29 +23,11 @@ pub trait Tool {
 }
 
 pub fn which(cmd: &str) -> Option<PathBuf> {
-    let path_var = std::env::var_os("PATH")?;
-    for dir in std::env::split_paths(&path_var) {
-        let full = dir.join(cmd);
-        if full.is_file() {
-            return Some(full);
-        }
-        #[cfg(windows)]
-        {
-            let exe = dir.join(format!("{}.exe", cmd));
-            if exe.is_file() {
-                return Some(exe);
-            }
-        }
-    }
-    None
+    subforge_deps::find_executable(cmd, &subforge_deps::SearchEnv::from_process())
 }
 
 pub fn find_python() -> Option<PathBuf> {
-    #[cfg(windows)]
-    let candidates: &[&str] = &["python", "python3", "py"];
-    #[cfg(not(windows))]
-    let candidates: &[&str] = &["python3", "python"];
-    candidates.iter().find_map(|cmd| which(cmd))
+    subforge_deps::Context::from_process().find_python().map(|info| info.path)
 }
 
 /// Resolves a bundled Python script by name.
@@ -53,6 +35,9 @@ pub fn find_python() -> Option<PathBuf> {
 /// 2. `../../scripts/` relative to binary (dev — binary in `target/debug/`, scripts at project root)
 /// 3. `./scripts/` relative to current working directory (fallback)
 pub fn script_path(name: &str) -> String {
+    if let Some(p) = subforge_deps::locate_script(name) {
+        return p.to_string_lossy().to_string();
+    }
     if let Ok(exe) = std::env::current_exe() {
         if let Some(dir) = exe.parent() {
             // Packaged: scripts shipped next to binary

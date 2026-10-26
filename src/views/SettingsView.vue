@@ -1,11 +1,13 @@
 <script setup lang="ts">
-import { onMounted, reactive, ref } from "vue";
+import { computed, onMounted, reactive, ref } from "vue";
 import { useI18n } from "vue-i18n";
+import { localizedLanguageName, TRANSLATE_LANG_CODES } from "../utils/languageNames";
 import { useAppStore } from "../stores/appStore";
 import { useTranslateStore } from "../stores/translateStore";
 import { useSubtitleSourcesStore } from "../stores/subtitleSourcesStore";
 import { apiInvoke } from "../api/client";
 import SetupInstructions from "../components/SetupInstructions.vue";
+import DependenciesPanel from "../components/DependenciesPanel.vue";
 import {
   Palette,
   Languages,
@@ -23,9 +25,9 @@ import {
   Loader2,
   HelpCircle,
 } from "lucide-vue-next";
-import { open as openDialog } from "@tauri-apps/plugin-dialog";
+import { open as openDialog } from "../utils/dialog";
 
-const { t } = useI18n();
+const { t, locale } = useI18n();
 
 const appStore = useAppStore();
 const translateStore = useTranslateStore();
@@ -81,26 +83,15 @@ const engines = [
   { id: "libretranslate", label: "LibreTranslate" },
   { id: "deepl", label: "DeepL" },
   { id: "openai", label: "OpenAI" },
+  { id: "google", label: "Google Translate" },
 ];
 
-const languageOptions = [
-  { code: "auto", label: "Auto-detect" },
-  { code: "en", label: "English" },
-  { code: "ar", label: "Arabic" },
-  { code: "es", label: "Spanish" },
-  { code: "fr", label: "French" },
-  { code: "de", label: "German" },
-  { code: "ja", label: "Japanese" },
-  { code: "ko", label: "Korean" },
-  { code: "zh", label: "Chinese" },
-  { code: "ru", label: "Russian" },
-  { code: "pt", label: "Portuguese" },
-  { code: "it", label: "Italian" },
-  { code: "tr", label: "Turkish" },
-  { code: "hi", label: "Hindi" },
-  { code: "fa", label: "Persian" },
-  { code: "ur", label: "Urdu" },
-];
+const languageOptions = computed(() => [
+  { code: "auto", label: t("translate.autoDetectLanguage") },
+  ...TRANSLATE_LANG_CODES.map((code) => ({ code, label: localizedLanguageName(code, locale.value) })),
+]);
+// "Auto-detect" only makes sense for the source language.
+const targetLanguageOptions = computed(() => languageOptions.value.filter((l) => l.code !== "auto"));
 
 const saved = ref(false);
 
@@ -140,7 +131,10 @@ async function saveSettings() {
 }
 
 function resetDefaults() {
+  // Reset preferences only; keep API keys, provider URLs and credentials so
+  // pressing Save afterwards doesn't silently wipe them.
   appStore.config = {
+    ...appStore.config,
     theme: "dark",
     language: "en",
     default_engine: "ollama",
@@ -278,7 +272,7 @@ onMounted(() => {
                 v-model="appStore.config.default_target_lang"
                 class="w-full px-4 py-2.5 rounded-lg bg-bg-primary border border-border text-sm text-text-primary focus:outline-none focus:border-accent"
               >
-                <option v-for="lang in languageOptions" :key="lang.code" :value="lang.code">
+                <option v-for="lang in targetLanguageOptions" :key="lang.code" :value="lang.code">
                   {{ lang.label }}
                 </option>
               </select>
@@ -301,8 +295,22 @@ onMounted(() => {
               </button>
             </div>
           </div>
+          <label class="flex items-start gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              class="mt-0.5 accent-accent"
+              :checked="appStore.config.fix_rtl_punctuation !== false"
+              @change="appStore.config.fix_rtl_punctuation = ($event.target as HTMLInputElement).checked"
+            />
+            <span>
+              <span class="block text-sm text-text-primary">{{ t("settings.fixRtlPunctuation") }}</span>
+              <span class="block text-xs text-text-muted">{{ t("settings.fixRtlPunctuationHint") }}</span>
+            </span>
+          </label>
         </div>
       </section>
+
+      <DependenciesPanel />
 
       <!-- Tool Paths -->
       <section class="space-y-3">

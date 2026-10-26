@@ -1,7 +1,7 @@
 {
   "name": "subforge",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -15,7 +15,8 @@
     "format": "prettier --write \"src/**/*.{ts,vue,css}\"",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:ui": "vitest --ui"
+    "test:ui": "vitest --ui",
+    "check:versions": "node scripts/check-versions.mjs"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.3.0",

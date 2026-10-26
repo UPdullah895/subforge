@@ -26,6 +26,7 @@ export interface AppConfig {
   ollama_base_url?: string;
   libretranslate_base_url?: string;
   search_online_before_translate?: boolean;
+  fix_rtl_punctuation?: boolean;
 }
 
 export interface ToolInfo {

@@ -162,15 +162,15 @@ pub struct ApplyRenameRequest {
 pub async fn apply_rename(
     Json(req): Json<ApplyRenameRequest>,
 ) -> Result<Json<usize>, (StatusCode, String)> {
-    let mut renamed = 0;
-    for m in &req.mapping {
-        std::fs::rename(&m.old_path, &m.new_path).map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Failed to rename {}: {e}", m.old_path),
-            )
-        })?;
-        renamed += 1;
-    }
-    Ok(Json(renamed))
+    let mapping: Vec<(String, String)> = req
+        .mapping
+        .into_iter()
+        .map(|m| (m.old_path, m.new_path))
+        .collect();
+    // Validates first (no overwrites, no folder escapes), then renames.
+    crate::error::blocking(move || renamer::apply_rename_mapping(&mapping))
+        .await
+        .map_err(|c| (c, "rename task failed".to_string()))?
+        .map(Json)
+        .map_err(|e| (StatusCode::BAD_REQUEST, e))
 }

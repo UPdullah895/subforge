@@ -8,17 +8,81 @@ SubForge is a free, cross-platform desktop application for subtitle manipulation
 
 ---
 
-## Download
+## Install
 
-Prebuilt installers for **Linux** and **Windows** are published on the [Releases page](https://github.com/UPdullah895/subforge/releases) for every tagged version:
+### Windows
+Download the `.msi` or `-setup.exe` from the [Releases page](https://github.com/UPdullah895/subforge/releases) and run it.
+Windows SmartScreen may warn about an unrecognised publisher — choose **More info → Run anyway**.
 
-| Platform | Formats |
-|---|---|
-| Linux | `.AppImage`, `.deb`, `.rpm` |
-| Windows | `.msi`, `.exe` (NSIS installer) |
-| macOS | Not currently published — build from source (see below); best-effort support only |
+### Arch Linux / CachyOS / Manjaro (AUR)
+AUR packages (`subforge-bin` prebuilt, `subforge` from source) are being set up and are not on the AUR yet. Until they appear, use the AppImage or `.deb` from the [Releases page](https://github.com/UPdullah895/subforge/releases) (see "Other Linux" below), or [build from source](#build-from-source).
 
-No setup needed to run a downloaded build — just install and launch. Building from source has a couple of extra prerequisites (below).
+<!--
+MAINTAINER: after submitting the AUR packages (see packaging/aur/README.md),
+replace the paragraph above with:
+
+yay -S subforge-bin   # prebuilt, fast
+yay -S subforge       # builds from source
+-->
+
+### Other Linux
+Download the `.AppImage` (any distro), `.deb` (Debian/Ubuntu) or `.rpm` (Fedora/openSUSE) from the Releases page.
+```bash
+chmod +x subforge_*.AppImage && ./subforge_*.AppImage
+```
+
+### macOS
+Not published. Build from source (below); support is best-effort.
+
+---
+
+## First launch: what SubForge needs
+
+SubForge relies on a few free programs. **On startup it checks for them and tells you exactly what is missing** — with an **Install** button, the exact command to copy, and a link to the official download page. You can also review them any time under **Settings → Required Programs**.
+
+| Program | Needed for | Required? | Where to get it |
+|---|---|---|---|
+| MKVToolNix (`mkvmerge`, `mkvextract`) | Reading, extracting and merging tracks | Yes | [mkvtoolnix.download](https://mkvtoolnix.download/downloads.html) |
+| FFmpeg (`ffmpeg`, `ffprobe`) | Audio extraction, conversion, merging | Yes | [ffmpeg.org](https://ffmpeg.org/download.html) |
+| Python 3.9+ | Subtitle, translation and transcription helpers | Yes | [python.org](https://www.python.org/downloads/) |
+| `pysubs2` (Python package) | Subtitle format conversion and retiming | Yes | installed for you |
+| `faster-whisper` (Python package) | Speech-to-text | Optional | installed for you |
+| `mkvpropedit` (MKVToolNix) | Editing track names/flags in place | Optional | comes with MKVToolNix |
+
+**How the one-click install works**
+- **Windows:** uses `winget` for MKVToolNix, FFmpeg and Python.
+- **Linux:** uses your package manager (`pacman`, `apt`, `dnf`, `zypper`) through a graphical password prompt (`pkexec`). If `pkexec` is not available, SubForge shows the `sudo` command to run yourself.
+- **macOS:** uses Homebrew if installed.
+- **Python packages** go into a private environment (`~/.local/share/subforge/venv`, or `%LOCALAPPDATA%\subforge\venv` on Windows, `~/Library/Application Support/subforge/venv` on macOS), so your system Python is never modified.
+
+Prefer to do it by hand?
+```bash
+# Arch / CachyOS
+sudo pacman -S mkvtoolnix-cli ffmpeg python
+# Debian / Ubuntu
+sudo apt install mkvtoolnix ffmpeg python3 python3-venv python3-pip
+# Fedora
+sudo dnf install mkvtoolnix ffmpeg-free python3 python3-pip
+# Windows (PowerShell)
+winget install MoritzBunkus.MKVToolNix Gyan.FFmpeg Python.Python.3.12
+```
+
+The simplest way to get the Python packages (`pysubs2`, `faster-whisper`) is the **Install** button in SubForge, which uses its private environment. To do it by hand, create the same environment SubForge uses (a plain `pip install` into system Python fails on modern distros with `externally-managed-environment`):
+```bash
+# Linux
+python3 -m venv --system-site-packages ~/.local/share/subforge/venv && ~/.local/share/subforge/venv/bin/pip install pysubs2 faster-whisper
+# macOS (data directory is ~/Library/Application Support, not ~/.local/share)
+python3 -m venv --system-site-packages "$HOME/Library/Application Support/subforge/venv" && "$HOME/Library/Application Support/subforge/venv/bin/pip" install pysubs2 faster-whisper
+```
+```powershell
+# Windows (PowerShell)
+py -3 -m venv --system-site-packages $env:LOCALAPPDATA\subforge\venv; & $env:LOCALAPPDATA\subforge\venv\Scripts\pip install pysubs2 faster-whisper
+```
+
+Developers can print the same dependency report in a terminal with `cargo run --example check` inside `crates/subforge-deps`.
+
+### Server mode
+`subforge-server` shows the same dependency dialog in the web UI. Because installing software on a server is sensitive, without `SUBFORGE_ALLOW_INSTALL=1` the server refuses installs and returns a message containing the command to run on the server yourself; set `SUBFORGE_ALLOW_INSTALL=1` to let the Install button run it.
 
 ---
 
@@ -30,7 +94,7 @@ No setup needed to run a downloaded build — just install and launch. Building 
 - **Subtitle merge** — mux external SRT/ASS/VTT files into MKV containers.
 - **Audio extraction/merge** — extract, transcode (AAC, MP3, OPUS, FLAC), and remux audio via FFmpeg.
 - **Subtitle format conversion & retiming** — convert between SRT/ASS/SSA/VTT, shift timestamps via pysubs2.
-- **Tool discovery** — automatically detects `mkvmerge`, `mkvextract`, and `ffmpeg` on startup.
+- **Dependency check** — on startup, checks for MKVToolNix, FFmpeg (including ffprobe), Python and `pysubs2`, and offers to install anything that is missing.
 
 ### Batch operations
 - **Batch directory scan** — recursively scan directories for video files and preview tracks for each.
@@ -63,87 +127,30 @@ No setup needed to run a downloaded build — just install and launch. Building 
 
 ---
 
-## Prerequisites (building from source)
+## Build from source
 
-- [Node.js](https://nodejs.org/) 18+
-- [Rust](https://rustup.rs/)
-- [MKVToolNix](https://mkvtoolnix.download/) (`mkvmerge` + `mkvextract`)
-- [FFmpeg](https://ffmpeg.org/) (required for audio extraction/merge)
-- Optional: set `SUBFORGE_SUBSOURCE_API_KEY` in the environment at build time (a Subsource API key created from your Subsource profile) to enable Subsource subtitle search. Without it, the build succeeds and everything else works normally — Subsource search is just silently disabled (falls through to translation).
-
-### Install MKVToolNix
-
-**Arch Linux / CachyOS:**
-```bash
-sudo pacman -S mkvtoolnix-cli
-```
-
-**Ubuntu / Debian:**
-```bash
-sudo apt-get install mkvtoolnix
-```
-
-**Fedora:**
-```bash
-sudo dnf install mkvtoolnix
-```
-
-**macOS:**
-```bash
-brew install mkvtoolnix ffmpeg
-```
-
-### Install pysubs2 (for subtitle conversion)
-```bash
-pip install pysubs2 faster-whisper
-```
-
-Optional (for speaker diarization):
-```bash
-pip install whisper-diarization pyannote.audio
-```
-
----
-
-## Development
+Prerequisites: [Node.js](https://nodejs.org/) 18+, [Rust](https://rustup.rs/), the Tauri system libraries for your OS ([guide](https://tauri.app/start/prerequisites/)), plus the programs in the table above.
 
 ```bash
-# Clone the repo
 git clone https://github.com/UPdullah895/subforge.git
 cd subforge
-
-# Install frontend dependencies
 npm install
-
-# Run the Tauri dev server (opens a native window)
-npm run tauri dev
-
-# On Wayland (if you see a Wayland protocol error):
-npm run tauri:dev:wayland
-
-# Or build for production
-npm run tauri build
+npm run tauri dev        # development window
+npm run tauri build      # installers in src-tauri/target/release/bundle
 ```
+On Wayland, if you see a protocol error, use `npm run tauri:dev:wayland`.
 
-### Desktop Launcher (Linux)
+Optional: set `SUBFORGE_SUBSOURCE_API_KEY` at build time to enable Subsource subtitle search. Without it everything else works and Subsource search is silently skipped.
 
-Two options:
-
-**Quick, no-install:** double-click [`SubForge.desktop`](SubForge.desktop) at the repo root directly in your file manager. If it doesn't run on first double-click, right-click it once → "Allow Launching" (varies slightly by desktop environment).
-
-**Proper app-menu entry:**
+### Linux app-menu entry (development checkouts)
 ```bash
 ./scripts/install-desktop-launcher.sh
 ```
-This copies the icon and registers a launcher in your application menu. Both launchers auto-detect a release binary (after `npm run tauri build`) and fall back to `npm run tauri:dev` for development.
+This registers a launcher that runs a release build if present, otherwise `npm run tauri:dev`. You can also run `./scripts/launch-subforge.sh` (desktop) or `./scripts/launch-subforge.sh --server` (server mode) directly.
 
-You can also run the launcher script directly:
-```bash
-./scripts/launch-subforge.sh           # Desktop mode
-./scripts/launch-subforge.sh --server  # Server mode
-```
+---
 
-### Project Structure
+## Project Structure
 
 ```
 subforge/
@@ -159,6 +166,7 @@ subforge/
 ├── server/                  # Standalone Axum REST + WebSocket server (Rust)
 │   └── src/routes/
 ├── crates/                  # Shared Rust crates used by both backends
+│   ├── subforge-deps/          # Dependency detection + one-click install
 │   ├── subforge-metadata/     # TMDB/TVmaze rename matching, filename parsing
 │   └── subforge-subtitle-sources/  # OpenSubtitles/Subsource clients + fallback orchestration
 ├── scripts/                 # Launcher scripts, pysubs2/whisper CLI wrappers
@@ -206,7 +214,7 @@ subforge/
 
 ## License
 
-GPL-3.0 — see the project plan for full licensing rationale.
+GPL-3.0-only — see [LICENSE](LICENSE).
 
 ---
 
@@ -232,6 +240,12 @@ export WEBKIT_DISABLE_DMABUF_RENDERER=1
 export WEBKIT_DISABLE_COMPOSITING_MODE=1
 npm run tauri dev
 ```
+
+### "Required Programs" keeps showing something as missing
+Click **Re-check** after installing. On Windows, if you installed a tool in a custom location, add its folder to `PATH` and restart SubForge. The **Required Programs** list shows the exact path and version SubForge found for each tool (developers can also run `cargo run --example check` in `crates/subforge-deps`).
+
+### Windows: installed tool not found right after `winget install`
+SubForge also looks in the standard install folders (WinGet links, Program Files, Python), so a fresh install should be found after **Re-check**. A restart is only needed for tools installed in custom locations: add their folder to `PATH` and reopen SubForge, because new `PATH` entries are only picked up by new processes.
 
 ---
 

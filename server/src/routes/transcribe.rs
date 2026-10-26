@@ -1,3 +1,4 @@
+use subforge_deps::HideWindow;
 use crate::tools::whisper;
 use crate::{jobs, AppState};
 use axum::{extract::Json, extract::State, http::StatusCode};
@@ -13,7 +14,9 @@ pub struct WhisperInfoResp {
 }
 
 pub async fn get_whisper_info() -> Result<Json<WhisperInfoResp>, StatusCode> {
-    let info = whisper::get_whisper_info().map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?;
+    let info = crate::error::blocking(whisper::get_whisper_info)
+        .await?
+        .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?;
     Ok(Json(WhisperInfoResp {
         faster_whisper_version: info.faster_whisper_version,
         cuda_available: info.cuda_available,
@@ -29,8 +32,9 @@ pub struct ListModelsRequest {
 pub async fn list_whisper_models(
     Json(req): Json<ListModelsRequest>,
 ) -> Result<Json<Vec<String>>, StatusCode> {
-    let models =
-        whisper::list_models(req.cache_dir).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let models = crate::error::blocking(move || whisper::list_models(req.cache_dir))
+        .await?
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok(Json(models))
 }
 
@@ -43,7 +47,8 @@ pub struct DownloadRequest {
 pub async fn download_whisper_model(
     Json(req): Json<DownloadRequest>,
 ) -> Result<StatusCode, StatusCode> {
-    whisper::download_model(&req.model, req.cache_dir)
+    crate::error::blocking(move || whisper::download_model(&req.model, req.cache_dir))
+        .await?
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok(StatusCode::OK)
 }
@@ -134,7 +139,7 @@ pub async fn transcribe_audio(
 
         let args = whisper::build_transcribe_args(&options);
 
-        let mut child = match Command::new(&python)
+        let mut child = match Command::new(&python).hide_window()
             .args(&args)
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())

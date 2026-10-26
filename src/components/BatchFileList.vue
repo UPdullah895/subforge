@@ -37,6 +37,10 @@ function toggleAll() {
   emit("toggleAll");
 }
 
+function baseName(path: string): string {
+  return path.slice(Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\")) + 1);
+}
+
 function hasError(file: VideoFileInfo): boolean {
   return file.external_subs.some((s) => s.status === "error");
 }
@@ -93,12 +97,12 @@ function badgeClass(status: ExternalSub["status"]): string {
               <div class="flex flex-wrap gap-1">
                 <span
                   v-for="sub in file.external_subs"
-                  :key="sub.lang"
+                  :key="sub.path"
                   class="px-1.5 py-0.5 rounded border text-[10px] font-medium uppercase"
                   :class="badgeClass(sub.status)"
-                  :title="sub.status === 'error' ? sub.error_message : undefined"
+                  :title="sub.status === 'error' ? sub.error_message : baseName(sub.path)"
                 >
-                  {{ sub.lang }}
+                  {{ sub.lang }}<template v-if="sub.flavor"> · {{ sub.flavor }}</template>
                 </span>
                 <span v-if="file.external_subs.length === 0" class="text-xs text-text-muted">—</span>
               </div>
@@ -116,7 +120,7 @@ function badgeClass(status: ExternalSub["status"]): string {
           <tr v-if="hasError(file)" class="bg-error/5">
             <td colspan="7" class="px-4 py-2">
               <div class="flex flex-wrap gap-x-4 gap-y-1 text-xs text-error">
-                <span v-for="sub in file.external_subs.filter((s) => s.status === 'error')" :key="sub.lang">
+                <span v-for="sub in file.external_subs.filter((s) => s.status === 'error')" :key="sub.path">
                   <strong class="uppercase">{{ sub.lang }}</strong>: {{ sub.error_message || t("batchFileList.externalSubError") }}
                 </span>
               </div>

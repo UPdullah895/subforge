@@ -1,3 +1,4 @@
+use subforge_deps::HideWindow;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::process::Command;
@@ -52,13 +53,29 @@ pub fn extract_lines(input_path: &str) -> Result<Vec<SubtitleLine>, TranslateErr
     let python = get_python()?;
     let script = super::script_path("subtitle_lines.py");
 
-    let output = Command::new(&python)
+    let output = Command::new(&python).hide_window()
         .args([&script, "extract", input_path])
         .output()?;
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let lines: Vec<SubtitleLine> = serde_json::from_str(&stdout)?;
     Ok(lines)
+}
+
+/// Builds the `rebuild` argument list, adding `--rtl-fix` when the saved
+/// setting asks for right-to-left punctuation fixing (on by default).
+fn rebuild_args(script: &str, original: &str, translations: &str, output: &str) -> Vec<String> {
+    let mut args = vec![
+        script.to_string(),
+        "rebuild".to_string(),
+        original.to_string(),
+        translations.to_string(),
+        output.to_string(),
+    ];
+    if crate::config::AppConfig::load().fix_rtl_punctuation {
+        args.push("--rtl-fix".to_string());
+    }
+    args
 }
 
 pub fn rebuild_lines(
@@ -69,8 +86,8 @@ pub fn rebuild_lines(
     let python = get_python()?;
     let script = super::script_path("subtitle_lines.py");
 
-    let output = Command::new(&python)
-        .args([&script, "rebuild", original_path, translations_json, output_path])
+    let output = Command::new(&python).hide_window()
+        .args(rebuild_args(&script, original_path, translations_json, output_path))
         .output()?;
 
     if !output.status.success() {
@@ -160,6 +177,50 @@ pub async fn detect_ollama(host: &str) -> Result<OllamaTagResponse, TranslateErr
     Ok(data)
 }
 
+/// Language label for an LLM prompt: models understand "Arabic" better than "ar".
+fn lang_label(code: &str) -> &str {
+    subforge_metadata::languages::english_name(code).unwrap_or(code)
+}
+
+fn lines_as_json(lines: &[SubtitleLine]) -> String {
+    let texts: Vec<&str> = lines.iter().map(|l| l.text.as_str()).collect();
+    serde_json::to_string(&texts).unwrap_or_else(|_| "[]".to_string())
+}
+
+/// Run `call` over `lines`; when a batch comes back with the wrong number of
+/// entries (models merge or drop cues) or unparseable, split it in half and
+/// retry, down to single cues, so one bad batch never misaligns or fails the
+/// whole file. Connection/HTTP errors are not retried.
+async fn translate_resilient<'a, F, Fut>(
+    lines: &'a [SubtitleLine],
+    mut call: F,
+) -> Result<Vec<String>, TranslateError>
+where
+    F: FnMut(&'a [SubtitleLine]) -> Fut,
+    Fut: std::future::Future<Output = Result<Vec<String>, TranslateError>>,
+{
+    let mut out = Vec::with_capacity(lines.len());
+    let mut queue: std::collections::VecDeque<&'a [SubtitleLine]> = std::collections::VecDeque::new();
+    queue.push_back(lines);
+    while let Some(chunk) = queue.pop_front() {
+        if chunk.is_empty() {
+            continue;
+        }
+        match call(chunk).await {
+            Ok(t) if t.len() == chunk.len() => out.extend(t),
+            Ok(t) if chunk.len() == 1 && !t.is_empty() => out.push(t.join(" ")),
+            Ok(_) | Err(TranslateError::Api(_)) | Err(TranslateError::Json(_)) if chunk.len() > 1 => {
+                let (a, b) = chunk.split_at(chunk.len() / 2);
+                queue.push_front(b);
+                queue.push_front(a);
+            }
+            Ok(_) => return Err(TranslateError::Api("model returned no translation for a cue".to_string())),
+            Err(e) => return Err(e),
+        }
+    }
+    Ok(out)
+}
+
 pub async fn translate_ollama(
     host: &str,
     model: &str,
@@ -167,6 +228,28 @@ pub async fn translate_ollama(
     source: &str,
     target: &str,
 ) -> Result<Vec<String>, TranslateError> {
+    translate_resilient(lines, |chunk| translate_ollama_batch(host, model, chunk, source, target)).await
+}
+
+pub async fn translate_openai(
+    api_key: &str,
+    model: &str,
+    lines: &[SubtitleLine],
+    source: &str,
+    target: &str,
+) -> Result<Vec<String>, TranslateError> {
+    translate_resilient(lines, |chunk| translate_openai_batch(api_key, model, chunk, source, target)).await
+}
+
+async fn translate_ollama_batch(
+    host: &str,
+    model: &str,
+    lines: &[SubtitleLine],
+    source: &str,
+    target: &str,
+) -> Result<Vec<String>, TranslateError> {
+    let target = lang_label(target);
+    let source = lang_label(source);
     let client = reqwest::Client::builder()
         // Local model inference on a 25-line batch routinely exceeds 30s;
         // extend timeout to 5 minutes for more reliable inference.
@@ -175,15 +258,15 @@ pub async fn translate_ollama(
         .unwrap_or_default();
     let url = format!("{}/v1/chat/completions", host.trim_end_matches('/'));
 
-    let texts: Vec<String> = lines.iter().map(|l| l.text.clone()).collect();
+    let texts = lines_as_json(lines);
+    let n = lines.len();
     let prompt = format!(
         "Translate the following subtitle lines from {} to {}. \
 Preserve the meaning, tone, and approximate length. \
-Return ONLY a JSON array of translated strings, one per line, in the same order. \
-Do not add explanations or markdown formatting.\n\nLines:\n{}\n\nReturn format: [\"translation1\", \"translation2\", ...]",
+Input is a JSON array of {n} strings, one subtitle cue each. Return ONLY a JSON array of exactly {n} translated strings in the same order: never merge, split, drop or add entries, and keep each translation on a single line. \
+Do not add explanations or markdown formatting.\n\nLines:\n{texts}\n\nReturn format: [\"translation1\", \"translation2\", ...]",
         source,
         target,
-        texts.join("\n")
     );
 
     let body = serde_json::json!({
@@ -373,28 +456,30 @@ pub async fn translate_deepl(
 
 // ─── OpenAI ───
 
-pub async fn translate_openai(
+async fn translate_openai_batch(
     api_key: &str,
     model: &str,
     lines: &[SubtitleLine],
     source: &str,
     target: &str,
 ) -> Result<Vec<String>, TranslateError> {
+    let target = lang_label(target);
+    let source = lang_label(source);
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(30))
         .build()
         .unwrap_or_default();
     let url = "https://api.openai.com/v1/chat/completions";
 
-    let texts: Vec<String> = lines.iter().map(|l| l.text.clone()).collect();
+    let texts = lines_as_json(lines);
+    let n = lines.len();
     let prompt = format!(
         "Translate the following subtitle lines from {} to {}. \
 Preserve meaning, tone, and approximate length. \
-Return ONLY a JSON array of translated strings in the same order. \
-No markdown, no explanations.\n\n{}\n\nReturn: [\"...\", \"...\"]",
+Input is a JSON array of {n} strings, one subtitle cue each. Return ONLY a JSON array of exactly {n} translated strings in the same order: never merge, split, drop or add entries. \
+No markdown, no explanations.\n\n{texts}\n\nReturn: [\"...\", \"...\"]",
         source,
         target,
-        texts.join("\n")
     );
 
     let body = serde_json::json!({
@@ -589,5 +674,44 @@ Hope this helps!"#;
         let result = parse_ollama_translations(&content, 2);
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("unparseable response"));
+    }
+}
+
+#[cfg(test)]
+mod resilient_tests {
+    use super::{translate_resilient, SubtitleLine, TranslateError};
+
+    fn lines(n: usize) -> Vec<SubtitleLine> {
+        (0..n)
+            .map(|i| SubtitleLine { id: i, start: 0, end: 0, text: format!("line {i}") })
+            .collect()
+    }
+
+    #[tokio::test]
+    async fn splits_batches_the_model_gets_wrong() {
+        let input = lines(8);
+        // A model that merges cues whenever it sees more than 2 of them at once.
+        let out = translate_resilient(&input, |chunk| {
+            let texts: Vec<String> = chunk.iter().map(|l| l.text.to_uppercase()).collect();
+            async move {
+                if texts.len() > 2 {
+                    Ok(vec![texts.join(" ")])
+                } else {
+                    Ok(texts)
+                }
+            }
+        })
+        .await
+        .unwrap();
+        assert_eq!(out.len(), 8);
+        assert_eq!(out[0], "LINE 0");
+        assert_eq!(out[7], "LINE 7");
+    }
+
+    #[tokio::test]
+    async fn connection_errors_are_not_retried() {
+        let input = lines(4);
+        let res = translate_resilient(&input, |_| async { Err(TranslateError::ConnectFailed) }).await;
+        assert!(matches!(res, Err(TranslateError::ConnectFailed)));
     }
 }

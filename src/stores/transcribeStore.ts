@@ -11,6 +11,9 @@ export interface WhisperInfo {
 
 export const useTranscribeStore = defineStore("transcribe", () => {
   const whisperInfo = ref<WhisperInfo | null>(null);
+  // True when the speech engine (faster-whisper) couldn't be reached at all —
+  // the page then shows setup help instead of a cryptic error.
+  const whisperMissing = ref(false);
   const downloadedModels = ref<string[]>([]);
   const loadingInfo = ref(false);
   const downloadingModel = ref<string | null>(null);
@@ -34,10 +37,13 @@ export const useTranscribeStore = defineStore("transcribe", () => {
   async function loadInfo() {
     loadingInfo.value = true;
     error.value = null;
+    whisperMissing.value = false;
     try {
       whisperInfo.value = await apiInvoke<WhisperInfo>("get_whisper_info");
     } catch (e) {
-      error.value = `Failed to load Whisper info: ${e instanceof Error ? e.message : String(e)}`;
+      whisperInfo.value = null;
+      whisperMissing.value = true;
+      console.warn("Whisper info unavailable", e);
     } finally {
       loadingInfo.value = false;
     }
@@ -103,6 +109,7 @@ export const useTranscribeStore = defineStore("transcribe", () => {
 
   return {
     whisperInfo,
+    whisperMissing,
     downloadedModels,
     loadingInfo,
     downloadingModel,

@@ -3552,7 +3552,7 @@ checksum = "7da8b5736845d9f2fcb837ea5d9e2628564b3b043a70948a3f0b778838c5fb4f"
 
 [[package]]
 name = "subforge"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "dirs",
@@ -3560,6 +3560,7 @@ dependencies = [
  "reqwest 0.12.28",
  "serde",
  "serde_json",
+ "subforge-deps",
  "subforge-metadata",
  "subforge-subtitle-sources",
  "tauri",
@@ -3570,6 +3571,16 @@ dependencies = [
  "tokio",
  "uuid",
  "walkdir",
+]
+
+[[package]]
+name = "subforge-deps"
+version = "0.1.0"
+dependencies = [
+ "dirs",
+ "serde",
+ "thiserror 2.0.18",
+ "tokio",
 ]
 
 [[package]]
