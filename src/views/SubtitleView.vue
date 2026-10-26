@@ -13,6 +13,7 @@ const { t } = useI18n();
 const toastStore = useToastStore();
 import TrackTable from "../components/TrackTable.vue";
 import CleanSubtitlePanel from "../components/CleanSubtitlePanel.vue";
+import SyncCheckPanel from "../components/SyncCheckPanel.vue";
 import DropOverlay from "../components/DropOverlay.vue";
 import { useFileDrop } from "../composables/useFileDrop";
 import ErrorDetails from "../components/ErrorDetails.vue";
@@ -31,7 +32,7 @@ import {
 
 const subtitleStore = useSubtitleStore();
 const appStore = useAppStore();
-const activeTab = ref<"tracks" | "merge" | "convert" | "clean">("tracks");
+const activeTab = ref<"tracks" | "merge" | "convert" | "clean" | "sync">("tracks");
 const selectedFiles = ref<string[]>([]);
 const activeFile = ref<string | null>(null);
 const batchLoading = ref(false);
@@ -421,6 +422,18 @@ onMounted(() => {
       >
         {{ t("subtitle.tabs.clean") }}
       </button>
+      <button
+        :class="[
+          'px-4 py-2 text-sm font-medium rounded-t-lg transition-colors',
+          activeTab === 'sync'
+            ? 'bg-bg-secondary text-accent border-b-2 border-accent'
+            : 'text-text-secondary hover:text-text-primary',
+        ]"
+        data-testid="tab-sync"
+        @click="activeTab = 'sync'"
+      >
+        {{ t("subtitle.tabs.sync") }}
+      </button>
     </div>
 
     <!-- Content -->
@@ -733,6 +746,10 @@ onMounted(() => {
 
       <template v-if="activeTab === 'clean'">
         <CleanSubtitlePanel :initial-path="cleanDropPath" />
+      </template>
+
+      <template v-if="activeTab === 'sync'">
+        <SyncCheckPanel />
       </template>
     </div>
   </div>

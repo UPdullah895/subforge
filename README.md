@@ -83,6 +83,7 @@ Developers can print the same dependency report in a terminal with `cargo run --
 - **Subtitle merge** — mux external SRT/ASS/VTT files into MKV containers.
 - **Audio extraction/merge** — extract, transcode (AAC, MP3, OPUS, FLAC), and remux audio via FFmpeg.
 - **Subtitle format conversion & retiming** — convert between SRT/ASS/SSA/VTT, shift and stretch timestamps (built-in, no external tools).
+- **Sync check** — compares a subtitle's timings with the real video duration, flags a 25/23.976 (PAL/NTSC) mismatch and offers a one-click frame-rate fix or shift. An optional deep check transcribes three short speech windows with the built-in speech engine to detect a constant delay or the wrong episode.
 - **Credit & ad cleanup** — finds translator credits, social handles, links and channel ads in SRT/ASS/SSA/VTT, shows exactly which lines would go, and removes them only after you confirm (ASS styles, fonts and drawings are untouched).
 - **Dependency check** — on startup, checks for MKVToolNix and FFmpeg (including ffprobe), and offers to install anything that is missing.
 
@@ -96,7 +97,7 @@ Developers can print the same dependency report in a terminal with `cargo run --
 
 ### Translation
 - **Ollama (local LLM), LibreTranslate, DeepL, OpenAI, Google Translate** — batched, context-aware subtitle translation with automatic engine detection where applicable.
-- **Online subtitle search before translating** — before running machine translation on a file, SubForge searches [Subsource](https://subsource.net) (on by default) and, if you supply your own account, [OpenSubtitles.com](https://www.opensubtitles.com) (file-hash matching for exact-release accuracy) for an existing human-made subtitle in the target language. If one is found it's used directly; if not, translation runs as normal. Toggle this off, or configure OpenSubtitles.com or your own Subsource key, from Settings → Subtitle Sources. API keys are kept in the operating system's keyring, not in `config.json`.
+- **Online subtitle search before translating** — before running machine translation on a file, SubForge searches [Subsource](https://subsource.net) (on by default) and, if you supply your own account, [OpenSubtitles.com](https://www.opensubtitles.com) (file-hash matching for exact-release accuracy) for an existing human-made subtitle in the target language. If one is found it's used directly (an existing subtitle with the same name is never replaced), and its timings are checked against the video so an obvious frame-rate mismatch is flagged instead of silently used; if no subtitle is found, translation runs as normal. Toggle this off, or configure OpenSubtitles.com or your own Subsource key, from Settings → Subtitle Sources. API keys are kept in the operating system's keyring, not in `config.json`.
 
 ### Interface
 - **Drag and drop** — drop video files (or a folder on the Batch page, or a subtitle on the Convert/Clean tabs) straight onto the window.

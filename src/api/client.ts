@@ -128,6 +128,8 @@ function cmdToEndpoint(cmd: string): string {
     shift_subtitle_timing: "/api/subtitle/shift",
     stretch_subtitle_timing: "/api/subtitle/stretch",
     clean_subtitle: "/api/subtitle/clean",
+    check_subtitle_sync: "/api/subtitle/check-sync",
+    fix_subtitle_sync: "/api/subtitle/fix-sync",
     list_audio_tracks: "/api/audio/tracks",
     extract_audio_track: "/api/audio/extract",
     merge_audio_track: "/api/audio/merge",

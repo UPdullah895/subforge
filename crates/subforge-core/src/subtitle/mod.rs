@@ -3,6 +3,7 @@
 mod ass;
 pub mod clean;
 pub mod encoding;
+pub mod sync;
 pub(crate) mod markup;
 mod srt;
 mod vtt;

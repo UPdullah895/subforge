@@ -43,6 +43,10 @@ pub enum OnlineSubtitleSearchResponse {
         subtitle_path: String,
         source: String,
         matched_via: String,
+        /// Instant timing verdict, so a mismatched release is obvious before
+        /// it is used. Omitted when the check could not run.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        sync_verdict: Option<String>,
     },
     NotFound,
 }
@@ -83,10 +87,12 @@ pub async fn search_online_subtitle(
         } => {
             let subtitle_path = write_subtitle_next_to_video(&video_path, &request.language, &text)
                 .map_err(|e| e.to_string())?;
+            let sync_verdict = sync_verdict_for(&video_path, Path::new(&subtitle_path));
             Ok(OnlineSubtitleSearchResponse::Found {
                 subtitle_path,
                 source,
                 matched_via,
+                sync_verdict,
             })
         }
         SubtitleSearchResult::NotFound => Ok(OnlineSubtitleSearchResponse::NotFound),
@@ -108,9 +114,25 @@ fn write_subtitle_next_to_video(
         .and_then(|s| s.to_str())
         .unwrap_or("subtitle");
     let dir = video_path.parent().unwrap_or_else(|| Path::new("."));
-    let out_path = dir.join(format!("{stem}.{lang}.srt"));
+    let default = dir.join(format!("{stem}.{lang}.srt"));
+    // Never replace a subtitle the user already has: keep both, and say which
+    // file was written in the response.
+    let out_path = if default.exists() {
+        dir.join(format!("{stem}.{lang}.found.srt"))
+    } else {
+        default
+    };
     std::fs::write(&out_path, text)?;
     Ok(out_path.to_string_lossy().to_string())
+}
+
+/// Run the instant timing check on a downloaded subtitle. Any failure is
+/// reported as "unknown" rather than failing the whole search.
+fn sync_verdict_for(video: &Path, subtitle: &Path) -> Option<String> {
+    let paths = crate::tools::tool_paths();
+    subforge_core::subtitle::sync::quick_check(&paths, video, subtitle)
+        .ok()
+        .map(|check| format!("{:?}", check.verdict).to_lowercase())
 }
 
 /// Validates a form submission and keeps the stored password when the box was

@@ -431,6 +431,130 @@ pub async fn clean_subtitle(
     }))
 }
 
+
+#[derive(Debug, Deserialize)]
+pub struct SyncCheckRequest {
+    pub subtitle: String,
+    pub video: String,
+    #[serde(default)]
+    pub deep: bool,
+    #[serde(default)]
+    pub model: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct SyncCheckResponse {
+    pub check: subforge_core::subtitle::sync::SyncCheck,
+    pub deep: Option<subforge_core::subtitle::sync::DeepCheck>,
+    pub model: Option<String>,
+}
+
+pub async fn check_subtitle_sync(
+    Json(req): Json<SyncCheckRequest>,
+) -> Result<Json<SyncCheckResponse>, AppError> {
+    use subforge_core::subtitle::sync;
+
+    let response = blocking(move || -> Result<SyncCheckResponse, String> {
+        let paths = tool_paths();
+        let doc = subtitle::SubtitleDoc::load(Path::new(&req.subtitle))
+            .map_err(|e| e.to_string())?;
+        let media = subforge_core::tools::ffmpeg::probe_media(&paths, &req.video)
+            .map_err(|e| e.to_string())?;
+        let check = sync::check(&doc, &media);
+        if !req.deep {
+            return Ok(SyncCheckResponse {
+                check,
+                deep: None,
+                model: None,
+            });
+        }
+
+        let cache = subforge_core::whisper::resolve_cache_dir(None);
+        let downloaded = subforge_core::whisper::list_downloaded(&cache);
+        let model = match req.model.filter(|m| !m.trim().is_empty()) {
+            Some(model) if downloaded.iter().any(|m| m == &model) => model,
+            Some(model) => {
+                return Err(format!("The speech model '{model}' is not downloaded."));
+            }
+            None => downloaded.first().cloned().ok_or_else(|| {
+                "No speech model is downloaded. Download one on the Speech to Text page first."
+                    .to_string()
+            })?,
+        };
+        let mut progress = |_pct: f64, _msg: Option<&str>| {};
+        let deep = sync::deep_check(
+            &paths,
+            Path::new(&req.video),
+            &doc,
+            &model,
+            None,
+            &mut progress,
+            subforge_core::CancellationToken::new(),
+        )
+        .map_err(|e| e.to_string())?;
+        Ok(SyncCheckResponse {
+            check,
+            deep: Some(deep),
+            model: Some(model),
+        })
+    })
+    .await?
+    .map_err(crate::error::err400)?;
+
+    Ok(Json(response))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct SyncFixRequest {
+    pub input: String,
+    #[serde(default)]
+    pub output: Option<String>,
+    #[serde(default)]
+    pub from_fps: Option<f64>,
+    #[serde(default)]
+    pub to_fps: Option<f64>,
+    #[serde(default)]
+    pub shift_ms: Option<i64>,
+    #[serde(default)]
+    pub overwrite: bool,
+}
+
+#[derive(Debug, Serialize)]
+pub struct SyncFixResponse {
+    pub output_path: String,
+    pub backup_path: Option<String>,
+    pub cues: usize,
+}
+
+pub async fn fix_subtitle_sync(
+    Json(req): Json<SyncFixRequest>,
+) -> Result<Json<SyncFixResponse>, AppError> {
+    use subforge_core::subtitle::sync::{fix_file, SyncFix};
+
+    let outcome = blocking(move || {
+        fix_file(
+            Path::new(&req.input),
+            req.output.as_deref().map(Path::new),
+            req.overwrite,
+            &SyncFix {
+                from_fps: req.from_fps,
+                to_fps: req.to_fps,
+                shift_ms: req.shift_ms,
+            },
+        )
+    })
+    .await?
+    .map_err(|e| crate::error::err400(e.to_string()))?;
+
+    Ok(Json(SyncFixResponse {
+        output_path: outcome.output.to_string_lossy().into_owned(),
+        backup_path: outcome
+            .backup
+            .map(|p| p.to_string_lossy().into_owned()),
+        cues: outcome.cues,
+    }))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

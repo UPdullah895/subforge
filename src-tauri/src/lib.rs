@@ -84,6 +84,8 @@ pub fn run() {
             subtitle_cmds::shift_subtitle_timing,
             subtitle_cmds::stretch_subtitle_timing,
             subtitle_cmds::clean_subtitle,
+            subtitle_cmds::check_subtitle_sync,
+            subtitle_cmds::fix_subtitle_sync,
             subtitle_cmds::set_track_metadata,
             subtitle_cmds::get_tool_registry,
             subtitle_cmds::get_tool_status,

@@ -141,6 +141,45 @@ export const commandSchemas: Record<string, z.ZodTypeAny> = {
 
   batch_extract_subtitles: z.array(z.string()),
 
+  check_subtitle_sync: z.looseObject({
+    check: z.looseObject({
+      verdict: z.enum(["good", "offset", "framerate", "truncated", "uncertain"]),
+      cue_count: z.number(),
+      subtitle_start_ms: z.number(),
+      subtitle_end_ms: z.number(),
+      video_duration_ms: z.number().nullish(),
+      video_fps: z.number().nullish(),
+      suggested_fix: z.looseObject({ from: z.number(), to: z.number() }).nullish(),
+      suggested_shift_ms: z.number().nullish(),
+      issues: z.array(z.looseObject({ kind: z.string(), message: z.string() })),
+    }),
+    deep: z
+      .looseObject({
+        verdict: z.enum(["good", "offset", "framerate", "truncated", "uncertain"]),
+        matches: z.array(
+          z.looseObject({
+            subtitle_start_ms: z.number(),
+            asr_start_ms: z.number(),
+            offset_ms: z.number(),
+            score: z.number(),
+            subtitle_text: z.string(),
+          })
+        ),
+        offset_ms: z.number().nullish(),
+        suggested_shift_ms: z.number().nullish(),
+        suggested_fix: z.looseObject({ from: z.number(), to: z.number() }).nullish(),
+        reason: z.string(),
+      })
+      .nullish(),
+    model: z.string().nullish(),
+  }),
+
+  fix_subtitle_sync: z.looseObject({
+    output_path: z.string(),
+    backup_path: z.string().nullish(),
+    cues: z.number(),
+  }),
+
   clean_subtitle: z.looseObject({
     removed: z.array(
       z.looseObject({
@@ -175,6 +214,7 @@ export const commandSchemas: Record<string, z.ZodTypeAny> = {
       subtitle_path: z.string(),
       source: z.string(),
       matched_via: z.string(),
+      sync_verdict: z.string().nullish(),
     }),
     z.looseObject({ status: z.literal("not_found") }),
   ]),

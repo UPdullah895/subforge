@@ -82,7 +82,31 @@
       "tracks": "Tracks",
       "merge": "Merge",
       "convert": "Convert & Retime",
-      "clean": "Clean"
+      "clean": "Clean",
+      "sync": "Sync"
+    },
+    "sync": {
+      "title": "Check sync against the video",
+      "desc": "Compares the subtitle's span with the real video duration, and can listen to three short speech windows to catch a constant delay or the wrong episode.",
+      "videoFile": "Video file",
+      "pickVideo": "Select the video file",
+      "check": "Check timing",
+      "checking": "Checking...",
+      "deep": "Deep check with speech",
+      "listening": "Listening...",
+      "deepHint": "Transcribes three short windows with a speech model downloaded on the Speech to Text page, then matches the words to nearby cues. Takes about a minute and needs the video's audio.",
+      "verdict_good": "Looks in sync",
+      "verdict_offset": "Off by a constant delay",
+      "verdict_framerate": "Frame-rate mismatch",
+      "verdict_truncated": "Runs past the end of the video",
+      "verdict_uncertain": "Not enough evidence",
+      "range": "Cues span {start} – {end}; the video is {duration}",
+      "deepResult": "Checked with {model}: {count} line(s) matched, median offset {offset}.",
+      "fixSummary": "Suggested fix: {fps}, then shift {shift}.",
+      "overwrite": "Overwrite the original file (a .bak copy is kept)",
+      "apply": "Apply fix",
+      "applying": "Applying...",
+      "done": "Fixed subtitle written to {path}"
     },
     "clean": {
       "title": "Remove translator credits & ads",
@@ -247,6 +271,8 @@
       "cancelled": "Cancelled"
     },
     "foundOnline": "Found on {source}"
+,
+    "foundOnlineTiming": "Found on {source} — timing may be off ({verdict})"
   },
   "transcribe": {
     "title": "Speech to Text",

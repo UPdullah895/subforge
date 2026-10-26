@@ -44,6 +44,8 @@ pub enum OnlineSubtitleSearchResponse {
         subtitle_path: String,
         source: String,
         matched_via: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        sync_verdict: Option<String>,
     },
     NotFound,
 }
@@ -90,11 +92,21 @@ pub async fn search_online_subtitle(
             source,
             matched_via,
         } => match write_subtitle_next_to_video(&video_path, &request.language, &text) {
-            Ok(subtitle_path) => Json(OnlineSubtitleSearchResponse::Found {
-                subtitle_path,
-                source,
-                matched_via,
-            }),
+            Ok(subtitle_path) => {
+                let sync_verdict = subforge_core::subtitle::sync::quick_check(
+                    &crate::tools::tool_paths(),
+                    &video_path,
+                    Path::new(&subtitle_path),
+                )
+                .ok()
+                .map(|check| format!("{:?}", check.verdict).to_lowercase());
+                Json(OnlineSubtitleSearchResponse::Found {
+                    subtitle_path,
+                    source,
+                    matched_via,
+                    sync_verdict,
+                })
+            }
             Err(_) => Json(OnlineSubtitleSearchResponse::NotFound),
         },
         SubtitleSearchResult::NotFound => Json(OnlineSubtitleSearchResponse::NotFound),
@@ -111,7 +123,12 @@ fn write_subtitle_next_to_video(
         .and_then(|s| s.to_str())
         .unwrap_or("subtitle");
     let dir = video_path.parent().unwrap_or_else(|| Path::new("."));
-    let out_path = dir.join(format!("{stem}.{lang}.srt"));
+    let default = dir.join(format!("{stem}.{lang}.srt"));
+    let out_path = if default.exists() {
+        dir.join(format!("{stem}.{lang}.found.srt"))
+    } else {
+        default
+    };
     std::fs::write(&out_path, text)?;
     Ok(out_path.to_string_lossy().to_string())
 }

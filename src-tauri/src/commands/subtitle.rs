@@ -377,6 +377,137 @@ fn clean_subtitle_at(
 }
 
 
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct SyncCheckRequest {
+    pub subtitle: String,
+    pub video: String,
+    /// Also transcribe short audio windows (needs a downloaded speech model).
+    #[serde(default)]
+    pub deep: bool,
+    /// Whisper model for the deep check; defaults to the smallest downloaded.
+    pub model: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct SyncCheckResponse {
+    pub check: subforge_core::subtitle::sync::SyncCheck,
+    pub deep: Option<subforge_core::subtitle::sync::DeepCheck>,
+    pub model: Option<String>,
+}
+
+#[tauri::command]
+pub async fn check_subtitle_sync(
+    request: SyncCheckRequest,
+) -> Result<SyncCheckResponse, String> {
+    blocking(move || check_subtitle_sync_at(request)).await
+}
+
+fn check_subtitle_sync_at(request: SyncCheckRequest) -> Result<SyncCheckResponse, String> {
+    use subforge_core::subtitle::sync;
+
+    let paths = tool_paths();
+    let doc = subtitle::SubtitleDoc::load(Path::new(&request.subtitle))
+        .map_err(|e| e.to_string())?;
+    let media = subforge_core::tools::ffmpeg::probe_media(&paths, &request.video)
+        .map_err(|e| e.to_string())?;
+    let check = sync::check(&doc, &media);
+
+    if !request.deep {
+        return Ok(SyncCheckResponse {
+            check,
+            deep: None,
+            model: None,
+        });
+    }
+
+    let cache = subforge_core::whisper::resolve_cache_dir(None);
+    let downloaded = subforge_core::whisper::list_downloaded(&cache);
+    let model = match request.model.filter(|m| !m.trim().is_empty()) {
+        Some(model) => {
+            if !downloaded.iter().any(|m| m == &model) {
+                return Err(format!(
+                    "The speech model '{model}' is not downloaded. Download it on the Speech to Text page first."
+                ));
+            }
+            model
+        }
+        None => downloaded.first().cloned().ok_or_else(|| {
+            "No speech model is downloaded. Download one on the Speech to Text page, then run the deep check again."
+                .to_string()
+        })?,
+    };
+
+    let mut progress = |_pct: f64, _msg: Option<&str>| {};
+    let deep = sync::deep_check(
+        &paths,
+        Path::new(&request.video),
+        &doc,
+        &model,
+        None,
+        &mut progress,
+        subforge_core::CancellationToken::new(),
+    )
+    .map_err(|e| e.to_string())?;
+
+    Ok(SyncCheckResponse {
+        check,
+        deep: Some(deep),
+        model: Some(model),
+    })
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct SyncFixRequest {
+    pub input: String,
+    pub output: Option<String>,
+    /// Frame-rate correction, applied before the shift.
+    pub from_fps: Option<f64>,
+    pub to_fps: Option<f64>,
+    /// Constant offset to apply after the frame-rate correction.
+    pub shift_ms: Option<i64>,
+    /// Write over the input instead of `{name}.synced.{ext}` (keeps a `.bak`).
+    #[serde(default)]
+    pub overwrite: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct SyncFixResponse {
+    pub output_path: String,
+    pub backup_path: Option<String>,
+    pub cues: usize,
+}
+
+#[tauri::command]
+pub async fn fix_subtitle_sync(request: SyncFixRequest) -> Result<SyncFixResponse, String> {
+    blocking(move || fix_subtitle_sync_at(&request)).await
+}
+
+fn fix_subtitle_sync_at(request: &SyncFixRequest) -> Result<SyncFixResponse, String> {
+    use subforge_core::subtitle::sync::{fix_file, SyncFix};
+
+    let outcome = fix_file(
+        Path::new(&request.input),
+        request.output.as_deref().map(Path::new),
+        request.overwrite,
+        &SyncFix {
+            from_fps: request.from_fps,
+            to_fps: request.to_fps,
+            shift_ms: request.shift_ms,
+        },
+    )
+    .map_err(|e| e.to_string())?;
+
+    Ok(SyncFixResponse {
+        output_path: outcome.output.to_string_lossy().into_owned(),
+        backup_path: outcome
+            .backup
+            .map(|p| p.to_string_lossy().into_owned()),
+        cues: outcome.cues,
+    })
+}
+
+
 #[cfg(test)]
 mod tests {
     use super::*;

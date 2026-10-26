@@ -40,7 +40,13 @@ export interface OnlineSubtitleSearchRequest {
 }
 
 export type OnlineSubtitleSearchResult =
-  | { status: "found"; subtitle_path: string; source: string; matched_via: string }
+  | {
+      status: "found";
+      subtitle_path: string;
+      source: string;
+      matched_via: string;
+      sync_verdict?: string | null;
+    }
   | { status: "not_found" };
 
 export const useSubtitleSourcesStore = defineStore("subtitleSources", () => {

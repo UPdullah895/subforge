@@ -115,6 +115,11 @@ fn api_routes() -> Router<AppState> {
         .route("/subtitle/shift", post(routes::subtitle::shift_timing))
         .route("/subtitle/stretch", post(routes::subtitle::stretch_timing))
         .route("/subtitle/clean", post(routes::subtitle::clean_subtitle))
+        .route(
+            "/subtitle/check-sync",
+            post(routes::subtitle::check_subtitle_sync),
+        )
+        .route("/subtitle/fix-sync", post(routes::subtitle::fix_subtitle_sync))
         .route("/subtitle/meta", post(routes::subtitle::set_track_metadata))
         // ── Audio operations ─────────────────────────────────────────────────
         .route("/audio/tracks", post(routes::audio::list_audio_tracks))
