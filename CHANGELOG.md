@@ -5,34 +5,14 @@ All notable changes to this project are documented here. Format based on
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-26
+
 ### Added
 - **Sync** tab: checks a subtitle against its video. The instant check compares the cue span with the real duration and detects a 25/23.976 (or 24/23.976, 25/24, 30/29.97) frame-rate mismatch, with a one-click fix; it also reports bad timings, overlaps and a subtitle that runs past the end of the video. The optional deep check transcribes three short speech windows with the built-in engine, matches the words to nearby cues and reports a constant delay, growing drift or a likely wrong episode, with the shift/frame-rate fix to apply.
-- Online subtitle search now returns a timing verdict, so the auto-translate wizard warns when a found subtitle does not fit the video, and an existing same-named subtitle is no longer overwritten (the download is written as `{name}.{lang}.found.srt`).
+- Online subtitle search returns a timing verdict, so the auto-translate wizard warns when a found subtitle does not fit the video, and an existing same-named subtitle is no longer overwritten (the download is written as `{name}.{lang}.found.srt`).
 - **Drag and drop** in the desktop app: drop videos on the Subtitle, Audio or Transcribe pages, a folder on Batch, or a subtitle file on the Convert/Clean tabs. A dropped folder is recognised as a folder (it has no extension) and explained instead of being passed to mkvmerge as a video; Batch no longer scans a whole folder when a single file is dropped.
 - **Clean** tab for subtitles: removes translator credits, social-media handles, links and channel advertisements from SRT, ASS, SSA and VTT. Every match is previewed first with the reason it matched, any line can be kept, and overwriting the original keeps a `.bak` copy. ASS styles, `[Fonts]`, `[Graphics]` and drawings are left untouched.
 - Subsource search can use your own API key from **Settings → Subtitle Sources**; a key set there takes precedence over the one (if any) built into the app.
-
-### Fixed
-- OpenSubtitles settings now show the saved API key and username when you return to the page (the password stays write-only), the key is masked with a reveal button, and clicking **Save** on an empty form no longer wipes a working configuration.
-- TMDB and Subsource API keys save automatically and **Test** checks the value currently in the form, so neither has to be saved first. Save failures are shown instead of being silently dropped.
-- Subsource reports **Not configured** when there is no key, instead of the misleading **Unreachable**; an invalid key and rate limiting get their own messages.
-
-### Security
-- API keys (TMDB, DeepL, OpenAI, Google Translate, Subsource) are stored in the OS keyring instead of `config.json`, and existing keys are migrated on first launch (a key stays in the file if the keyring is unavailable, so nothing is lost). `config.json` is now owner-only (`0600`). Server mode has no keychain and keeps its keys in `config.json`; running both modes on one machine means entering them again in the other mode.
-- The "Required Programs" dialog no longer appears on installs that bundle FFmpeg and MKVToolNix. It now uses the same lookup as every tool call (custom path, then bundled, then system), shows where each tool was found, and appears when a custom tool path in Settings is broken.
-- Only one transcription runs at a time; others wait with a "Queued" status and can be cancelled while waiting (several at once could run out of memory and crash the app).
-- Translating an ASS/SSA track keeps it ASS/SSA (`{video}.{lang}.ass`) with its styles, instead of writing ASS text into a `.srt` file.
-- SRT files with a blank line inside a subtitle, or stray text between subtitles, load instead of being rejected (same result as pysubs2).
-- MKVToolNix errors show the actual reason instead of the version banner, and an unreadable or unrecognised file is reported as an error instead of "no tracks". The raw tool output is available under "Details" in error messages.
-- Settings shows an error when a custom tool path does not answer its version command, and version checks give up after 10 seconds instead of hanging.
-- Model downloads show the downloaded size and speed.
-
-### Changed
-- Server API: tool failures answer `{"error": "...", "details": "..."}` with status 422 (tool failed) or 503 (tool missing or custom path broken) instead of a bare status code.
-
-## [0.3.0] - 2026-10-23
-
-### Added
 - The Windows installer and the AppImage bundle FFmpeg 9.0.2 and MKVToolNix 103.0 (plus the Vulkan loader), so they work without installing anything else. The `.deb`, `.rpm` and AUR packages keep using the system packages. Licences are installed in `licenses/`; see `THIRD_PARTY_NOTICES.md`.
 - GPU speech-to-text through Vulkan (NVIDIA, AMD and Intel). Device **Auto** uses a GPU when one is found and falls back to the CPU otherwise, including on machines with no GPU or no Vulkan driver; **GPU** and **CPU** can also be chosen explicitly.
 - Licence and source compliance for the bundled programs: every bundled component's licence text ships in `licenses/`, each release attaches the corresponding GPL/LGPL source archives, and `THIRD_PARTY_NOTICES.md` includes a written offer for the rest.
@@ -40,7 +20,20 @@ All notable changes to this project are documented here. Format based on
 - End-to-end CI on Windows and Linux: every pull request builds the Windows installer and the AppImage the way releases are built, installs the Windows build silently into a folder with a space, runs the self-test on a runner without a GPU (test files under Arabic folder names; FFmpeg/MKVToolNix must come from the bundle; transcription must fall back to the CPU), and checks that the app window opens. The Linux job also checks the `.rpm` dependencies.
 
 ### Fixed
+- OpenSubtitles settings show the saved API key and username when you return to the page (the password stays write-only), the key is masked with a reveal button, and clicking **Save** on an empty form no longer wipes a working configuration.
+- TMDB and Subsource API keys save automatically and **Test** checks the value currently in the form, so neither has to be saved first. Save failures are shown instead of being silently dropped.
+- Subsource reports **Not configured** when there is no key, instead of the misleading **Unreachable**; an invalid key and rate limiting get their own messages.
+- The "Required Programs" dialog no longer appears on installs that bundle FFmpeg and MKVToolNix. It now uses the same lookup as every tool call (custom path, then bundled, then system), shows where each tool was found, and appears when a custom tool path in Settings is broken.
+- Only one transcription runs at a time; others wait with a "Queued" status and can be cancelled while waiting (several at once could run out of memory and crash the app).
+- Translating an ASS/SSA track keeps it ASS/SSA (`{video}.{lang}.ass`) with its styles, instead of writing ASS text into a `.srt` file.
+- SRT files with a blank line inside a subtitle, or stray text between subtitles, load instead of being rejected (same result as pysubs2).
+- MKVToolNix errors show the actual reason instead of the version banner, and an unreadable or unrecognised file is reported as an error instead of "no tracks". The raw tool output is available under "Details" in error messages.
+- Settings shows an error when a custom tool path does not answer its version command, and version checks give up after 10 seconds instead of hanging.
+- Model downloads show the downloaded size and speed.
 - Linux: MKVToolNix calls no longer fail on paths with non-ASCII characters (e.g. Arabic folder names) when SubForge runs under a non-UTF-8 locale such as `C`/`POSIX`.
+
+### Security
+- API keys (TMDB, DeepL, OpenAI, Google Translate, Subsource) are stored in the OS keyring instead of `config.json`, and existing keys are migrated on first launch (a key stays in the file if the keyring is unavailable, so nothing is lost). `config.json` is now owner-only (`0600`). Server mode has no keychain and keeps its keys in `config.json`; running both modes on one machine means entering them again in the other mode.
 
 ### Removed
 - **No Python required.** Speech-to-text is the built-in whisper.cpp engine, and the subtitle conversion, retiming and translation helpers are native. SubForge no longer detects, installs or bundles Python, `pysubs2` or `faster-whisper`.
@@ -57,6 +50,7 @@ All notable changes to this project are documented here. Format based on
 - Server API: convert/shift/stretch return a readable error body; converting to an unknown format returns 400 instead of 500; track removal now actually removes the selected tracks; new `GET /api/tools/status`; the tool registry includes mkvpropedit.
 
 ### Changed
+- Server API: tool failures answer `{"error": "...", "details": "..."}` with status 422 (tool failed) or 503 (tool missing or custom path broken) instead of a bare status code.
 - Speech-to-text runs on the built-in whisper.cpp engine instead of Python faster-whisper. Models are GGML files in `<cache>/subforge/whisper-ggml`; the old faster-whisper models can be deleted from the Speech to Text page.
 - Model downloads run as background jobs with a progress bar and a cancel button; the app no longer freezes while a model downloads.
 - Model list: `large-v1` and `large-v2` are gone; `large-v3-turbo` and `large-v3-turbo-q5_0` are new.
