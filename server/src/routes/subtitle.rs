@@ -382,6 +382,55 @@ pub async fn set_track_metadata(
     Ok(StatusCode::OK)
 }
 
+
+#[derive(Debug, Deserialize)]
+pub struct CleanRequest {
+    pub input: String,
+    #[serde(default)]
+    pub output: Option<String>,
+    #[serde(default)]
+    pub keep: Vec<usize>,
+    #[serde(default)]
+    pub apply: bool,
+}
+
+#[derive(Debug, Serialize)]
+pub struct CleanResult {
+    pub removed: Vec<subforge_core::subtitle::clean::RemovedCue>,
+    pub kept: usize,
+    pub output_path: Option<String>,
+    pub backup_path: Option<String>,
+}
+
+/// Preview (`apply: false`) or write (`apply: true`) a cleaned subtitle.
+pub async fn clean_subtitle(
+    Json(req): Json<CleanRequest>,
+) -> Result<Json<CleanResult>, AppError> {
+    use subforge_core::subtitle::clean::{clean_file_to, CleanOptions};
+
+    let outcome = blocking(move || {
+        clean_file_to(
+            Path::new(&req.input),
+            req.output.as_deref().map(Path::new),
+            &CleanOptions { keep: req.keep },
+            req.apply,
+        )
+    })
+    .await?
+    .map_err(|e| crate::error::err400(e.to_string()))?;
+
+    Ok(Json(CleanResult {
+        removed: outcome.report.removed,
+        kept: outcome.report.kept,
+        output_path: outcome
+            .output
+            .map(|p| p.to_string_lossy().into_owned()),
+        backup_path: outcome
+            .backup
+            .map(|p| p.to_string_lossy().into_owned()),
+    }))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

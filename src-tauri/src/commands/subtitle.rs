@@ -318,6 +318,65 @@ pub async fn set_track_metadata(request: SetTrackMetaRequest) -> Result<(), Comm
     .await
 }
 
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct CleanSubtitleRequest {
+    pub input: String,
+    /// Destination when `apply` is true. Defaults to `{name}.clean.{ext}` next
+    /// to the input; using the input path itself keeps a `.bak` copy.
+    pub output: Option<String>,
+    /// Cue indexes the user chose to keep in the preview.
+    #[serde(default)]
+    pub keep: Vec<usize>,
+    /// `false` (default) only reports what would be removed.
+    #[serde(default)]
+    pub apply: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct CleanSubtitleResponse {
+    pub removed: Vec<subforge_core::subtitle::clean::RemovedCue>,
+    pub kept: usize,
+    /// Set when a file was written.
+    pub output_path: Option<String>,
+    /// Set when the original was copied before being overwritten.
+    pub backup_path: Option<String>,
+}
+
+#[tauri::command]
+pub async fn clean_subtitle(
+    request: CleanSubtitleRequest,
+) -> Result<CleanSubtitleResponse, String> {
+    blocking(move || clean_subtitle_at(&request)).await
+}
+
+fn clean_subtitle_at(
+    request: &CleanSubtitleRequest,
+) -> Result<CleanSubtitleResponse, String> {
+    use subforge_core::subtitle::clean::{clean_file_to, CleanOptions};
+
+    let outcome = clean_file_to(
+        Path::new(&request.input),
+        request.output.as_deref().map(Path::new),
+        &CleanOptions {
+            keep: request.keep.clone(),
+        },
+        request.apply,
+    )
+    .map_err(|e| e.to_string())?;
+
+    let to_string = |p: Option<std::path::PathBuf>| {
+        p.map(|p| p.to_string_lossy().into_owned())
+    };
+    Ok(CleanSubtitleResponse {
+        removed: outcome.report.removed,
+        kept: outcome.report.kept,
+        output_path: to_string(outcome.output),
+        backup_path: to_string(outcome.backup),
+    })
+}
+
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -398,4 +457,76 @@ mod tests {
             ]
         );
     }
+    const CLEAN_SRT: &str = "1\n00:00:01,000 --> 00:00:03,000\nترجمة: فريق المثال\n\n2\n00:00:04,000 --> 00:00:06,000\nمرحبا\n\n3\n00:00:07,000 --> 00:00:09,000\nwww.example.com\n";
+
+    #[test]
+    fn clean_preview_reports_but_writes_nothing() {
+        let dir = temp_dir();
+        let input = dir.join("in.srt");
+        std::fs::write(&input, CLEAN_SRT).unwrap();
+
+        let response = clean_subtitle_at(&CleanSubtitleRequest {
+            input: input.to_string_lossy().into(),
+            output: None,
+            keep: vec![],
+            apply: false,
+        })
+        .unwrap();
+
+        assert_eq!(response.removed.len(), 2);
+        assert_eq!(response.kept, 1);
+        assert_eq!(response.output_path, None);
+        // Only the source file exists.
+        assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 1);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn clean_apply_writes_a_copy_by_default() {
+        let dir = temp_dir();
+        let input = dir.join("episode.srt");
+        std::fs::write(&input, CLEAN_SRT).unwrap();
+
+        let response = clean_subtitle_at(&CleanSubtitleRequest {
+            input: input.to_string_lossy().into(),
+            output: None,
+            keep: vec![],
+            apply: true,
+        })
+        .unwrap();
+
+        let output = response.output_path.unwrap();
+        assert!(output.ends_with("episode.clean.srt"), "{output}");
+        let text = std::fs::read_to_string(&output).unwrap();
+        assert!(!text.contains("ترجمة"));
+        assert!(!text.contains("example.com"));
+        assert!(text.contains("مرحبا"));
+        // The original is untouched.
+        assert_eq!(std::fs::read_to_string(&input).unwrap(), CLEAN_SRT);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn overwriting_the_original_keeps_a_backup() {
+        let dir = temp_dir();
+        let input = dir.join("episode.srt");
+        std::fs::write(&input, CLEAN_SRT).unwrap();
+
+        let response = clean_subtitle_at(&CleanSubtitleRequest {
+            input: input.to_string_lossy().into(),
+            output: Some(input.to_string_lossy().into()),
+            keep: vec![0],
+            apply: true,
+        })
+        .unwrap();
+
+        let backup = response.backup_path.expect("backup path");
+        assert_eq!(std::fs::read_to_string(backup).unwrap(), CLEAN_SRT);
+        // Cue 0 was kept, cue 2 removed.
+        let text = std::fs::read_to_string(&input).unwrap();
+        assert!(text.contains("ترجمة: فريق المثال"));
+        assert!(!text.contains("example.com"));
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
 }

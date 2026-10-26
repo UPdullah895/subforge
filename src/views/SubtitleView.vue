@@ -12,6 +12,7 @@ import { useAppStore } from "../stores/appStore";
 const { t } = useI18n();
 const toastStore = useToastStore();
 import TrackTable from "../components/TrackTable.vue";
+import CleanSubtitlePanel from "../components/CleanSubtitlePanel.vue";
 import ErrorDetails from "../components/ErrorDetails.vue";
 import {
   FolderOpen,
@@ -28,7 +29,7 @@ import {
 
 const subtitleStore = useSubtitleStore();
 const appStore = useAppStore();
-const activeTab = ref<"tracks" | "merge" | "convert">("tracks");
+const activeTab = ref<"tracks" | "merge" | "convert" | "clean">("tracks");
 const selectedFiles = ref<string[]>([]);
 const activeFile = ref<string | null>(null);
 const batchLoading = ref(false);
@@ -356,6 +357,18 @@ onMounted(() => {
       >
         {{ t("subtitle.tabs.convert") }}
       </button>
+      <button
+        :class="[
+          'px-4 py-2 text-sm font-medium rounded-t-lg transition-colors',
+          activeTab === 'clean'
+            ? 'bg-bg-secondary text-accent border-b-2 border-accent'
+            : 'text-text-secondary hover:text-text-primary',
+        ]"
+        data-testid="tab-clean"
+        @click="activeTab = 'clean'"
+      >
+        {{ t("subtitle.tabs.clean") }}
+      </button>
     </div>
 
     <!-- Content -->
@@ -664,6 +677,10 @@ onMounted(() => {
             <p class="text-xs text-success">{{ t("subtitle.operationCompleted", { path: convertOutputPath }) }}</p>
           </div>
         </div>
+      </template>
+
+      <template v-if="activeTab === 'clean'">
+        <CleanSubtitlePanel />
       </template>
     </div>
   </div>

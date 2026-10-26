@@ -141,6 +141,21 @@ export const commandSchemas: Record<string, z.ZodTypeAny> = {
 
   batch_extract_subtitles: z.array(z.string()),
 
+  clean_subtitle: z.looseObject({
+    removed: z.array(
+      z.looseObject({
+        index: z.number(),
+        start_ms: z.number(),
+        end_ms: z.number(),
+        text: z.string(),
+        rule: z.string(),
+      })
+    ),
+    kept: z.number(),
+    output_path: z.string().nullish(),
+    backup_path: z.string().nullish(),
+  }),
+
   get_opensubtitles_status: z.looseObject({
     configured: z.boolean(),
     username: z.string().nullish(),

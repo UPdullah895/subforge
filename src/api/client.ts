@@ -127,6 +127,7 @@ function cmdToEndpoint(cmd: string): string {
     convert_subtitle_format: "/api/subtitle/convert",
     shift_subtitle_timing: "/api/subtitle/shift",
     stretch_subtitle_timing: "/api/subtitle/stretch",
+    clean_subtitle: "/api/subtitle/clean",
     list_audio_tracks: "/api/audio/tracks",
     extract_audio_track: "/api/audio/extract",
     merge_audio_track: "/api/audio/merge",

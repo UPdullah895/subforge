@@ -81,7 +81,30 @@
     "tabs": {
       "tracks": "Tracks",
       "merge": "Merge",
-      "convert": "Convert & Retime"
+      "convert": "Convert & Retime",
+      "clean": "Clean"
+    },
+    "clean": {
+      "title": "Remove translator credits & ads",
+      "desc": "Finds translator credits, social handles, links and channel ads. Nothing is written until you review the list and press Apply. Works on SRT, ASS, SSA and VTT without touching styles, fonts or drawings.",
+      "pickFile": "Select a subtitle file",
+      "scan": "Scan",
+      "scanning": "Scanning...",
+      "nothing": "Nothing to remove — no credits, links or ad lines were found.",
+      "found": "{count} line(s) look like credits or ads",
+      "time": "Time",
+      "text": "Text",
+      "rule": "Matched",
+      "remove": "Remove",
+      "rule_link": "Link",
+      "rule_email": "Email",
+      "rule_handle": "Handle",
+      "rule_credit": "Credit/ad",
+      "apply": "Apply cleanup",
+      "applying": "Applying...",
+      "overwrite": "Overwrite the original file (a .bak copy is kept)",
+      "done": "Cleaned file written to {path}",
+      "backup": "Backup saved as {path}"
     },
     "filesCount": "Files ({count})",
     "extractAllSubtitles": "Extract All Subtitles",

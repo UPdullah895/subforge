@@ -83,6 +83,7 @@ Developers can print the same dependency report in a terminal with `cargo run --
 - **Subtitle merge** — mux external SRT/ASS/VTT files into MKV containers.
 - **Audio extraction/merge** — extract, transcode (AAC, MP3, OPUS, FLAC), and remux audio via FFmpeg.
 - **Subtitle format conversion & retiming** — convert between SRT/ASS/SSA/VTT, shift and stretch timestamps (built-in, no external tools).
+- **Credit & ad cleanup** — finds translator credits, social handles, links and channel ads in SRT/ASS/SSA/VTT, shows exactly which lines would go, and removes them only after you confirm (ASS styles, fonts and drawings are untouched).
 - **Dependency check** — on startup, checks for MKVToolNix and FFmpeg (including ffprobe), and offers to install anything that is missing.
 
 ### Batch operations

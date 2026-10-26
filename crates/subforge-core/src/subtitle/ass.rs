@@ -464,6 +464,25 @@ fn is_styles_section(section: &str) -> bool {
 }
 
 impl AssLayout {
+    /// Keep only the first `cues` `Dialogue`/`Comment` slots. Cues are written back into the
+    /// remaining slots in order, so this removes the event lines of deleted cues instead of
+    /// letting later cues shift into them.
+    pub(crate) fn retain_event_slots(&mut self, cues: usize) {
+        let mut kept = 0;
+        self.lines.retain(|line| match line {
+            Line::Event => {
+                kept += 1;
+                kept <= cues
+            }
+            Line::Raw(_) => true,
+        });
+        self.events_end = self
+            .lines
+            .iter()
+            .rposition(|line| matches!(line, Line::Event))
+            .map(|i| i + 1);
+    }
+
     /// The same file in the other dialect: ScriptType, the styles section (header, Format line
     /// and Style lines) and the event field names are translated; every other line (including
     /// `[Fonts]`, `[Graphics]` and unknown sections) is kept as is.

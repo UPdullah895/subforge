@@ -1,6 +1,7 @@
 //! Subtitle model and formats: SRT, ASS/SSA and WebVTT, plus conversion, shift and stretch.
 
 mod ass;
+pub mod clean;
 pub mod encoding;
 pub(crate) mod markup;
 mod srt;
@@ -395,6 +396,26 @@ impl SubtitleDoc {
             cue.start_ms = cue.start_ms.saturating_add(ms).max(0);
             cue.end_ms = cue.end_ms.saturating_add(ms).max(cue.start_ms);
         }
+    }
+
+    /// Remove the cues marked `true` in `remove` (indexed like [`Self::cues`]) and return how
+    /// many went. Keeps every format-specific structure (ASS styles, `[Fonts]`, unknowns); only
+    /// the event lines for removed cues disappear.
+    pub fn remove_cues(&mut self, remove: &[bool]) -> usize {
+        let before = self.cues.len();
+        let mut index = 0;
+        self.cues.retain(|_| {
+            let drop = remove.get(index).copied().unwrap_or(false);
+            index += 1;
+            !drop
+        });
+        let removed = before - self.cues.len();
+        if removed > 0 {
+            if let FormatExtras::Ass(layout) = &mut self.extras {
+                layout.retain_event_slots(self.cues.len());
+            }
+        }
+        removed
     }
 
     /// Multiply every time by `from_fps / to_fps` (rounded to the millisecond), e.g. to retime
