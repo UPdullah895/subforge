@@ -4,6 +4,10 @@ import { useI18n } from "vue-i18n";
 import { open, save } from "../utils/dialog";
 import { dirOf, fileStem, joinPath } from "../utils/subtitleNaming";
 import { useAudioStore } from "../stores/audioStore";
+import DropOverlay from "../components/DropOverlay.vue";
+import { useFileDrop } from "../composables/useFileDrop";
+import { splitFilesAndFolders } from "../utils/paths";
+import { useToastStore } from "../stores/toastStore";
 import { useAppStore } from "../stores/appStore";
 
 const { t } = useI18n();
@@ -24,6 +28,7 @@ import {
 } from "lucide-vue-next";
 
 const audioStore = useAudioStore();
+const toastStore = useToastStore();
 const appStore = useAppStore();
 const selectedFiles = ref<string[]>([]);
 const activeFile = ref<string | null>(null);
@@ -36,6 +41,23 @@ const activeFileName = computed(() => {
   const parts = activeFile.value.split(/[/\\]/);
   return parts[parts.length - 1];
 });
+
+const { dragging: dropActive } = useFileDrop({
+  extensions: ["mkv", "mp4", "avi", "mov", "wmv", "flv", "webm"],
+  onDrop: onFilesDropped,
+});
+
+async function onFilesDropped(dropped: string[]) {
+  const { files, folders } = await splitFilesAndFolders(dropped);
+  if (folders.length > 0) toastStore.info(t("drop.folderNotSupported"));
+  for (const path of files) {
+    if (!selectedFiles.value.includes(path)) selectedFiles.value.push(path);
+  }
+  if (!activeFile.value && selectedFiles.value.length > 0) {
+    activeFile.value = selectedFiles.value[0];
+    await audioStore.loadTracks(activeFile.value);
+  }
+}
 
 async function pickFiles() {
   const selected = await open({
@@ -166,7 +188,8 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="flex flex-col h-full">
+  <div class="relative flex flex-col h-full">
+    <DropOverlay :show="dropActive" :label="t('drop.audioHint')" />
     <!-- Header -->
     <div class="flex items-center justify-between px-6 py-4 border-b border-border">
       <div class="flex items-center gap-2">

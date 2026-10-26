@@ -25,6 +25,7 @@ export interface AppConfig {
   openai_api_key?: string;
   openai_model?: string;
   google_translate_api_key?: string;
+  subsource_api_key?: string;
   ollama_base_url?: string;
   libretranslate_base_url?: string;
   search_online_before_translate?: boolean;
@@ -61,6 +62,8 @@ export const useAppStore = defineStore("app", () => {
   const toolStatus = ref<ToolStatus[]>([]);
   const config = ref<AppConfig | null>(null);
   const error = ref<string | null>(null);
+  /** Last settings-save failure; rendered in Settings so it is never silent. */
+  const saveError = ref<string | null>(null);
 
   async function loadConfig() {
     try {
@@ -74,13 +77,17 @@ export const useAppStore = defineStore("app", () => {
     }
   }
 
-  async function saveConfig() {
+  async function saveConfig(): Promise<boolean> {
+    if (!config.value) return false;
     try {
-      if (config.value) {
-        await apiInvoke("save_config", { config: config.value });
-      }
+      await apiInvoke("save_config", { config: config.value });
+      saveError.value = null;
+      return true;
     } catch (e) {
-      error.value = `Failed to save settings: ${e instanceof Error ? e.message : String(e)}`;
+      const message = e instanceof Error ? e.message : String(e);
+      saveError.value = message;
+      error.value = `Failed to save settings: ${message}`;
+      return false;
     }
   }
 
@@ -128,6 +135,7 @@ export const useAppStore = defineStore("app", () => {
     toolStatus,
     config,
     error,
+    saveError,
     loadConfig,
     saveConfig,
     discoverTools,

@@ -349,7 +349,15 @@ async function startPipeline() {
           if (result.status === "found") {
             job.stage = "done";
             job.progress = 100;
-            job.message = t("autoTranslate.foundOnline", { source: result.source });
+            // Flag a release that probably does not match this file instead of
+            // silently using it.
+            const timing = result.sync_verdict && result.sync_verdict !== "good";
+            job.message = timing
+              ? t("autoTranslate.foundOnlineTiming", {
+                  source: result.source,
+                  verdict: t(`subtitle.sync.verdict_${result.sync_verdict}`),
+                })
+              : t("autoTranslate.foundOnline", { source: result.source });
             batchStore.upsertExternalSub(job.path, job.lang, "ok");
             continue;
           }

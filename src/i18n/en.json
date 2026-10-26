@@ -81,7 +81,54 @@
     "tabs": {
       "tracks": "Tracks",
       "merge": "Merge",
-      "convert": "Convert & Retime"
+      "convert": "Convert & Retime",
+      "clean": "Clean",
+      "sync": "Sync"
+    },
+    "sync": {
+      "title": "Check sync against the video",
+      "desc": "Compares the subtitle's span with the real video duration, and can listen to three short speech windows to catch a constant delay or the wrong episode.",
+      "videoFile": "Video file",
+      "pickVideo": "Select the video file",
+      "check": "Check timing",
+      "checking": "Checking...",
+      "deep": "Deep check with speech",
+      "listening": "Listening...",
+      "deepHint": "Transcribes three short windows with a speech model downloaded on the Speech to Text page, then matches the words to nearby cues. Takes about a minute and needs the video's audio.",
+      "verdict_good": "Looks in sync",
+      "verdict_offset": "Off by a constant delay",
+      "verdict_framerate": "Frame-rate mismatch",
+      "verdict_truncated": "Runs past the end of the video",
+      "verdict_uncertain": "Not enough evidence",
+      "range": "Cues span {start} – {end}; the video is {duration}",
+      "deepResult": "Checked with {model}: {count} line(s) matched, median offset {offset}.",
+      "fixSummary": "Suggested fix: {fps}, then shift {shift}.",
+      "overwrite": "Overwrite the original file (a .bak copy is kept)",
+      "apply": "Apply fix",
+      "applying": "Applying...",
+      "done": "Fixed subtitle written to {path}"
+    },
+    "clean": {
+      "title": "Remove translator credits & ads",
+      "desc": "Finds translator credits, social handles, links and channel ads. Nothing is written until you review the list and press Apply. Works on SRT, ASS, SSA and VTT without touching styles, fonts or drawings.",
+      "pickFile": "Select a subtitle file",
+      "scan": "Scan",
+      "scanning": "Scanning...",
+      "nothing": "Nothing to remove — no credits, links or ad lines were found.",
+      "found": "{count} line(s) look like credits or ads",
+      "time": "Time",
+      "text": "Text",
+      "rule": "Matched",
+      "remove": "Remove",
+      "rule_link": "Link",
+      "rule_email": "Email",
+      "rule_handle": "Handle",
+      "rule_credit": "Credit/ad",
+      "apply": "Apply cleanup",
+      "applying": "Applying...",
+      "overwrite": "Overwrite the original file (a .bak copy is kept)",
+      "done": "Cleaned file written to {path}",
+      "backup": "Backup saved as {path}"
     },
     "filesCount": "Files ({count})",
     "extractAllSubtitles": "Extract All Subtitles",
@@ -224,6 +271,8 @@
       "cancelled": "Cancelled"
     },
     "foundOnline": "Found on {source}"
+,
+    "foundOnlineTiming": "Found on {source} — timing may be off ({verdict})"
   },
   "transcribe": {
     "title": "Speech to Text",
@@ -332,7 +381,9 @@
     "tooltip": "Configure defaults, tool paths, and appearance for SubForge.",
     "reset": "Reset",
     "save": "Save",
+    "saveFailed": "Could not save settings: {error}",
     "saved": "Saved!",
+    "autosaved": "Saved automatically",
     "appearance": "Appearance",
     "theme": "Theme",
     "themeDesc": "Toggle between dark and light mode",
@@ -370,6 +421,12 @@
     "subsourceStatus": "Subsource",
     "subsourceReachable": "Reachable",
     "subsourceUnreachable": "Unreachable",
+    "subsourceNotConfigured": "Not configured",
+    "subsourceInvalidKey": "Invalid key",
+    "subsourceRateLimited": "Reachable (rate limited)",
+    "subsourceApiKey": "Subsource API key",
+    "subsourceKeyPlaceholder": "Optional — your own Subsource key",
+    "subsourceKeyHelp": "Only needed for Subsource search. Without a key, SubForge uses OpenSubtitles (when configured) and then translates.",
     "openSubtitlesTitle": "OpenSubtitles.com",
     "openSubtitlesHelp": "SubForge doesn't ship a shared OpenSubtitles key — register your own free account and API key to enable file-hash matching, the most accurate way to find a subtitle for your exact release.",
     "openSubtitlesRegisterLink": "Create an OpenSubtitles.com account",
@@ -377,6 +434,9 @@
     "openSubtitlesApiKey": "API Key",
     "openSubtitlesUsername": "Username",
     "openSubtitlesPassword": "Password",
+    "openSubtitlesPasswordSaved": "Saved — type a new password to replace it",
+    "openSubtitlesMissing": "Enter the OpenSubtitles API key and username before saving.",
+    "openSubtitlesPasswordMissing": "Enter the OpenSubtitles password before saving.",
     "openSubtitlesSave": "Save",
     "openSubtitlesClear": "Clear",
     "openSubtitlesConfigured": "Configured",
@@ -423,6 +483,15 @@
     "openN": "Open {n} files",
     "selectedCount": "{n} selected",
     "emptyFolderMode": "No subfolders here. You can still use this folder."
+  },
+  "drop": {
+    "subtitleHint": "Drop video files to open them, or a subtitle to work on it",
+    "audioHint": "Drop a video file to list its audio tracks",
+    "transcribeHint": "Drop audio or video files to transcribe them",
+    "batchHint": "Drop a folder to scan it for video files"
+,
+    "folderNotSupported": "That is a folder. Drop a video file here, or use the Batch page to scan a folder.",
+    "batchNeedsFolder": "Drop a folder here to scan it. A single video file can be opened from the Subtitles page."
   },
   "toast": {
     "jobDone": "Finished",

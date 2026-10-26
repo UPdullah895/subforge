@@ -5,7 +5,20 @@ All notable changes to this project are documented here. Format based on
 
 ## [Unreleased]
 
+### Added
+- **Sync** tab: checks a subtitle against its video. The instant check compares the cue span with the real duration and detects a 25/23.976 (or 24/23.976, 25/24, 30/29.97) frame-rate mismatch, with a one-click fix; it also reports bad timings, overlaps and a subtitle that runs past the end of the video. The optional deep check transcribes three short speech windows with the built-in engine, matches the words to nearby cues and reports a constant delay, growing drift or a likely wrong episode, with the shift/frame-rate fix to apply.
+- Online subtitle search now returns a timing verdict, so the auto-translate wizard warns when a found subtitle does not fit the video, and an existing same-named subtitle is no longer overwritten (the download is written as `{name}.{lang}.found.srt`).
+- **Drag and drop** in the desktop app: drop videos on the Subtitle, Audio or Transcribe pages, a folder on Batch, or a subtitle file on the Convert/Clean tabs. A dropped folder is recognised as a folder (it has no extension) and explained instead of being passed to mkvmerge as a video; Batch no longer scans a whole folder when a single file is dropped.
+- **Clean** tab for subtitles: removes translator credits, social-media handles, links and channel advertisements from SRT, ASS, SSA and VTT. Every match is previewed first with the reason it matched, any line can be kept, and overwriting the original keeps a `.bak` copy. ASS styles, `[Fonts]`, `[Graphics]` and drawings are left untouched.
+- Subsource search can use your own API key from **Settings → Subtitle Sources**; a key set there takes precedence over the one (if any) built into the app.
+
 ### Fixed
+- OpenSubtitles settings now show the saved API key and username when you return to the page (the password stays write-only), the key is masked with a reveal button, and clicking **Save** on an empty form no longer wipes a working configuration.
+- TMDB and Subsource API keys save automatically and **Test** checks the value currently in the form, so neither has to be saved first. Save failures are shown instead of being silently dropped.
+- Subsource reports **Not configured** when there is no key, instead of the misleading **Unreachable**; an invalid key and rate limiting get their own messages.
+
+### Security
+- API keys (TMDB, DeepL, OpenAI, Google Translate, Subsource) are stored in the OS keyring instead of `config.json`, and existing keys are migrated on first launch (a key stays in the file if the keyring is unavailable, so nothing is lost). `config.json` is now owner-only (`0600`). Server mode has no keychain and keeps its keys in `config.json`; running both modes on one machine means entering them again in the other mode.
 - The "Required Programs" dialog no longer appears on installs that bundle FFmpeg and MKVToolNix. It now uses the same lookup as every tool call (custom path, then bundled, then system), shows where each tool was found, and appears when a custom tool path in Settings is broken.
 - Only one transcription runs at a time; others wait with a "Queued" status and can be cancelled while waiting (several at once could run out of memory and crash the app).
 - Translating an ASS/SSA track keeps it ASS/SSA (`{video}.{lang}.ass`) with its styles, instead of writing ASS text into a `.srt` file.

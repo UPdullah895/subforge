@@ -2,12 +2,14 @@ pub mod commands;
 pub mod config;
 pub mod credentials;
 pub mod jobs;
+pub mod secrets;
 pub mod self_test;
 pub mod tools;
 
 use commands::{
     audio as audio_cmds, batch as batch_cmds, deps as deps_cmds, jobs as jobs_cmds,
-    providers as providers_cmds, rename as rename_cmds, subtitle as subtitle_cmds,
+    paths as paths_cmds, providers as providers_cmds, rename as rename_cmds,
+    subtitle as subtitle_cmds,
     subtitle_sources as subtitle_sources_cmds, transcribe as transcribe_cmds,
     translate as translate_cmds,
 };
@@ -82,6 +84,9 @@ pub fn run() {
             subtitle_cmds::convert_subtitle_format,
             subtitle_cmds::shift_subtitle_timing,
             subtitle_cmds::stretch_subtitle_timing,
+            subtitle_cmds::clean_subtitle,
+            subtitle_cmds::check_subtitle_sync,
+            subtitle_cmds::fix_subtitle_sync,
             subtitle_cmds::set_track_metadata,
             subtitle_cmds::get_tool_registry,
             subtitle_cmds::get_tool_status,
@@ -116,6 +121,7 @@ pub fn run() {
             subtitle_sources_cmds::clear_opensubtitles_credentials,
             subtitle_sources_cmds::get_opensubtitles_status,
             subtitle_sources_cmds::check_subsource_status,
+            paths_cmds::path_is_dir,
             jobs_cmds::cancel_job,
             jobs_cmds::pause_job,
             jobs_cmds::resume_job,

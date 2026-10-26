@@ -1,3 +1,4 @@
+use crate::secrets::{self, SecretId};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use subforge_deps::{find_executable, SearchEnv};
@@ -52,6 +53,10 @@ pub struct AppConfig {
     pub openai_api_key: Option<String>,
     pub openai_model: Option<String>,
     pub google_translate_api_key: Option<String>,
+    /// Optional user-supplied Subsource key. Falls back to the key compiled in
+    /// at build time (if any).
+    #[serde(default)]
+    pub subsource_api_key: Option<String>,
     pub ollama_base_url: Option<String>,
     pub libretranslate_base_url: Option<String>,
     #[serde(default = "default_search_online_before_translate")]
@@ -84,6 +89,7 @@ impl Default for AppConfig {
             openai_api_key: None,
             openai_model: None,
             google_translate_api_key: None,
+            subsource_api_key: None,
             ollama_base_url: None,
             libretranslate_base_url: None,
             search_online_before_translate: default_search_online_before_translate(),
@@ -105,8 +111,8 @@ impl AppConfig {
         Ok(Self::config_dir()?.join("config.json"))
     }
 
-    /// The saved config, or `None` when it is missing or unreadable.
-    pub fn try_load() -> Option<Self> {
+    /// The config exactly as stored on disk, without touching the keyring.
+    fn read_raw() -> Option<Self> {
         match Self::config_path() {
             Ok(path) => {
                 let contents = std::fs::read_to_string(&path).ok()?;
@@ -119,15 +125,132 @@ impl AppConfig {
         }
     }
 
+    /// The saved config, or `None` when it is missing or unreadable. API keys
+    /// are filled in from the OS keyring.
+    pub fn try_load() -> Option<Self> {
+        let mut cfg = Self::read_raw()?;
+        cfg.apply_secrets();
+        Some(cfg)
+    }
+
     pub fn load() -> Self {
         Self::try_load().unwrap_or_default()
     }
 
+    /// Every API key field, paired with the keyring entry that owns it.
+    fn secret_slots(&mut self) -> [(SecretId, &mut Option<String>); 5] {
+        [
+            (SecretId::TmdbApiKey, &mut self.tmdb_api_key),
+            (SecretId::DeeplApiKey, &mut self.deepl_api_key),
+            (SecretId::OpenAiApiKey, &mut self.openai_api_key),
+            (
+                SecretId::GoogleTranslateApiKey,
+                &mut self.google_translate_api_key,
+            ),
+            (SecretId::SubsourceApiKey, &mut self.subsource_api_key),
+        ]
+    }
+
+    /// True when the file itself still contains key material (pre-migration).
+    fn has_stored_secrets(&self) -> bool {
+        [
+            &self.tmdb_api_key,
+            &self.deepl_api_key,
+            &self.openai_api_key,
+            &self.google_translate_api_key,
+            &self.subsource_api_key,
+        ]
+        .iter()
+        .any(|slot| slot.as_deref().is_some_and(|v| !v.is_empty()))
+    }
+
+    /// Fill key fields from the keyring. Values found on disk are kept when the
+    /// keyring has nothing yet, so an upgrade never loses a key.
+    fn apply_secrets(&mut self) {
+        for (id, slot) in self.secret_slots() {
+            if let Some(value) = secrets::get(id) {
+                *slot = Some(value);
+            }
+        }
+    }
+
+    /// Move the keys into the keyring and clear them from `self`. Returns
+    /// whether anything changed. A failed write leaves the value in place.
+    fn store_secrets(&mut self) -> bool {
+        self.store_secrets_with(secrets::get, secrets::set)
+    }
+
+    /// Testable core of [`Self::store_secrets`].
+    fn store_secrets_with(
+        &mut self,
+        mut get: impl FnMut(SecretId) -> Option<String>,
+        mut set: impl FnMut(SecretId, &str) -> Result<(), String>,
+    ) -> bool {
+        let mut changed = false;
+        for (id, slot) in self.secret_slots() {
+            // `None` means "no opinion" (the keyring may well have a value);
+            // only an empty string is an explicit "remove this key", which is
+            // what the settings form sends after the user clears the field.
+            let Some(value) = slot.clone() else {
+                continue;
+            };
+            if value.is_empty() {
+                match set(id, "") {
+                    Ok(()) => {
+                        *slot = None;
+                        changed = true;
+                    }
+                    Err(e) => eprintln!(
+                        "SubForge: could not remove {} from the OS keyring ({e})",
+                        id.account()
+                    ),
+                }
+                continue;
+            }
+            if get(id).as_deref() == Some(value.as_str()) {
+                // Already in the keyring: just keep it out of the file.
+                *slot = None;
+                changed = true;
+                continue;
+            }
+            match set(id, &value) {
+                Ok(()) => {
+                    *slot = None;
+                    changed = true;
+                }
+                Err(e) => eprintln!(
+                    "SubForge: could not save {} to the OS keyring ({e}); keeping it in config.json",
+                    id.account()
+                ),
+            }
+        }
+        changed
+    }
+
     pub fn save(&self) -> anyhow::Result<()> {
+        // Keys live in the keyring, never in the file (unless the keyring is
+        // unavailable, in which case `store_secrets` leaves them alone).
+        let mut stored = self.clone();
+        stored.store_secrets();
         let path = Self::config_path()?;
-        let contents = serde_json::to_string_pretty(self)?;
-        std::fs::write(path, contents)?;
+        let contents = serde_json::to_string_pretty(&stored)?;
+        std::fs::write(&path, contents)?;
+        restrict_permissions(&path);
         Ok(())
+    }
+}
+
+/// The config file only ever contains paths and preferences now, but make it
+/// owner-only anyway: it can still hold a key when the keyring is unavailable.
+fn restrict_permissions(path: &Path) {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600));
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = path;
     }
 }
 
@@ -168,14 +291,26 @@ fn same_file(a: &Path, b: &Path) -> bool {
     }
 }
 
-/// Startup hook: migrates the saved config in place. A missing or corrupt
-/// config is left alone (never overwritten with defaults).
+/// Startup hook: migrates the saved config in place (tool paths, then API keys
+/// into the OS keyring). A missing or corrupt config is left alone (never
+/// overwritten with defaults).
 pub fn migrate_saved_config() {
-    if let Some(mut cfg) = AppConfig::try_load() {
-        if migrate(&mut cfg, &SearchEnv::from_process()) {
-            if let Err(e) = cfg.save() {
-                eprintln!("Failed to save migrated config: {e}");
-            }
+    let Some(mut cfg) = AppConfig::read_raw() else {
+        return;
+    };
+    // `read_raw` skips keyring hydration, so this sees the plaintext file as it
+    // is on disk.
+    let mut changed = migrate(&mut cfg, &SearchEnv::from_process());
+
+    // Older versions kept API keys in the file. Move them into the keyring;
+    // `store_secrets` only clears a field after the keyring write succeeded.
+    let had_plaintext = cfg.has_stored_secrets();
+    cfg.apply_secrets();
+    changed |= cfg.store_secrets();
+
+    if changed || had_plaintext {
+        if let Err(e) = cfg.save() {
+            eprintln!("Failed to save migrated config: {e}");
         }
     }
 }
@@ -272,5 +407,121 @@ mod tests {
         let cfg: AppConfig = serde_json::from_str(r#"{"theme":"dark"}"#).unwrap();
         assert_eq!(cfg.config_version, 0);
         assert_eq!(cfg.mkvpropedit_path, None);
+        assert_eq!(cfg.subsource_api_key, None);
     }
+
+    #[test]
+    fn secrets_move_out_of_the_file_once_the_keyring_accepts_them() {
+        let mut cfg = AppConfig {
+            tmdb_api_key: Some("tmdb-secret".into()),
+            subsource_api_key: Some("sub-secret".into()),
+            // An empty string is not a secret (see the assertion below).
+            openai_api_key: Some(String::new()),
+            ..AppConfig::default()
+        };
+
+        let stored = std::cell::RefCell::new(std::collections::HashMap::new());
+        let changed = cfg.store_secrets_with(
+            |id| stored.borrow().get(&id).cloned(),
+            |id, value| {
+                if value.is_empty() {
+                    stored.borrow_mut().remove(&id);
+                } else {
+                    stored.borrow_mut().insert(id, value.to_string());
+                }
+                Ok(())
+            },
+        );
+
+        assert!(changed);
+        let stored = stored.into_inner();
+        assert_eq!(stored.get(&SecretId::TmdbApiKey).map(String::as_str), Some("tmdb-secret"));
+        assert_eq!(stored.get(&SecretId::SubsourceApiKey).map(String::as_str), Some("sub-secret"));
+        assert_eq!(cfg.tmdb_api_key, None);
+        assert_eq!(cfg.subsource_api_key, None);
+        // An empty string is not a secret: it is dropped, not stored.
+        assert_eq!(cfg.openai_api_key, None);
+        assert!(!stored.contains_key(&SecretId::OpenAiApiKey));
+    }
+
+    #[test]
+    fn a_key_that_is_already_in_the_keyring_is_not_rewritten() {
+        let mut cfg = AppConfig {
+            deepl_api_key: Some("same".into()),
+            ..AppConfig::default()
+        };
+        let mut writes = 0;
+        cfg.store_secrets_with(
+            |_| Some("same".into()),
+            |_, _| {
+                writes += 1;
+                Ok(())
+            },
+        );
+        assert_eq!(writes, 0);
+        assert_eq!(cfg.deepl_api_key, None);
+    }
+
+    #[test]
+    fn a_keyring_failure_keeps_the_key_in_the_file() {
+        let mut cfg = AppConfig {
+            google_translate_api_key: Some("keep-me".into()),
+            ..AppConfig::default()
+        };
+        cfg.store_secrets_with(
+            |_| None,
+            |_, _| Err("no secret service".into()),
+        );
+        // Never lose the only copy of a key.
+        assert_eq!(cfg.google_translate_api_key.as_deref(), Some("keep-me"));
+    }
+
+    #[test]
+    fn has_stored_secrets_ignores_empty_strings() {
+        let mut cfg = AppConfig::default();
+        assert!(!cfg.has_stored_secrets());
+        cfg.openai_api_key = Some(String::new());
+        assert!(!cfg.has_stored_secrets());
+        cfg.openai_api_key = Some("x".into());
+        assert!(cfg.has_stored_secrets());
+    }
+    #[test]
+    fn clearing_a_key_removes_it_from_the_keyring() {
+        let mut cfg = AppConfig {
+            tmdb_api_key: Some(String::new()),
+            ..AppConfig::default()
+        };
+        let stored = std::cell::RefCell::new(std::collections::HashMap::from([(
+            SecretId::TmdbApiKey,
+            "old".to_string(),
+        )]));
+        cfg.store_secrets_with(
+            |id| stored.borrow().get(&id).cloned(),
+            |id, value| {
+                if value.is_empty() {
+                    stored.borrow_mut().remove(&id);
+                } else {
+                    stored.borrow_mut().insert(id, value.to_string());
+                }
+                Ok(())
+            },
+        );
+        assert!(!stored.borrow().contains_key(&SecretId::TmdbApiKey));
+        assert_eq!(cfg.tmdb_api_key, None);
+    }
+
+    #[test]
+    fn none_means_no_opinion_and_leaves_the_keyring_alone() {
+        let mut cfg = AppConfig::default();
+        let mut writes = 0;
+        cfg.store_secrets_with(
+            |_| Some("stored".into()),
+            |_, _| {
+                writes += 1;
+                Ok(())
+            },
+        );
+        assert_eq!(writes, 0);
+    }
+
 }

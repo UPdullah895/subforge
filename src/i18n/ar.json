@@ -81,7 +81,54 @@
     "tabs": {
       "tracks": "المسارات",
       "merge": "دمج",
-      "convert": "تحويل وتوقيت"
+      "convert": "تحويل وتوقيت",
+      "clean": "تنظيف",
+      "sync": "المزامنة"
+    },
+    "sync": {
+      "title": "التحقق من التزامن مع الفيديو",
+      "desc": "يقارن مدى الترجمة بمدة الفيديو الفعلية، ويمكنه الاستماع إلى ثلاث مقاطع صوتية قصيرة لاكتشاف تأخير ثابت أو حلقة خاطئة.",
+      "videoFile": "ملف الفيديو",
+      "pickVideo": "اختر ملف الفيديو",
+      "check": "فحص التوقيت",
+      "checking": "جارٍ الفحص...",
+      "deep": "فحص عميق بالصوت",
+      "listening": "جارٍ الاستماع...",
+      "deepHint": "ينسخ ثلاث مقاطع قصيرة باستخدام نموذج صوتي نزّلته من صفحة النسخ النصي، ثم يطابق الكلمات مع الترجمة القريبة. يستغرق نحو دقيقة ويحتاج إلى صوت الفيديو.",
+      "verdict_good": "يبدو متزامنًا",
+      "verdict_offset": "متأخر بمقدار ثابت",
+      "verdict_framerate": "اختلاف في معدل الإطارات",
+      "verdict_truncated": "يتجاوز نهاية الفيديو",
+      "verdict_uncertain": "الأدلة غير كافية",
+      "range": "تمتد الترجمة من {start} إلى {end}؛ ومدة الفيديو {duration}",
+      "deepResult": "تم الفحص بنموذج {model}: تطابقت {count} سطرًا، ووسيط الإزاحة {offset}.",
+      "fixSummary": "الإصلاح المقترح: {fps}، ثم إزاحة {shift}.",
+      "overwrite": "استبدال الملف الأصلي (مع الاحتفاظ بنسخة .bak)",
+      "apply": "تطبيق الإصلاح",
+      "applying": "جارٍ التطبيق...",
+      "done": "تمت كتابة الترجمة المصححة إلى {path}"
+    },
+    "clean": {
+      "title": "إزالة حقوق المترجمين والإعلانات",
+      "desc": "يبحث عن أسماء المترجمين وحسابات التواصل والروابط وإعلانات القنوات. لا يُكتب أي شيء قبل مراجعة القائمة والضغط على تطبيق. يعمل مع SRT وASS وSSA وVTT دون المساس بالأنماط أو الخطوط أو الرسومات.",
+      "pickFile": "اختر ملف ترجمة",
+      "scan": "فحص",
+      "scanning": "جارٍ الفحص...",
+      "nothing": "لا يوجد ما يُحذف — لم يتم العثور على حقوق أو روابط أو إعلانات.",
+      "found": "{count} سطرًا يبدو كحقوق ترجمة أو إعلان",
+      "time": "الوقت",
+      "text": "النص",
+      "rule": "سبب المطابقة",
+      "remove": "حذف",
+      "rule_link": "رابط",
+      "rule_email": "بريد إلكتروني",
+      "rule_handle": "حساب تواصل",
+      "rule_credit": "حقوق/إعلان",
+      "apply": "تطبيق التنظيف",
+      "applying": "جارٍ التطبيق...",
+      "overwrite": "استبدال الملف الأصلي (مع الاحتفاظ بنسخة .bak)",
+      "done": "تمت كتابة الملف المنظّف إلى {path}",
+      "backup": "تم حفظ النسخة الاحتياطية باسم {path}"
     },
     "filesCount": "الملفات ({count})",
     "extractAllSubtitles": "استخراج جميع الترجمات",
@@ -224,6 +271,8 @@
       "cancelled": "ملغاة"
     },
     "foundOnline": "تم العثور عليها في {source}"
+,
+    "foundOnlineTiming": "تم العثور عليها في {source} — قد يكون التوقيت غير متطابق ({verdict})"
   },
   "transcribe": {
     "title": "تحويل الكلام إلى نص",
@@ -332,7 +381,9 @@
     "tooltip": "قم بتكوين الإعدادات الافتراضية ومسارات الأدوات والمظهر لـ SubForge.",
     "reset": "إعادة تعيين",
     "save": "حفظ",
+    "saveFailed": "تعذّر حفظ الإعدادات: {error}",
     "saved": "تم الحفظ!",
+    "autosaved": "تم الحفظ تلقائيًا",
     "appearance": "المظهر",
     "theme": "المظهر",
     "themeDesc": "التبديل بين الوضع الداكن والفاتح",
@@ -370,6 +421,12 @@
     "subsourceStatus": "Subsource",
     "subsourceReachable": "متاح",
     "subsourceUnreachable": "غير متاح",
+    "subsourceNotConfigured": "غير مُعد",
+    "subsourceInvalidKey": "مفتاح غير صالح",
+    "subsourceRateLimited": "متاح (مع حد للطلبات)",
+    "subsourceApiKey": "مفتاح Subsource",
+    "subsourceKeyPlaceholder": "اختياري — مفتاح Subsource الخاص بك",
+    "subsourceKeyHelp": "مطلوب فقط للبحث في Subsource. بدون مفتاح، يستخدم SubForge OpenSubtitles (إن كان مُعدًا) ثم يترجم.",
     "openSubtitlesTitle": "OpenSubtitles.com",
     "openSubtitlesHelp": "لا يوفر SubForge مفتاح OpenSubtitles مشتركًا — أنشئ حسابك ومفتاح API الخاص بك مجانًا لتفعيل المطابقة عبر بصمة الملف، وهي أدق طريقة لإيجاد ترجمة مطابقة لنسختك بالضبط.",
     "openSubtitlesRegisterLink": "إنشاء حساب على OpenSubtitles.com",
@@ -377,6 +434,9 @@
     "openSubtitlesApiKey": "مفتاح API",
     "openSubtitlesUsername": "اسم المستخدم",
     "openSubtitlesPassword": "كلمة المرور",
+    "openSubtitlesPasswordSaved": "محفوظة — اكتب كلمة مرور جديدة لاستبدالها",
+    "openSubtitlesMissing": "أدخل مفتاح OpenSubtitles واسم المستخدم قبل الحفظ.",
+    "openSubtitlesPasswordMissing": "أدخل كلمة مرور OpenSubtitles قبل الحفظ.",
     "openSubtitlesSave": "حفظ",
     "openSubtitlesClear": "مسح",
     "openSubtitlesConfigured": "تم الإعداد",
@@ -423,6 +483,15 @@
     "openN": "فتح {n} ملفات",
     "selectedCount": "تم تحديد {n}",
     "emptyFolderMode": "لا توجد مجلدات فرعية هنا. يمكنك استخدام هذا المجلد مع ذلك."
+  },
+  "drop": {
+    "subtitleHint": "أفلت ملفات فيديو لفتحها، أو ملف ترجمة للعمل عليه",
+    "audioHint": "أفلت ملف فيديو لعرض مساراته الصوتية",
+    "transcribeHint": "أفلت ملفات صوت أو فيديو لنسخها نصيًا",
+    "batchHint": "أفلت مجلدًا لفحصه بحثًا عن ملفات فيديو"
+,
+    "folderNotSupported": "هذا مجلد. أفلت ملف فيديو هنا، أو استخدم صفحة الدفعة لفحص مجلد.",
+    "batchNeedsFolder": "أفلت مجلدًا هنا لفحصه. يمكن فتح ملف فيديو واحد من صفحة الترجمة."
   },
   "toast": {
     "jobDone": "اكتمل",

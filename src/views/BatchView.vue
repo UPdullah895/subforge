@@ -3,9 +3,14 @@ import { computed, onMounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import { open } from "../utils/dialog";
 import { useBatchStore } from "../stores/batchStore";
+import DropOverlay from "../components/DropOverlay.vue";
+import { useFileDrop } from "../composables/useFileDrop";
 import { useAppStore } from "../stores/appStore";
+import { splitFilesAndFolders } from "../utils/paths";
+import { useToastStore } from "../stores/toastStore";
 
 const { t } = useI18n();
+const toastStore = useToastStore();
 import BatchFileList from "../components/BatchFileList.vue";
 import JobMonitor from "../components/JobMonitor.vue";
 import RenameModal from "../components/RenameModal.vue";
@@ -54,6 +59,19 @@ function openTranslateModal(files: string[]) {
 function openBatchTranslate() {
   openTranslateModal(Array.from(batchStore.selectedFiles));
 }
+
+const { dragging: dropActive } = useFileDrop({
+  onDrop: async (paths) => {
+    // Batch is per-directory. Dropping a single file used to scan the whole
+    // folder it lived in, which was surprising; ask for a folder instead.
+    const { folders } = await splitFilesAndFolders(paths);
+    if (folders.length === 0) {
+      toastStore.info(t("drop.batchNeedsFolder"));
+      return;
+    }
+    await batchStore.scanDirectory(folders[0]);
+  },
+});
 
 async function pickDirectory() {
   const selected = await open({
@@ -121,7 +139,8 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="flex flex-col h-full">
+  <div class="relative flex flex-col h-full">
+    <DropOverlay :show="dropActive" :label="t('drop.batchHint')" />
     <!-- Header -->
     <div class="flex items-center justify-between px-6 py-4 border-b border-border">
       <div class="flex items-center gap-2">

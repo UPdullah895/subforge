@@ -71,7 +71,7 @@ winget install MoritzBunkus.MKVToolNix Gyan.FFmpeg
 Developers can print the same dependency report in a terminal with `cargo run --example check` inside `crates/subforge-deps`.
 
 ### Server mode
-`subforge-server` shows the same dependency dialog in the web UI. Because installing software on a server is sensitive, without `SUBFORGE_ALLOW_INSTALL=1` the server refuses installs and returns a message containing the command to run on the server yourself; set `SUBFORGE_ALLOW_INSTALL=1` to let the Install button run it.
+`subforge-server` shows the same dependency dialog in the web UI. A server has no OS keychain, so server mode keeps API keys in `config.json` instead of the keyring; if you run both the desktop app and the server on the same machine, note that the desktop app removes keys from that file and you will need to enter them again for the server (and vice versa). Because installing software on a server is sensitive, without `SUBFORGE_ALLOW_INSTALL=1` the server refuses installs and returns a message containing the command to run on the server yourself; set `SUBFORGE_ALLOW_INSTALL=1` to let the Install button run it.
 
 ---
 
@@ -83,6 +83,8 @@ Developers can print the same dependency report in a terminal with `cargo run --
 - **Subtitle merge** — mux external SRT/ASS/VTT files into MKV containers.
 - **Audio extraction/merge** — extract, transcode (AAC, MP3, OPUS, FLAC), and remux audio via FFmpeg.
 - **Subtitle format conversion & retiming** — convert between SRT/ASS/SSA/VTT, shift and stretch timestamps (built-in, no external tools).
+- **Sync check** — compares a subtitle's timings with the real video duration, flags a 25/23.976 (PAL/NTSC) mismatch and offers a one-click frame-rate fix or shift. An optional deep check transcribes three short speech windows with the built-in speech engine to detect a constant delay or the wrong episode.
+- **Credit & ad cleanup** — finds translator credits, social handles, links and channel ads in SRT/ASS/SSA/VTT, shows exactly which lines would go, and removes them only after you confirm (ASS styles, fonts and drawings are untouched).
 - **Dependency check** — on startup, checks for MKVToolNix and FFmpeg (including ffprobe), and offers to install anything that is missing.
 
 ### Batch operations
@@ -95,9 +97,10 @@ Developers can print the same dependency report in a terminal with `cargo run --
 
 ### Translation
 - **Ollama (local LLM), LibreTranslate, DeepL, OpenAI, Google Translate** — batched, context-aware subtitle translation with automatic engine detection where applicable.
-- **Online subtitle search before translating** — before running machine translation on a file, SubForge searches [Subsource](https://subsource.net) (on by default) and, if you supply your own account, [OpenSubtitles.com](https://www.opensubtitles.com) (file-hash matching for exact-release accuracy) for an existing human-made subtitle in the target language. If one is found it's used directly; if not, translation runs as normal. Toggle this off, or configure OpenSubtitles.com, from Settings → Subtitle Sources.
+- **Online subtitle search before translating** — before running machine translation on a file, SubForge searches [Subsource](https://subsource.net) (on by default) and, if you supply your own account, [OpenSubtitles.com](https://www.opensubtitles.com) (file-hash matching for exact-release accuracy) for an existing human-made subtitle in the target language. If one is found it's used directly (an existing subtitle with the same name is never replaced), and its timings are checked against the video so an obvious frame-rate mismatch is flagged instead of silently used; if no subtitle is found, translation runs as normal. Toggle this off, or configure OpenSubtitles.com or your own Subsource key, from Settings → Subtitle Sources. API keys are kept in the operating system's keyring, not in `config.json`.
 
 ### Interface
+- **Drag and drop** — drop video files (or a folder on the Batch page, or a subtitle on the Convert/Clean tabs) straight onto the window.
 - Dark theme, fully responsive layout, English/Arabic localization.
 
 ---
@@ -133,7 +136,7 @@ GPU speech-to-text is the optional `gpu-vulkan` feature (`npm run tauri build --
 
 To bundle FFmpeg and MKVToolNix the way the release installers do (Windows installer and AppImage), fetch the pinned, checksum-verified copies first with `node scripts/fetch-bundled-tools.mjs windows-x64` (or `linux-x64`); versions live in `packaging/bundled-tools.json` and the licences in `THIRD_PARTY_NOTICES.md`. Without this step a Windows build bundles no tools and uses the system ones, and an AppImage build fails (it needs the fetched files); `.deb`/`.rpm` never bundle them. `node scripts/fetch-bundled-tools.mjs --sources <dir>` downloads the corresponding GPL/LGPL source archives that each release attaches.
 
-Optional: set `SUBFORGE_SUBSOURCE_API_KEY` at build time to enable Subsource subtitle search. Without it everything else works and Subsource search is silently skipped.
+Subsource subtitle search needs a Subsource API key. You can paste your own under **Settings → Subtitle Sources** (it is stored in your OS keyring). Distributors can alternatively bake a default key in at build time with `SUBFORGE_SUBSOURCE_API_KEY`; a key set in Settings always wins, and without either Subsource search is skipped while OpenSubtitles and translation keep working.
 
 ### Linux app-menu entry (development checkouts)
 ```bash

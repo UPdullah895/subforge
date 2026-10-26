@@ -53,6 +53,9 @@ pub fn parse(args: impl IntoIterator<Item = OsString>) -> Option<Result<Args, St
 /// Runs the self-test and returns the process exit code.
 pub fn run(args: Result<Args, String>, package_info: &tauri::PackageInfo) -> i32 {
     attach_parent_console();
+    // A CI runner has no session keyring; API keys are irrelevant here and a
+    // Secret Service client can stall trying to reach one.
+    std::env::set_var("SUBFORGE_DISABLE_KEYRING", "1");
     let args = match args {
         Ok(a) => a,
         Err(e) => {
