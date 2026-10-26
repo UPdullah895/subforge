@@ -1,5 +1,32 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { apiInvoke } from "./client";
+import { ApiError, errorDetails } from "./errors";
+
+const invokeMock = vi.hoisted(() => vi.fn());
+vi.mock("@tauri-apps/api/core", () => ({ invoke: invokeMock }));
+
+describe("apiInvoke (Tauri mode)", () => {
+  beforeEach(() => {
+    invokeMock.mockReset();
+    (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__ = {};
+  });
+  afterEach(() => {
+    delete (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__;
+  });
+
+  it("turns a {message, details} rejection into an ApiError", async () => {
+    invokeMock.mockRejectedValue({ message: "mkvmerge failed: bad file", details: "raw stderr" });
+    const err = (await apiInvoke("enumerate_tracks", { filePath: "x" }).catch((e) => e)) as ApiError;
+    expect(err).toBeInstanceOf(ApiError);
+    expect(err.message).toBe("mkvmerge failed: bad file");
+    expect(errorDetails(err)).toBe("raw stderr");
+  });
+
+  it("passes plain string rejections through unchanged", async () => {
+    invokeMock.mockRejectedValue("plain failure");
+    await expect(apiInvoke("save_config", {})).rejects.toBe("plain failure");
+  });
+});
 
 function respond(body: string, init: { status?: number } = {}) {
   return Promise.resolve(new Response(body, { status: init.status ?? 200 }));
@@ -57,6 +84,18 @@ describe("apiInvoke (browser / REST mode)", () => {
     expect(lastCall().init).toBeUndefined();
   });
 
+  it("fetches get_tool_status with GET from /api/tools/status", async () => {
+    fetchMock.mockReturnValue(
+      respond(
+        '[{"id":"ffmpeg","source":"bundled","path":"/x","version":"7","error":null},{"id":"ffprobe","source":null,"path":null,"version":null,"error":null}]'
+      )
+    );
+    const rows = await apiInvoke<{ id: string }[]>("get_tool_status");
+    expect(lastCall().url).toBe("/api/tools/status");
+    expect(lastCall().init).toBeUndefined();
+    expect(rows.map((r) => r.id)).toEqual(["ffmpeg", "ffprobe"]);
+  });
+
   it("treats an empty 200 body as success, not a JSON error", async () => {
     fetchMock.mockReturnValue(respond(""));
     await expect(apiInvoke("extract_audio_track", { filePath: "x" })).resolves.toBeUndefined();
@@ -68,6 +107,18 @@ describe("apiInvoke (browser / REST mode)", () => {
 
     fetchMock.mockReturnValueOnce(respond("", { status: 500 }));
     await expect(apiInvoke("extract_audio_track", { filePath: "x" })).rejects.toThrow(/server hit an error/);
+  });
+
+  it("keeps {error, details} bodies as an ApiError with details", async () => {
+    fetchMock.mockReturnValueOnce(
+      respond('{"error":"mkvmerge failed: bad file","details":"mkvmerge v102.0\\nError: bad file"}', {
+        status: 422,
+      })
+    );
+    const err = (await apiInvoke("enumerate_tracks", { filePath: "x" }).catch((e) => e)) as ApiError;
+    expect(err).toBeInstanceOf(ApiError);
+    expect(err.message).toBe("mkvmerge failed: bad file");
+    expect(errorDetails(err)).toContain("v102.0");
   });
 
   it("explains schema mismatches instead of dumping the validation JSON", async () => {

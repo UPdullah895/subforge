@@ -1,10 +1,16 @@
-use subforge_deps::HideWindow;
-use crate::error::blocking;
-use crate::tools::mkvtoolnix;
-use crate::{AppState, jobs};
-use axum::{extract::{Json, State}, http::StatusCode};
+use crate::error::{blocking, AppError};
+use crate::tools::tool_paths;
+use crate::{jobs, AppState};
+use axum::{
+    extract::{Json, State},
+    http::StatusCode,
+};
 use serde::{Deserialize, Serialize};
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use subforge_core::subtitle::{self, Format};
+use subforge_core::tools::mkvtoolnix;
+use subforge_core::tools::ToolError;
 
 #[derive(Deserialize)]
 pub struct EnumerateRequest {
@@ -25,10 +31,10 @@ pub struct TrackInfo {
 
 pub async fn enumerate_tracks(
     Json(req): Json<EnumerateRequest>,
-) -> Result<Json<Vec<TrackInfo>>, StatusCode> {
-    let info = blocking(move || mkvtoolnix::enumerate_tracks(&req.file_path))
+) -> Result<Json<Vec<TrackInfo>>, AppError> {
+    let info = blocking(move || mkvtoolnix::enumerate_tracks(&tool_paths(), &req.file_path))
         .await?
-        .map_err(|_| StatusCode::BAD_REQUEST)?;
+        .map_err(AppError::from)?;
     let tracks: Vec<TrackInfo> = info
         .tracks
         .iter()
@@ -58,13 +64,18 @@ pub struct ExtractRequest {
     output_path: String,
 }
 
-pub async fn extract_subtitle(Json(req): Json<ExtractRequest>) -> Result<String, StatusCode> {
+pub async fn extract_subtitle(Json(req): Json<ExtractRequest>) -> Result<String, AppError> {
     let output_path = req.output_path.clone();
     blocking(move || {
-        mkvtoolnix::extract_subtitle_track(&req.file_path, req.track_id, &req.output_path)
+        mkvtoolnix::extract_subtitle_track(
+            &tool_paths(),
+            &req.file_path,
+            req.track_id,
+            &req.output_path,
+        )
     })
     .await?
-    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    .map_err(AppError::from)?;
     Ok(output_path)
 }
 
@@ -83,7 +94,10 @@ pub async fn merge_subtitle(
     let job_id = format!("merge-{}", uuid::Uuid::new_v4());
 
     {
-        let mut q = state.job_queue.lock().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        let mut q = state
+            .job_queue
+            .lock()
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
         q.add(jobs::Job {
             id: job_id.clone(),
             job_type: jobs::JobType::MergeSubtitle,
@@ -106,9 +120,11 @@ pub async fn merge_subtitle(
             message: None,
             stage: None,
             output_path: None,
+            details: None,
         },
     );
 
+    let paths = tool_paths();
     let queue_clone = state.job_queue.clone();
     let controls_clone = state.job_controls.clone();
     let job_id_clone = job_id.clone();
@@ -131,27 +147,41 @@ pub async fn merge_subtitle(
         }
 
         let subs = vec![mkvtoolnix::SubtitleMergeSpec::new(subtitle_path, language)];
-        let result = mkvtoolnix::merge_subtitles_async(&video_path, &subs, &output_path, Some(&control), |pct| {
-            let mut q = queue_clone.lock().unwrap();
-            q.update_progress(&job_id_clone, pct, None);
-            jobs::emit_event(
-                &sender_clone,
-                jobs::JobEvent {
-                    event_type: "job-progress".to_string(),
-                    job_id: job_id_clone.clone(),
-                    status: None,
-                    progress: Some(pct),
-                    message: None,
-                    stage: None,
-                    output_path: None,
-                },
-            );
-        }).await;
+        let result = mkvtoolnix::merge_subtitles_async(
+            &paths,
+            &video_path,
+            &subs,
+            &output_path,
+            Some(control.token()),
+            |pct| {
+                let mut q = queue_clone.lock().unwrap();
+                q.update_progress(&job_id_clone, pct, None);
+                jobs::emit_event(
+                    &sender_clone,
+                    jobs::JobEvent {
+                        event_type: "job-progress".to_string(),
+                        job_id: job_id_clone.clone(),
+                        status: None,
+                        progress: Some(pct),
+                        message: None,
+                        stage: None,
+                        output_path: None,
+                        details: None,
+                    },
+                );
+            },
+        )
+        .await;
 
         if let Err(e) = result {
-            let cancelled = matches!(e, mkvtoolnix::MkvError::Cancelled);
+            let cancelled = matches!(e, ToolError::Cancelled);
             let msg = e.to_string();
-            let status = if cancelled { jobs::JobStatus::Cancelled } else { jobs::JobStatus::Failed };
+            let details = e.details().map(str::to_string);
+            let status = if cancelled {
+                jobs::JobStatus::Cancelled
+            } else {
+                jobs::JobStatus::Failed
+            };
             let mut q = queue_clone.lock().unwrap();
             q.update_status(&job_id_clone, status.clone());
             q.update_progress(&job_id_clone, 0.0, Some(msg.clone()));
@@ -165,6 +195,7 @@ pub async fn merge_subtitle(
                     message: Some(msg),
                     stage: None,
                     output_path: None,
+                    details,
                 },
             );
             let mut registry = controls_clone.lock().unwrap();
@@ -187,6 +218,7 @@ pub async fn merge_subtitle(
                 message: Some("Merge complete".to_string()),
                 stage: None,
                 output_path: Some(output_path),
+                details: None,
             },
         );
 
@@ -204,10 +236,12 @@ pub struct RemoveRequest {
     output_path: String,
 }
 
-pub async fn remove_subtitles(Json(req): Json<RemoveRequest>) -> Result<StatusCode, StatusCode> {
-    blocking(move || mkvtoolnix::remove_all_subtitles(&req.file_path, &req.output_path))
-        .await?
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+pub async fn remove_subtitles(Json(req): Json<RemoveRequest>) -> Result<StatusCode, AppError> {
+    blocking(move || {
+        mkvtoolnix::remove_all_subtitles(&tool_paths(), &req.file_path, &req.output_path)
+    })
+    .await?
+    .map_err(AppError::from)?;
     Ok(StatusCode::OK)
 }
 
@@ -218,10 +252,17 @@ pub struct ConvertRequest {
     format: String,
 }
 
-pub async fn convert_format(Json(req): Json<ConvertRequest>) -> Result<StatusCode, StatusCode> {
-    blocking(move || crate::tools::pysubs2::convert_format(&req.input, &req.output, &req.format))
-        .await?
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+pub async fn convert_format(Json(req): Json<ConvertRequest>) -> Result<StatusCode, AppError> {
+    let to = Format::from_extension(&req.format).ok_or_else(|| {
+        crate::error::err400(format!(
+            "Unsupported subtitle format '{}'. Use one of: srt, ass, ssa, vtt.",
+            req.format
+        ))
+    })?;
+    blocking(move || subtitle::convert_file(Path::new(&req.input), Path::new(&req.output), to))
+        .await
+        .map_err(AppError::from)?
+        .map_err(crate::error::err500)?;
     Ok(StatusCode::OK)
 }
 
@@ -232,12 +273,17 @@ pub struct ShiftRequest {
     milliseconds: i64,
 }
 
-pub async fn shift_timing(Json(req): Json<ShiftRequest>) -> Result<StatusCode, StatusCode> {
+pub async fn shift_timing(Json(req): Json<ShiftRequest>) -> Result<StatusCode, AppError> {
     blocking(move || {
-        crate::tools::pysubs2::shift_subtitles(&req.input, &req.output, req.milliseconds)
+        subtitle::shift_file(
+            Path::new(&req.input),
+            Path::new(&req.output),
+            req.milliseconds,
+        )
     })
-    .await?
-    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    .await
+    .map_err(AppError::from)?
+    .map_err(crate::error::err500)?;
     Ok(StatusCode::OK)
 }
 
@@ -249,10 +295,12 @@ pub struct ExtractAllRequest {
 
 pub async fn extract_all_subtitles(
     Json(req): Json<ExtractAllRequest>,
-) -> Result<Json<Vec<String>>, StatusCode> {
-    let paths = blocking(move || mkvtoolnix::extract_all_subtitles(&req.file_path, &req.output_dir))
-        .await?
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+) -> Result<Json<Vec<String>>, AppError> {
+    let paths = blocking(move || {
+        mkvtoolnix::extract_all_subtitles(&tool_paths(), &req.file_path, &req.output_dir)
+    })
+    .await?
+    .map_err(AppError::from)?;
     Ok(Json(paths))
 }
 
@@ -266,16 +314,23 @@ pub struct StretchRequest {
 
 /// Fixes progressive drift caused by a frame-rate mismatch between the
 /// subtitle's origin and the video (a constant shift can't).
-pub async fn stretch_timing(Json(req): Json<StretchRequest>) -> Result<StatusCode, (StatusCode, String)> {
+pub async fn stretch_timing(Json(req): Json<StretchRequest>) -> Result<StatusCode, AppError> {
     if !(req.from_fps > 0.0 && req.to_fps > 0.0) {
-        return Err((StatusCode::BAD_REQUEST, "Frame rates must be positive numbers.".to_string()));
+        return Err(crate::error::err400(
+            "Frame rates must be positive numbers.",
+        ));
     }
     blocking(move || {
-        crate::tools::pysubs2::stretch_framerate(&req.input, &req.output, req.from_fps, req.to_fps)
+        subtitle::stretch_file(
+            Path::new(&req.input),
+            Path::new(&req.output),
+            req.from_fps,
+            req.to_fps,
+        )
     })
     .await
-    .map_err(|c| (c, "task failed".to_string()))?
-    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    .map_err(AppError::from)?
+    .map_err(crate::error::err500)?;
     Ok(StatusCode::OK)
 }
 
@@ -288,38 +343,65 @@ pub struct SetTrackMetaRequest {
     forced_flag: Option<bool>,
 }
 
+/// mkvpropedit `--set` pairs for the fields the request changes.
+fn track_flag_props(req: &SetTrackMetaRequest) -> Vec<(String, String)> {
+    let mut props = Vec::new();
+    if let Some(name) = &req.track_name {
+        props.push(("name".to_string(), name.clone()));
+    }
+    if let Some(default) = req.default_flag {
+        props.push(("flag-default".to_string(), u8::from(default).to_string()));
+    }
+    if let Some(forced) = req.forced_flag {
+        props.push(("flag-forced".to_string(), u8::from(forced).to_string()));
+    }
+    props
+}
+
 pub async fn set_track_metadata(
     Json(req): Json<SetTrackMetaRequest>,
 ) -> Result<StatusCode, StatusCode> {
-    let mkvpropedit = crate::tools::which("mkvpropedit")
-        .ok_or(StatusCode::SERVICE_UNAVAILABLE)?;
-
-    let mut args: Vec<String> = vec![req.file_path.clone()];
-    args.push("--edit".to_string());
-    // mkvpropedit uses 1-indexed @N notation for tracks
-    args.push(format!("track:@{}", req.track_id + 1));
-
-    if let Some(name) = &req.track_name {
-        args.push("--set".to_string());
-        args.push(format!("name={}", name));
-    }
-    if let Some(default) = req.default_flag {
-        args.push("--set".to_string());
-        args.push(format!("flag-default={}", if default { 1 } else { 0 }));
-    }
-    if let Some(forced) = req.forced_flag {
-        args.push("--set".to_string());
-        args.push(format!("flag-forced={}", if forced { 1 } else { 0 }));
-    }
-
-    let output = blocking(move || std::process::Command::new(&mkvpropedit).hide_window().args(&args).output())
-        .await?
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-
-    // Exit code 1 means "finished with warnings" for the mkvtoolnix tools.
-    if !matches!(output.status.code(), Some(0) | Some(1)) {
-        return Err(StatusCode::INTERNAL_SERVER_ERROR);
-    }
-
+    // mkvpropedit uses 1-indexed track:@N selection.
+    let number = u32::try_from(req.track_id + 1).map_err(|_| StatusCode::BAD_REQUEST)?;
+    blocking(move || {
+        let props = track_flag_props(&req);
+        mkvtoolnix::set_track_flags(
+            &tool_paths(),
+            &PathBuf::from(&req.file_path),
+            number,
+            &props,
+        )
+    })
+    .await?
+    .map_err(|e| match e {
+        ToolError::NotFound(_) | ToolError::CustomPathInvalid { .. } => {
+            StatusCode::SERVICE_UNAVAILABLE
+        }
+        _ => StatusCode::INTERNAL_SERVER_ERROR,
+    })?;
     Ok(StatusCode::OK)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn track_flags_cover_only_requested_fields() {
+        let req = SetTrackMetaRequest {
+            file_path: "x.mkv".into(),
+            track_id: 2,
+            track_name: Some("English".into()),
+            default_flag: Some(true),
+            forced_flag: Some(false),
+        };
+        assert_eq!(
+            track_flag_props(&req),
+            vec![
+                ("name".to_string(), "English".to_string()),
+                ("flag-default".to_string(), "1".to_string()),
+                ("flag-forced".to_string(), "0".to_string()),
+            ]
+        );
+    }
 }

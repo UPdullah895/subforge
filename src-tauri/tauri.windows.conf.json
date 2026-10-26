@@ -1,0 +1,10 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "bundle": {
+    "resources": {
+      "binaries/bin/": "bin/",
+      "binaries/licenses/": "licenses/",
+      "binaries/beside-exe/": "./"
+    }
+  }
+}

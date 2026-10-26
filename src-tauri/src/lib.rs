@@ -2,19 +2,29 @@ pub mod commands;
 pub mod config;
 pub mod credentials;
 pub mod jobs;
+pub mod self_test;
 pub mod tools;
 
 use commands::{
-    audio as audio_cmds, batch as batch_cmds, deps as deps_cmds, jobs as jobs_cmds, providers as providers_cmds, rename as rename_cmds,
-    subtitle as subtitle_cmds, subtitle_sources as subtitle_sources_cmds, transcribe as transcribe_cmds, translate as translate_cmds,
+    audio as audio_cmds, batch as batch_cmds, deps as deps_cmds, jobs as jobs_cmds,
+    providers as providers_cmds, rename as rename_cmds, subtitle as subtitle_cmds,
+    subtitle_sources as subtitle_sources_cmds, transcribe as transcribe_cmds,
+    translate as translate_cmds,
 };
 use credentials::{CredentialStore, KeyringCredentialStore};
-use jobs::{SharedJobQueue, JobControlRegistry};
-use std::sync::{Arc, Mutex};
+use jobs::{JobControlRegistry, SharedJobQueue};
 use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
+use tauri::Manager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    let context = tauri::generate_context!();
+    // Hidden CI entry point; exits before any window or plugin is created.
+    if let Some(args) = self_test::parse(std::env::args_os().skip(1)) {
+        std::process::exit(self_test::run(args, context.package_info()));
+    }
+
     #[cfg(target_os = "linux")]
     {
         // SAFETY: called before any threads are spawned, at the very start of run().
@@ -45,7 +55,20 @@ pub fn run() {
     tauri::Builder::default()
         .manage(job_queue)
         .manage(job_controls)
+        .manage(subforge_core::whisper::ActiveDownloads::default())
         .manage(credential_store)
+        .setup(|app| {
+            config::migrate_saved_config();
+            // Tools shipped with the app (Windows installer and AppImage; deb/rpm use system
+            // packages). `self_test::run` resolves them the same way.
+            if let Ok(resources) = app.path().resource_dir() {
+                let bin = resources.join("bin");
+                if bin.is_dir() {
+                    tools::set_bundled_dir(bin);
+                }
+            }
+            Ok(())
+        })
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
@@ -61,6 +84,7 @@ pub fn run() {
             subtitle_cmds::stretch_subtitle_timing,
             subtitle_cmds::set_track_metadata,
             subtitle_cmds::get_tool_registry,
+            subtitle_cmds::get_tool_status,
             subtitle_cmds::load_config,
             subtitle_cmds::save_config,
             audio_cmds::list_audio_tracks,
@@ -73,6 +97,9 @@ pub fn run() {
             transcribe_cmds::get_whisper_info,
             transcribe_cmds::list_whisper_models,
             transcribe_cmds::download_whisper_model,
+            transcribe_cmds::list_whisper_catalog,
+            transcribe_cmds::whisper_legacy_cache,
+            transcribe_cmds::delete_whisper_legacy_cache,
             transcribe_cmds::transcribe_audio,
             translate_cmds::detect_ollama,
             translate_cmds::detect_libretranslate,
@@ -93,6 +120,6 @@ pub fn run() {
             jobs_cmds::pause_job,
             jobs_cmds::resume_job,
         ])
-        .run(tauri::generate_context!())
+        .run(context)
         .expect("error while running tauri application");
 }

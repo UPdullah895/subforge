@@ -71,9 +71,9 @@ describe("DependencyDialog behavior", () => {
   }
 
   it("lists required items before optional ones", () => {
-    open([mk("faster_whisper", "optional", false), mk("ffmpeg", "required", false)]);
+    open([mk("mkvpropedit", "optional", false), mk("ffmpeg", "required", false)]);
     const a = document.body.querySelector('[data-testid="status-ffmpeg"]') as HTMLElement;
-    const b = document.body.querySelector('[data-testid="status-faster_whisper"]') as HTMLElement;
+    const b = document.body.querySelector('[data-testid="status-mkvpropedit"]') as HTMLElement;
     expect(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
@@ -83,7 +83,7 @@ describe("DependencyDialog behavior", () => {
   });
 
   it("hides Install all when only an optional item is auto-installable", () => {
-    open([mk("ffmpeg", "required", false), mk("faster_whisper", "optional", true)]);
+    open([mk("ffmpeg", "required", false), mk("mkvpropedit", "optional", true)]);
     expect(document.body.querySelector('[data-testid="deps-dialog"]')).not.toBeNull();
     expect(document.body.querySelector('[data-testid="deps-install-all"]')).toBeNull();
   });
@@ -95,6 +95,58 @@ describe("DependencyDialog behavior", () => {
     x.click();
     await w.vm.$nextTick();
     expect(store.dialogDismissed).toBe(true);
+  });
+});
+
+describe("DependencyDialog with bundled and custom tools", () => {
+  beforeEach(() => {
+    document.body.innerHTML = "";
+  });
+
+  const ok = (id: string, source: string) => ({
+    id, label: id, severity: id === "mkvpropedit" ? "optional" : "required", state: "ok",
+    source, path: `/app/bin/${id}`, purpose: "p", download_url: "https://example.com",
+    can_auto_install: false,
+  });
+
+  it("stays hidden when every tool resolves (bundled or system)", () => {
+    const { pinia, store } = setup();
+    store.report = {
+      os: "windows",
+      has_missing_required: false,
+      has_invalid_custom: false,
+      items: [ok("mkvmerge", "bundled"), ok("mkvextract", "bundled"), ok("mkvpropedit", "bundled"),
+        ok("ffmpeg", "bundled"), ok("ffprobe", "system")],
+    } as never;
+    mount(DependencyDialog, { global: { plugins: [pinia, i18n] }, attachTo: document.body });
+    expect(document.body.querySelector('[data-testid="deps-dialog"]')).toBeNull();
+  });
+
+  it("opens for a broken custom path and shows its error without install help", () => {
+    const { pinia, store } = setup();
+    store.report = {
+      os: "windows",
+      has_missing_required: false,
+      has_invalid_custom: true,
+      items: [
+        ok("mkvmerge", "bundled"),
+        {
+          id: "mkvpropedit", label: "mkvpropedit", severity: "optional", state: "invalid",
+          source: "custom", path: "C:\\gone\\mkvpropedit.exe", purpose: "p",
+          download_url: "https://example.com", can_auto_install: false,
+          error: "mkvpropedit path set in Settings → Tool Paths does not exist: C:\\gone\\mkvpropedit.exe. Fix or clear it.",
+        },
+      ],
+    } as never;
+    mount(DependencyDialog, { global: { plugins: [pinia, i18n] }, attachTo: document.body });
+    expect(document.body.querySelector('[data-testid="deps-dialog"]')).not.toBeNull();
+    const err = document.body.querySelector('[data-testid="invalid-mkvpropedit"]') as HTMLElement;
+    expect(err.textContent).toContain("Fix or clear it");
+    expect(document.body.querySelector('[data-testid="install-mkvpropedit"]')).toBeNull();
+    expect(document.body.querySelector('[data-testid="download-mkvpropedit"]')).toBeNull();
+    expect(document.body.querySelector('[data-testid="status-mkvpropedit"]')!.textContent).toBe(
+      i18n.global.t("deps.state.invalid")
+    );
   });
 });
 

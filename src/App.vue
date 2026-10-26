@@ -56,6 +56,7 @@ interface JobCompletedPayload {
   job_id: string;
   status?: string;
   message?: string;
+  details?: string | null;
   output_path?: string;
 }
 
@@ -70,7 +71,7 @@ onMounted(async () => {
       if (p.status === "completed") {
         toastStore.success(t("toast.jobDone"), p.output_path ? baseName(p.output_path) : p.message);
       } else if (p.status === "failed") {
-        toastStore.error(t("toast.jobFailed"), mapJobErrorMessage(p.message));
+        toastStore.error(t("toast.jobFailed"), mapJobErrorMessage(p.message), p.details);
       } else if (p.status === "cancelled") {
         toastStore.info(t("toast.jobCancelled"));
       }

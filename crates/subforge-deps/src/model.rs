@@ -13,6 +13,17 @@ pub enum DepState {
     Ok,
     Missing,
     Outdated,
+    /// A custom path set in Settings points at nothing usable.
+    Invalid,
+}
+
+/// Where a found tool came from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum DepSource {
+    Custom,
+    Bundled,
+    System,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -23,9 +34,6 @@ pub enum DepId {
     Mkvpropedit,
     Ffmpeg,
     Ffprobe,
-    Python,
-    Pysubs2,
-    FasterWhisper,
 }
 
 /// Static, human-readable facts about a dependency.
@@ -38,16 +46,13 @@ pub struct DepSpec {
 }
 
 impl DepId {
-    /// Display / check order: Python comes before the Python packages.
-    pub const ALL: [DepId; 8] = [
+    /// Display / check order.
+    pub const ALL: [DepId; 5] = [
         DepId::Mkvmerge,
         DepId::Mkvextract,
         DepId::Mkvpropedit,
         DepId::Ffmpeg,
         DepId::Ffprobe,
-        DepId::Python,
-        DepId::Pysubs2,
-        DepId::FasterWhisper,
     ];
 
     pub fn as_str(self) -> &'static str {
@@ -57,9 +62,6 @@ impl DepId {
             DepId::Mkvpropedit => "mkvpropedit",
             DepId::Ffmpeg => "ffmpeg",
             DepId::Ffprobe => "ffprobe",
-            DepId::Python => "python",
-            DepId::Pysubs2 => "pysubs2",
-            DepId::FasterWhisper => "faster_whisper",
         }
     }
 
@@ -72,16 +74,6 @@ impl DepId {
         match self {
             DepId::Ffmpeg | DepId::Ffprobe => "-version",
             _ => "--version",
-        }
-    }
-
-    /// PyPI distribution name. This is the allowlist for pip installs: only ids
-    /// that return `Some` can ever be passed to `pip install`.
-    pub fn pip_name(self) -> Option<&'static str> {
-        match self {
-            DepId::Pysubs2 => Some("pysubs2"),
-            DepId::FasterWhisper => Some("faster-whisper"),
-            _ => None,
         }
     }
 
@@ -119,24 +111,6 @@ impl DepId {
                 purpose: "Reading audio track information",
                 download_url: FFMPEG_URL,
             },
-            DepId::Python => DepSpec {
-                label: "Python 3.9+",
-                severity: Severity::Required,
-                purpose: "Running the subtitle conversion, translation and transcription helpers",
-                download_url: "https://www.python.org/downloads/",
-            },
-            DepId::Pysubs2 => DepSpec {
-                label: "pysubs2 (Python package)",
-                severity: Severity::Required,
-                purpose: "Converting and retiming subtitle formats (SRT, ASS, VTT)",
-                download_url: "https://pypi.org/project/pysubs2/",
-            },
-            DepId::FasterWhisper => DepSpec {
-                label: "faster-whisper (Python package)",
-                severity: Severity::Optional,
-                purpose: "Speech-to-text transcription",
-                download_url: "https://pypi.org/project/faster-whisper/",
-            },
         }
     }
 }
@@ -147,6 +121,9 @@ pub struct DepStatus {
     pub label: String,
     pub severity: Severity,
     pub state: DepState,
+    /// Where the tool was found; `None` when it was not.
+    #[serde(default)]
+    pub source: Option<DepSource>,
     pub path: Option<String>,
     pub version: Option<String>,
     pub purpose: String,
@@ -155,21 +132,35 @@ pub struct DepStatus {
     pub install_command: Option<String>,
     /// True when SubForge can run the install itself right now.
     pub can_auto_install: bool,
+    /// Why the tool is unusable (set for [`DepState::Invalid`]).
+    #[serde(default)]
+    pub error: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DepReport {
     pub os: String,
     pub items: Vec<DepStatus>,
+    /// A required tool is missing or outdated (install help applies).
     pub has_missing_required: bool,
+    /// A custom path from Settings is broken, for any tool.
+    #[serde(default)]
+    pub has_invalid_custom: bool,
 }
 
 impl DepReport {
     pub fn new(os: String, items: Vec<DepStatus>) -> Self {
-        let has_missing_required = items
-            .iter()
-            .any(|i| i.severity == Severity::Required && i.state != DepState::Ok);
-        Self { os, items, has_missing_required }
+        let has_missing_required = items.iter().any(|i| {
+            i.severity == Severity::Required
+                && matches!(i.state, DepState::Missing | DepState::Outdated)
+        });
+        let has_invalid_custom = items.iter().any(|i| i.state == DepState::Invalid);
+        Self {
+            os,
+            items,
+            has_missing_required,
+            has_invalid_custom,
+        }
     }
 }
 
@@ -187,23 +178,35 @@ mod tests {
     #[test]
     fn parse_rejects_unknown_and_injection_attempts() {
         assert_eq!(DepId::parse("nope"), None);
-        assert_eq!(DepId::parse("pysubs2; rm -rf /"), None);
+        assert_eq!(DepId::parse("ffmpeg; rm -rf /"), None);
         assert_eq!(DepId::parse(""), None);
     }
 
     #[test]
     fn serde_names_match_as_str() {
-        let json = serde_json::to_string(&DepId::FasterWhisper).unwrap();
-        assert_eq!(json, "\"faster_whisper\"");
-        assert_eq!(DepId::FasterWhisper.as_str(), "faster_whisper");
+        let json = serde_json::to_string(&DepId::Mkvpropedit).unwrap();
+        assert_eq!(json, "\"mkvpropedit\"");
+        assert_eq!(DepId::Mkvpropedit.as_str(), "mkvpropedit");
     }
 
     #[test]
-    fn only_python_packages_have_pip_names() {
-        assert_eq!(DepId::Pysubs2.pip_name(), Some("pysubs2"));
-        assert_eq!(DepId::FasterWhisper.pip_name(), Some("faster-whisper"));
-        assert_eq!(DepId::Ffmpeg.pip_name(), None);
-        assert_eq!(DepId::Python.pip_name(), None);
+    fn report_has_no_python_entries() {
+        let ids: Vec<&str> = DepId::ALL.iter().map(|i| i.as_str()).collect();
+        assert_eq!(
+            ids,
+            ["mkvmerge", "mkvextract", "mkvpropedit", "ffmpeg", "ffprobe"]
+        );
+        for id in DepId::ALL {
+            let s = id.spec();
+            let text = format!("{} {} {}", s.label, s.purpose, s.download_url).to_lowercase();
+            assert!(
+                !text.contains("python") && !text.contains("pysubs2") && !text.contains("whisper"),
+                "{text}"
+            );
+        }
+        assert_eq!(DepId::parse("python"), None);
+        assert_eq!(DepId::parse("pysubs2"), None);
+        assert_eq!(DepId::parse("faster_whisper"), None);
     }
 
     fn status(id: DepId, state: DepState) -> DepStatus {
@@ -213,20 +216,44 @@ mod tests {
             label: spec.label.to_string(),
             severity: spec.severity,
             state,
+            source: None,
             path: None,
             version: None,
             purpose: spec.purpose.to_string(),
             download_url: spec.download_url.to_string(),
             install_command: None,
             can_auto_install: false,
+            error: None,
         }
+    }
+
+    #[test]
+    fn invalid_custom_path_is_flagged_separately_from_missing() {
+        let r = DepReport::new(
+            "linux".into(),
+            vec![status(DepId::Mkvpropedit, DepState::Invalid)],
+        );
+        assert!(r.has_invalid_custom);
+        assert!(!r.has_missing_required);
+        let json = serde_json::to_value(&r).unwrap();
+        assert_eq!(json["items"][0]["state"], "invalid");
+    }
+
+    #[test]
+    fn old_reports_without_new_fields_still_deserialize() {
+        let json = r#"{"os":"linux","items":[],"has_missing_required":false}"#;
+        let r: DepReport = serde_json::from_str(json).unwrap();
+        assert!(!r.has_invalid_custom);
     }
 
     #[test]
     fn report_flags_missing_required_only() {
         let optional_missing = DepReport::new(
             "linux".into(),
-            vec![status(DepId::Ffmpeg, DepState::Ok), status(DepId::FasterWhisper, DepState::Missing)],
+            vec![
+                status(DepId::Ffmpeg, DepState::Ok),
+                status(DepId::Mkvpropedit, DepState::Missing),
+            ],
         );
         assert!(!optional_missing.has_missing_required);
 
@@ -236,7 +263,10 @@ mod tests {
         );
         assert!(required_missing.has_missing_required);
 
-        let outdated = DepReport::new("linux".into(), vec![status(DepId::Python, DepState::Outdated)]);
+        let outdated = DepReport::new(
+            "linux".into(),
+            vec![status(DepId::Ffprobe, DepState::Outdated)],
+        );
         assert!(outdated.has_missing_required);
     }
 }

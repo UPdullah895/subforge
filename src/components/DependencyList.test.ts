@@ -51,27 +51,19 @@ describe("DependencyList", () => {
     expect(w.text()).toContain("administrator rights");
   });
 
-  it("tells the user to install Python first for blocked pip packages", () => {
-    const w = mountList([item({ id: "pysubs2", state: "missing", can_auto_install: false })]);
-    expect(w.text()).toContain("Install Python first");
-  });
-
-  it("does not show the package-manager hint for pip packages", () => {
-    const w = mountList([item({ id: "pysubs2", state: "missing", can_auto_install: false })]);
-    expect(w.text()).toContain("Install Python first");
-    expect(w.text()).not.toContain("No supported package manager");
-  });
-
-  it("explains a missing package manager for system tools, not Python-first", () => {
+  it("explains a missing package manager for system tools", () => {
     const w = mountList([item({ id: "ffmpeg", state: "missing", can_auto_install: false })]);
     expect(w.text()).toContain("No supported package manager");
-    expect(w.text()).not.toContain("Install Python first");
+    expect(w.text()).not.toContain("Python");
   });
 
-  it("explains a missing package manager for Python itself", () => {
-    const w = mountList([item({ id: "python", state: "missing", can_auto_install: false })]);
-    expect(w.text()).toContain("No supported package manager");
-    expect(w.text()).not.toContain("Install Python first");
+  it("falls back to the backend purpose when an id has no translation", () => {
+    for (const id of ["python", "pysubs2", "faster_whisper"]) {
+      const w = mountList([item({ id: id as DepStatus["id"], state: "missing", purpose: "backend purpose" })]);
+      expect(w.text()).toContain("backend purpose");
+    }
+    const w = mountList([item({ id: "ffmpeg", state: "missing" })]);
+    expect(w.text()).not.toContain("Python");
   });
 
   it("disables buttons while any install runs and labels the active one", () => {
@@ -95,7 +87,7 @@ describe("DependencyList", () => {
   });
 
   it("marks optional items as optional", () => {
-    const w = mountList([item({ id: "faster_whisper", severity: "optional", state: "missing" })]);
+    const w = mountList([item({ id: "mkvpropedit", severity: "optional", state: "missing" })]);
     expect(w.text()).toContain("Optional");
   });
 });

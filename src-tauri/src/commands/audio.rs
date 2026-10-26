@@ -1,6 +1,8 @@
-use crate::tools::ffmpeg::{self, FfprobeStream};
-use crate::tools::mkvtoolnix;
+use super::{blocking, CommandError};
+use crate::tools::tool_paths;
 use serde::{Deserialize, Serialize};
+use subforge_core::tools::ffmpeg::{self, FfprobeStream};
+use subforge_core::tools::mkvtoolnix;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AudioTrackInfo {
@@ -28,35 +30,56 @@ impl From<&FfprobeStream> for AudioTrackInfo {
 }
 
 #[tauri::command]
-pub fn list_audio_tracks(file_path: String) -> Result<Vec<AudioTrackInfo>, String> {
-    let streams = ffmpeg::probe_audio_tracks(&file_path).map_err(|e| e.to_string())?;
-    Ok(streams.iter().map(|s| s.into()).collect())
+pub async fn list_audio_tracks(file_path: String) -> Result<Vec<AudioTrackInfo>, CommandError> {
+    blocking(move || {
+        let streams =
+            ffmpeg::probe_audio_tracks(&tool_paths(), &file_path).map_err(CommandError::from)?;
+        Ok(streams.iter().map(|s| s.into()).collect())
+    })
+    .await
 }
 
 #[tauri::command]
-pub fn extract_audio_track(
+pub async fn extract_audio_track(
     file_path: String,
     track_index: u64,
     output_path: String,
     format: Option<String>,
-) -> Result<(), String> {
-    ffmpeg::extract_audio(&file_path, track_index, &output_path, format.as_deref())
-        .map_err(|e| e.to_string())
+) -> Result<(), CommandError> {
+    blocking(move || {
+        ffmpeg::extract_audio(
+            &tool_paths(),
+            &file_path,
+            track_index,
+            &output_path,
+            format.as_deref(),
+        )
+        .map_err(CommandError::from)
+    })
+    .await
 }
 
 #[tauri::command]
-pub fn merge_audio_track(
+pub async fn merge_audio_track(
     video_path: String,
     audio_path: String,
     output_path: String,
-) -> Result<(), String> {
-    ffmpeg::merge_audio(&video_path, &audio_path, &output_path).map_err(|e| e.to_string())
+) -> Result<(), CommandError> {
+    blocking(move || {
+        ffmpeg::merge_audio(&tool_paths(), &video_path, &audio_path, &output_path)
+            .map_err(CommandError::from)
+    })
+    .await
 }
 
 #[tauri::command]
-pub fn remove_audio_tracks(
+pub async fn remove_audio_tracks(
     file_path: String,
     output_path: String,
-) -> Result<(), String> {
-    mkvtoolnix::remove_all_audio(&file_path, &output_path).map_err(|e| e.to_string())
+) -> Result<(), CommandError> {
+    blocking(move || {
+        mkvtoolnix::remove_all_audio(&tool_paths(), &file_path, &output_path)
+            .map_err(CommandError::from)
+    })
+    .await
 }

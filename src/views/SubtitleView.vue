@@ -12,6 +12,7 @@ import { useAppStore } from "../stores/appStore";
 const { t } = useI18n();
 const toastStore = useToastStore();
 import TrackTable from "../components/TrackTable.vue";
+import ErrorDetails from "../components/ErrorDetails.vue";
 import {
   FolderOpen,
   FileVideo,
@@ -453,6 +454,7 @@ onMounted(() => {
           <div>
             <p class="text-sm font-medium text-error">{{ t("common.failedToReadFile") }}</p>
             <p class="text-xs text-error/80 mt-1">{{ subtitleStore.error }}</p>
+            <ErrorDetails :details="subtitleStore.errorDetails" />
           </div>
         </div>
 
@@ -488,6 +490,7 @@ onMounted(() => {
               <div class="flex-1 min-w-0">
                 <p class="text-sm text-text-primary">{{ t("subtitle.trackJob", { id: job.trackId }) }}</p>
                 <p v-if="job.message" class="text-xs text-text-secondary truncate">{{ job.message }}</p>
+                <ErrorDetails :details="job.details" />
               </div>
               <button class="text-text-muted hover:text-text-secondary" @click="subtitleStore.extractJobs = subtitleStore.extractJobs.filter((j) => j.id !== job.id)">
                 <X class="w-4 h-4" />

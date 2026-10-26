@@ -5,6 +5,7 @@ import { JOB_STATUS, type JobStatus } from "../constants/jobStatus";
 import { useToastStore } from "./toastStore";
 import { i18n } from "../i18n";
 import { baseName } from "../utils/subtitleNaming";
+import { errorMessage, errorDetails as errorDetailsOf } from "../api/errors";
 
 export interface TrackInfo {
   id: number;
@@ -22,6 +23,8 @@ export interface ExtractJob {
   trackId: number;
   status: JobStatus;
   message?: string;
+  /** Raw tool output of a failed job. */
+  details?: string;
 }
 
 export const useSubtitleStore = defineStore("subtitle", () => {
@@ -30,11 +33,13 @@ export const useSubtitleStore = defineStore("subtitle", () => {
   const tracks = ref<TrackInfo[]>([]);
   const loading = ref(false);
   const error = ref<string | null>(null);
+  const errorDetails = ref<string | null>(null);
   const extractJobs = ref<ExtractJob[]>([]);
 
   async function loadTracks(filePath: string) {
     loading.value = true;
     error.value = null;
+    errorDetails.value = null;
     try {
       const result = await apiInvoke<TrackInfo[]>("enumerate_tracks", {
         filePath,
@@ -42,7 +47,8 @@ export const useSubtitleStore = defineStore("subtitle", () => {
       tracks.value = result;
       selectedFile.value = filePath;
     } catch (e) {
-      error.value = String(e);
+      error.value = errorMessage(e);
+      errorDetails.value = errorDetailsOf(e) ?? null;
       tracks.value = [];
     } finally {
       loading.value = false;
@@ -73,8 +79,9 @@ export const useSubtitleStore = defineStore("subtitle", () => {
       toast.success(i18n.global.t("toast.subtitleSaved"), baseName(outputPath));
     } catch (e) {
       job.status = JOB_STATUS.FAILED;
-      job.message = e instanceof Error ? e.message : String(e);
-      toast.error(i18n.global.t("toast.extractFailed"), job.message);
+      job.message = errorMessage(e);
+      job.details = errorDetailsOf(e);
+      toast.error(i18n.global.t("toast.extractFailed"), job.message, job.details);
     }
   }
 
@@ -87,6 +94,7 @@ export const useSubtitleStore = defineStore("subtitle", () => {
     tracks,
     loading,
     error,
+    errorDetails,
     extractJobs,
     loadTracks,
     extractTrack,

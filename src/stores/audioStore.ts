@@ -5,6 +5,7 @@ import { JOB_STATUS, type JobStatus } from "../constants/jobStatus";
 import { useToastStore } from "./toastStore";
 import { i18n } from "../i18n";
 import { baseName } from "../utils/subtitleNaming";
+import { errorMessage, errorDetails as errorDetailsOf } from "../api/errors";
 
 export interface AudioTrackInfo {
   id: number;
@@ -19,6 +20,8 @@ export interface AudioJob {
   type: "extract" | "merge" | "remove";
   status: JobStatus;
   message?: string;
+  /** Raw tool output of a failed job. */
+  details?: string;
 }
 
 export const useAudioStore = defineStore("audio", () => {
@@ -27,6 +30,7 @@ export const useAudioStore = defineStore("audio", () => {
   const tracks = ref<AudioTrackInfo[]>([]);
   const loading = ref(false);
   const error = ref<string | null>(null);
+  const errorDetails = ref<string | null>(null);
   const jobs = ref<AudioJob[]>([]);
 
   function finish(job: AudioJob, outputPath: string) {
@@ -37,13 +41,15 @@ export const useAudioStore = defineStore("audio", () => {
 
   function fail(job: AudioJob, e: unknown) {
     job.status = JOB_STATUS.FAILED;
-    job.message = e instanceof Error ? e.message : String(e);
-    toast.error(i18n.global.t("toast.audioFailed"), job.message);
+    job.message = errorMessage(e);
+    job.details = errorDetailsOf(e);
+    toast.error(i18n.global.t("toast.audioFailed"), job.message, job.details);
   }
 
   async function loadTracks(filePath: string) {
     loading.value = true;
     error.value = null;
+    errorDetails.value = null;
     try {
       const result = await apiInvoke<AudioTrackInfo[]>("list_audio_tracks", {
         filePath,
@@ -51,7 +57,8 @@ export const useAudioStore = defineStore("audio", () => {
       tracks.value = result;
       selectedFile.value = filePath;
     } catch (e) {
-      error.value = e instanceof Error ? e.message : String(e);
+      error.value = errorMessage(e);
+      errorDetails.value = errorDetailsOf(e) ?? null;
       tracks.value = [];
     } finally {
       loading.value = false;
@@ -138,6 +145,7 @@ export const useAudioStore = defineStore("audio", () => {
     tracks,
     loading,
     error,
+    errorDetails,
     jobs,
     loadTracks,
     extractTrack,

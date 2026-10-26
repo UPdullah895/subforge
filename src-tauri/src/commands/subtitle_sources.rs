@@ -2,7 +2,9 @@ use crate::credentials::CredentialStore;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use subforge_subtitle_sources::{find_subtitle, OpenSubtitlesCredentials, SearchRequest, SubtitleSearchResult};
+use subforge_subtitle_sources::{
+    find_subtitle, OpenSubtitlesCredentials, SearchRequest, SubtitleSearchResult,
+};
 use tauri::State;
 
 // Not set at build time = Subsource search is silently disabled (falls through
@@ -27,7 +29,11 @@ pub struct OnlineSubtitleSearchRequest {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "status", rename_all = "snake_case")]
 pub enum OnlineSubtitleSearchResponse {
-    Found { subtitle_path: String, source: String, matched_via: String },
+    Found {
+        subtitle_path: String,
+        source: String,
+        matched_via: String,
+    },
     NotFound,
 }
 
@@ -59,7 +65,11 @@ pub async fn search_online_subtitle(
     .await;
 
     match result {
-        SubtitleSearchResult::Found { downloaded_path: text, source, matched_via } => {
+        SubtitleSearchResult::Found {
+            downloaded_path: text,
+            source,
+            matched_via,
+        } => {
             let subtitle_path = write_subtitle_next_to_video(&video_path, &request.language, &text)
                 .map_err(|e| e.to_string())?;
             Ok(OnlineSubtitleSearchResponse::Found {
@@ -77,7 +87,11 @@ pub async fn search_online_subtitle(
 /// writes and `detect_external_subs` (`commands/batch.rs`) already reads
 /// back, so a subtitle found online is indistinguishable from one extracted
 /// locally on a later scan.
-fn write_subtitle_next_to_video(video_path: &Path, lang: &str, text: &str) -> std::io::Result<String> {
+fn write_subtitle_next_to_video(
+    video_path: &Path,
+    lang: &str,
+    text: &str,
+) -> std::io::Result<String> {
     let stem = video_path
         .file_stem()
         .and_then(|s| s.to_str())
@@ -129,7 +143,10 @@ pub async fn check_subsource_status() -> Result<SubsourceStatus, String> {
     }
     let client = reqwest::Client::new();
     let reachable = client
-        .get(format!("{}/movies/search", subforge_subtitle_sources::subsource::DEFAULT_BASE_URL))
+        .get(format!(
+            "{}/movies/search",
+            subforge_subtitle_sources::subsource::DEFAULT_BASE_URL
+        ))
         .header("X-API-Key", SUBSOURCE_API_KEY)
         .query(&[("searchType", "text"), ("q", "ping")])
         .send()

@@ -16,7 +16,9 @@ const DepStatusSchema = z.looseObject({
   id: z.string(),
   label: z.string(),
   severity: z.enum(["required", "optional"]),
-  state: z.enum(["ok", "missing", "outdated"]),
+  state: z.enum(["ok", "missing", "outdated", "invalid"]),
+  source: z.enum(["custom", "bundled", "system"]).nullish(),
+  error: z.string().nullish(),
   path: z.string().nullish(),
   version: z.string().nullish(),
   purpose: z.string(),
@@ -29,6 +31,7 @@ const DepReportSchema = z.looseObject({
   os: z.string(),
   items: z.array(DepStatusSchema),
   has_missing_required: z.boolean(),
+  has_invalid_custom: z.boolean().optional(),
 });
 
 export const commandSchemas: Record<string, z.ZodTypeAny> = {
@@ -65,12 +68,18 @@ export const commandSchemas: Record<string, z.ZodTypeAny> = {
   }),
 
   get_whisper_info: z.looseObject({
-    faster_whisper_version: z.string(),
-    cuda_available: z.boolean(),
+    engine: z.string(),
+    gpu: z.string().nullish(),
     devices: z.array(z.string()),
   }),
 
   list_whisper_models: z.array(z.string()),
+
+  list_whisper_catalog: z.array(z.looseObject({ name: z.string(), size_mb: z.number() })),
+
+  download_whisper_model: z.string(),
+
+  whisper_legacy_cache: z.string().nullish(),
 
   get_tool_registry: z.looseObject({
     mkvmerge: ToolInfoSchema,
@@ -79,6 +88,16 @@ export const commandSchemas: Record<string, z.ZodTypeAny> = {
     ffprobe: ToolInfoSchema,
   }),
 
+  get_tool_status: z.array(
+    z.looseObject({
+      id: z.string(),
+      source: z.enum(["custom", "bundled", "system"]).nullable(),
+      path: z.string().nullish(),
+      version: z.string().nullish(),
+      error: z.string().nullish(),
+    })
+  ),
+
   check_dependencies: DepReportSchema,
   install_dependency: DepReportSchema,
 
@@ -86,6 +105,8 @@ export const commandSchemas: Record<string, z.ZodTypeAny> = {
     theme: z.string(),
     mkvmerge_path: z.string().nullish(),
     mkvextract_path: z.string().nullish(),
+    mkvpropedit_path: z.string().nullish(),
+    config_version: z.number().nullish(),
     ffmpeg_path: z.string().nullish(),
     ffprobe_path: z.string().nullish(),
     default_engine: z.string().nullish(),

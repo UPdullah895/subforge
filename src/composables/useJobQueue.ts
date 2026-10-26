@@ -8,6 +8,8 @@ export interface Job {
   input_file: string;
   progress: number;
   message?: string;
+  /** Raw tool output of a failed job. */
+  details?: string;
 }
 
 export function useJobQueue() {
@@ -26,12 +28,13 @@ export function useJobQueue() {
     }
   }
 
-  function completeJob(jobId: string, status: JobStatus, message?: string): void {
+  function completeJob(jobId: string, status: JobStatus, message?: string, details?: string | null): void {
     const job = jobs.value.find((j) => j.id === jobId);
     if (job) {
       job.status = status;
       job.progress = 100;
       if (message) job.message = message;
+      if (details) job.details = details;
     }
   }
 

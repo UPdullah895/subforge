@@ -48,9 +48,11 @@ describe("startAndWait", () => {
     const result = startAndWait(async () => "p", { onProgress });
     await new Promise((r) => setTimeout(r, 0));
     emit("job-progress", { job_id: "p", progress: 42 });
+    emit("job-progress", { job_id: "p", progress: 50, message: "60.1 / 141.0 MB, 12.3 MB/s" });
     emit("job-completed", { job_id: "p", status: "completed" });
     await result;
-    expect(onProgress).toHaveBeenCalledWith(42);
+    expect(onProgress).toHaveBeenCalledWith(42, undefined);
+    expect(onProgress).toHaveBeenCalledWith(50, "60.1 / 141.0 MB, 12.3 MB/s");
     expect(handlers.get("job-completed")).toHaveLength(0);
   });
 });

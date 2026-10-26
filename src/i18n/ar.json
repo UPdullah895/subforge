@@ -25,7 +25,8 @@
     "extract": "استخراج",
     "scanFailed": "فشل المسح",
     "cancel": "إلغاء",
-    "close": "إغلاق"
+    "close": "إغلاق",
+    "details": "التفاصيل"
   },
   "trackType": {
     "video": "فيديو",
@@ -226,19 +227,17 @@
   },
   "transcribe": {
     "title": "تحويل الكلام إلى نص",
-    "tooltip": "تحويل الصوت والفيديو إلى ترجمات باستخدام faster-whisper. اختر نموذجاً، اضبط الخيارات، وشغّل.",
+    "tooltip": "تحويل الصوت والفيديو إلى ترجمات باستخدام محرك whisper.cpp المدمج. اختر نموذجاً، اضبط الخيارات، وشغّل.",
     "openMedia": "فتح وسائط",
-    "cudaAvailable": "CUDA متاح",
     "cpuOnly": "وحدة المعالجة المركزية فقط",
     "files": "الملفات ({count})",
     "model": "النموذج",
     "whisperModel": "نموذج Whisper",
     "downloadModel": "تحميل هذا النموذج",
-    "modelNotCached": "هذا النموذج غير مخزن مؤقتاً. سيتم تحميله عند الاستخدام الأول (قد يستغرق عدة دقائق للنماذج الكبيرة).",
+    "modelNotCached": "هذا النموذج غير محمّل بعد. حمّله قبل بدء التحويل.",
     "device": "الجهاز",
     "autoDetect": "الكشف التلقائي",
     "cpu": "وحدة المعالجة المركزية",
-    "cuda": "CUDA",
     "language": "اللغة",
     "languagePlaceholder": "الكشف التلقائي (مثل en, ja, de)",
     "output": "الإخراج",
@@ -250,10 +249,20 @@
     "transcriptionJobs": "مهام التحويل",
     "noMediaSelected": "لم يتم تحديد وسائط",
     "noMediaSelectedDesc": "افتح ملف صوت أو فيديو لتحويله إلى ترجمات.",
-    "notInstalledTitle": "تحويل الكلام إلى نص غير مُعدّ بعد",
-    "notInstalledBody": "يعمل التفريغ محلياً عبر faster-whisper ولم يتم العثور عليه على هذا الجهاز. ثبّته مرة واحدة وستُفتح هذه الصفحة.",
-    "notInstalledHint": "يتطلب Python 3. إذا منع نظامك تثبيت pip العام فاستخدم بيئة افتراضية (python3 -m venv ~/.venvs/subforge) أو pipx. بطاقة NVIDIA تسرّع العمل كثيراً لكنها ليست ضرورية.",
-    "checkAgain": "تحقق مرة أخرى"
+    "checkAgain": "تحقق مرة أخرى",
+    "modelOption": "{name} ({size} ميغابايت)",
+    "gpuAvailable": "وحدة معالجة الرسومات: {name}",
+    "gpu": "وحدة معالجة الرسومات ({name})",
+    "downloading": "جاري تحميل {model}… {percent}٪",
+    "cancelDownload": "إلغاء التحميل",
+    "engineUnavailableTitle": "تعذّر الوصول إلى محرك الكلام",
+    "engineUnavailableBody": "تعذّر على SubForge الحصول على حالة محرك تحويل الكلام إلى نص. إذا كنت تستخدم نسخة الويب فتأكد من أن خادم SubForge يعمل ثم حاول مرة أخرى.",
+    "legacyTitle": "تم العثور على نماذج كلام قديمة",
+    "legacyBody": "يستخدم SubForge الآن نماذج whisper.cpp. النماذج التي حُمّلت للمحرك السابق لم تعد مستخدمة وما زالت تشغل مساحة في {path}.",
+    "legacyDelete": "حذف النماذج القديمة",
+    "legacyDismiss": "تجاهل",
+    "legacyConfirmTitle": "حذف نماذج الكلام القديمة؟",
+    "legacyConfirmBody": "سيؤدي هذا إلى حذف المجلد {path} وكل ما فيه نهائياً. لن تتأثر نماذج المحرك الحالي."
   },
   "translate": {
     "title": "ترجمة",
@@ -342,6 +351,11 @@
     "mkvmergePlaceholder": "مسار إلى mkvmerge",
     "mkvextract": "MKVExtract",
     "mkvextractPlaceholder": "مسار إلى mkvextract",
+    "mkvpropedit": "MKVPropEdit",
+    "mkvpropeditPlaceholder": "مسار إلى mkvpropedit",
+    "resetToBundled": "إعادة التعيين إلى المضمّن",
+    "executables": "الملفات التنفيذية",
+    "source": { "bundled": "مضمّن", "custom": "مخصص", "system": "النظام", "none": "غير موجود" },
     "ffmpeg": "FFmpeg",
     "ffmpegPlaceholder": "مسار إلى ffmpeg",
     "ffprobe": "FFprobe",
@@ -432,8 +446,11 @@
     "state": {
       "ok": "مثبّت",
       "missing": "ناقص",
-      "outdated": "قديم جدًا"
+      "outdated": "قديم جدًا",
+      "invalid": "مسار معطوب"
     },
+    "invalidHint": "أصلح هذا المسار أو امسحه من الإعدادات ← مسارات الأدوات. لن يستخدم SubForge نسخة أخرى ما دام هذا المسار محددًا.",
+    "bannerInvalid": "أحد مسارات الأدوات المحددة في الإعدادات معطوب، لذلك لن تعمل بعض أجزاء SubForge.",
     "install": "تثبيت",
     "installing": "جارٍ التثبيت…",
     "installAll": "تثبيت كل الناقص",
@@ -444,7 +461,6 @@
     "download": "صفحة التنزيل",
     "command": "أو نفّذ هذا الأمر في الطرفية:",
     "manualHint": "يتطلب هذا صلاحيات المسؤول ولم يتم العثور على نافذة كلمة مرور رسومية (pkexec). نفّذ الأمر أعلاه في الطرفية.",
-    "needPython": "ثبّت بايثون أولًا، ثم يمكن تثبيت هذا تلقائيًا.",
     "noPackageManager": "لم يتم العثور على مدير حزم مدعوم على هذا الجهاز. استخدم صفحة التنزيل أدناه للتثبيت يدويًا.",
     "details": "التفاصيل",
     "bannerText": "بعض البرامج المطلوبة ناقصة، لذلك لن تعمل بعض أجزاء SubForge.",
@@ -454,10 +470,7 @@
       "mkvextract": "استخراج مسارات الترجمة والصوت من ملفات MKV",
       "mkvpropedit": "تعديل أسماء المسارات ولغاتها وخصائصها دون إعادة الدمج",
       "ffmpeg": "استخراج الصوت وتحويله ودمجه",
-      "ffprobe": "قراءة معلومات المسارات الصوتية",
-      "python": "تشغيل أدوات تحويل الترجمة والترجمة الآلية والتفريغ النصي",
-      "pysubs2": "تحويل صيغ الترجمة (SRT وASS وVTT) وضبط توقيتها",
-      "faster_whisper": "تحويل الكلام إلى نص"
+      "ffprobe": "قراءة معلومات المسارات الصوتية"
     }
   }
 }

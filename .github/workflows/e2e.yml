@@ -1,0 +1,374 @@
+name: E2E
+
+# Builds the installers exactly as the release workflow does (bundled FFmpeg/MKVToolNix, the
+# gpu-vulkan feature), installs or runs them on a runner WITHOUT a GPU, and runs the hidden
+# `--self-test` scenario plus a GUI smoke test. See docs/superpowers/specs/2026-10-23-foundation-design.md §7.
+
+on:
+  pull_request:
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+  push:
+    branches: [main]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+  workflow_dispatch:
+
+concurrency:
+  group: e2e-${{ github.ref }}
+  # Superseded PR runs are cancelled; every push to main runs to completion.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    name: Windows installer
+    runs-on: windows-latest
+    timeout-minutes: 120
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      SUBFORGE_SUBSOURCE_API_KEY: ${{ secrets.SUBFORGE_SUBSOURCE_API_KEY || 'ci-placeholder-key' }}
+      # A path with a space on purpose (review focus 2).
+      INSTALL_DIR: 'C:\Sub Forge Test'
+      # whisper.cpp's Vulkan shader-generator build nests deep enough under
+      # src-tauri\target to exceed MAX_PATH (MSBuild FileTracker FTK1011).
+      CARGO_TARGET_DIR: 'C:\t'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      # Same pinned SDK as release.yml: the gpu-vulkan feature needs the headers and glslc.
+      - name: Install Vulkan SDK
+        uses: jakoch/install-vulkan-sdk-action@d17de7e2f5e50efb5d2123efed18497d3c58c533 # v1.7.0
+        with:
+          vulkan_version: 1.4.304.1
+          install_runtime: false
+          cache: true
+          stripdown: true
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      # rust-cache only caches target dirs inside the workspace; C:\t is outside it, so this
+      # caches the cargo registry and git deps only.
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          cache-targets: false
+
+      - name: Set work directories
+        run: |
+          "SUBFORGE_TOOLS_CACHE=$env:RUNNER_TEMP\tools-cache" >> $env:GITHUB_ENV
+          "WHISPER_CACHE=$env:RUNNER_TEMP\wcache" >> $env:GITHUB_ENV
+          "E2E_LOGS=$env:RUNNER_TEMP\e2e-artifacts" >> $env:GITHUB_ENV
+          New-Item -ItemType Directory -Force "$env:RUNNER_TEMP\e2e-artifacts" | Out-Null
+
+      - name: Cache bundled-tool downloads
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/tools-cache
+          key: bundled-tools-${{ runner.os }}-${{ hashFiles('packaging/bundled-tools.json', 'scripts/fetch-bundled-tools.mjs') }}
+
+      - name: Cache whisper tiny + VAD models
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/wcache
+          key: whisper-models-${{ runner.os }}-${{ hashFiles('crates/subforge-core/src/whisper/models.rs') }}
+
+      - name: Install frontend deps
+        run: npm ci
+
+      - name: Fetch bundled tools
+        run: node scripts/fetch-bundled-tools.mjs windows-x64
+
+      - name: Build the NSIS and MSI installers
+        run: npm run tauri build -- --bundles nsis,msi --features gpu-vulkan
+
+      # An administrative install only unpacks the MSI, so it checks the MSI payload
+      # without installing a second copy.
+      - name: MSI contains the app and the bundled tools
+        timeout-minutes: 10
+        run: |
+          $msi = Get-ChildItem "$env:CARGO_TARGET_DIR\release\bundle\msi\*.msi" | Select-Object -First 1
+          if (-not $msi) { throw "no MSI was built" }
+          $dir = Join-Path $env:RUNNER_TEMP 'msi admin'
+          Write-Host "Unpacking $($msi.Name) into $dir"
+          $p = Start-Process -FilePath msiexec.exe -ArgumentList '/a', "`"$($msi.FullName)`"", '/qn', "TARGETDIR=`"$dir`"" -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "msiexec /a exited with code $($p.ExitCode)" }
+          $exe = Get-ChildItem -LiteralPath $dir -Recurse -Filter subforge.exe | Select-Object -First 1
+          if (-not $exe) { throw "subforge.exe is not in the MSI" }
+          $root = $exe.DirectoryName
+          $missing = @('bin', 'vulkan-1.dll', 'bin\ffmpeg.exe', 'bin\mkvmerge.exe') |
+            Where-Object { -not (Test-Path -LiteralPath (Join-Path $root $_)) }
+          if ($missing) { throw "missing from the MSI next to subforge.exe ($root): $($missing -join ', ')" }
+          Write-Host "MSI payload OK in $root"
+
+      - name: Silent install
+        timeout-minutes: 10
+        run: |
+          $setup = Get-ChildItem "$env:CARGO_TARGET_DIR\release\bundle\nsis\*-setup.exe" | Select-Object -First 1
+          if (-not $setup) { throw "no NSIS installer was built" }
+          Write-Host "Installing $($setup.Name) into $env:INSTALL_DIR"
+          # NSIS wants /D last and unquoted, even with spaces.
+          $p = Start-Process -FilePath $setup.FullName -ArgumentList '/S', "/D=$env:INSTALL_DIR" -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "the installer exited with code $($p.ExitCode)" }
+          Get-ChildItem -Recurse -Depth 1 $env:INSTALL_DIR | Select-Object FullName, Length | Format-Table -AutoSize | Out-String -Width 300
+
+      - name: Bundled tools are installed
+        run: |
+          $files = @('subforge.exe', 'vulkan-1.dll', 'bin\ffmpeg.exe', 'bin\ffprobe.exe', 'bin\mkvmerge.exe',
+                     'bin\mkvextract.exe', 'bin\mkvpropedit.exe', 'licenses\THIRD_PARTY_NOTICES.md')
+          $missing = $files | Where-Object { -not (Test-Path -LiteralPath (Join-Path $env:INSTALL_DIR $_)) }
+          if ($missing) { throw "missing from the install: $($missing -join ', ')" }
+          Write-Host "All bundled files present: $($files -join ', ')"
+
+      # So that the self-test can only pass with the bundled copies.
+      - name: Remove FFmpeg and MKVToolNix from PATH
+        run: |
+          $tools = 'ffmpeg.exe', 'ffprobe.exe', 'mkvmerge.exe', 'mkvextract.exe', 'mkvpropedit.exe'
+          # Join-Path throws (not just errors) for an entry on a drive that does not exist,
+          # so treat any such entry as "no tools here" and keep it.
+          $hasTool = {
+            param($dir)
+            foreach ($t in $tools) {
+              try {
+                if (Test-Path -LiteralPath (Join-Path $dir $t) -ErrorAction Stop) { return $true }
+              } catch { }
+            }
+            return $false
+          }
+          $keep = $env:PATH -split ';' | Where-Object { $_ -and -not (& $hasTool $_) }
+          $removed = $env:PATH -split ';' | Where-Object { $_ -and $_ -notin $keep }
+          Write-Host "Removed from PATH: $($removed -join '; ')"
+          "PATH=$($keep -join ';')" >> $env:GITHUB_ENV
+
+      - name: Self-test (installed build)
+        timeout-minutes: 20
+        run: |
+          foreach ($t in 'ffmpeg', 'ffprobe', 'mkvmerge', 'mkvextract', 'mkvpropedit') {
+            if (Get-Command $t -ErrorAction SilentlyContinue) { throw "$t is still on PATH" }
+          }
+          $exe = Join-Path $env:INSTALL_DIR 'subforge.exe'
+          $fixtures = Join-Path $env:GITHUB_WORKSPACE 'crates\subforge-core\tests\fixtures'
+          # Output under a folder with Arabic characters and a space (review focus 2).
+          $out = Join-Path $env:RUNNER_TEMP 'سب فورج out'
+          # The exe is a GUI-subsystem program: run it with Start-Process and read the report file.
+          # Start-Process does not quote list elements, so pass one pre-quoted string.
+          $argLine = "--self-test `"$fixtures`" `"$out`" --whisper-cache `"$env:WHISPER_CACHE`""
+          $p = Start-Process -FilePath $exe -ArgumentList $argLine -Wait -PassThru `
+            -RedirectStandardOutput "$env:E2E_LOGS\selftest.stdout.txt" `
+            -RedirectStandardError "$env:E2E_LOGS\selftest.stderr.txt"
+          Copy-Item -LiteralPath $out -Destination "$env:E2E_LOGS\selftest-out" -Recurse -ErrorAction SilentlyContinue
+          node scripts/ci/assert-selftest.mjs (Join-Path $out 'selftest.json') --exit-code $p.ExitCode --expect-device cpu
+          if ($LASTEXITCODE -ne 0) {
+            Get-Content "$env:E2E_LOGS\selftest.stderr.txt" -ErrorAction SilentlyContinue
+            exit 1
+          }
+
+      - name: GUI smoke (installed build)
+        timeout-minutes: 20
+        run: |
+          $exe = Join-Path $env:INSTALL_DIR 'subforge.exe'
+          $p = Start-Process -FilePath $exe -PassThru `
+            -RedirectStandardOutput "$env:E2E_LOGS\gui.stdout.txt" `
+            -RedirectStandardError "$env:E2E_LOGS\gui.stderr.txt"
+          $window = ''
+          for ($i = 0; $i -lt 15; $i++) {
+            Start-Sleep -Seconds 1
+            if ($p.HasExited) {
+              Get-Content "$env:E2E_LOGS\gui.stderr.txt" -ErrorAction SilentlyContinue
+              throw "the app exited after $i s with code $($p.ExitCode)"
+            }
+            $p.Refresh()
+            if ($p.MainWindowHandle -ne [IntPtr]::Zero) { $window = $p.MainWindowTitle }
+          }
+          Stop-Process -Id $p.Id -Force
+          Get-Process subforge -ErrorAction SilentlyContinue | Stop-Process -Force
+          if ($window -cne 'SubForge') { throw "no SubForge window after 15 s (main window title: '$window')" }
+          Write-Host "GUI smoke passed: window '$window' open, process alive after 15 s"
+
+      - name: Collect logs
+        if: always()
+        run: |
+          foreach ($d in "$env:APPDATA\subforge", "$env:LOCALAPPDATA\subforge", "$env:LOCALAPPDATA\com.updullah.subforge") {
+            if (Test-Path -LiteralPath $d) {
+              robocopy $d (Join-Path "$env:E2E_LOGS\app-data" (Split-Path $d -Leaf)) /E /XD EBWebView whisper-ggml /XF *.bin /MAX:5000000 /NFL /NDL /NP | Out-Null
+            }
+          }
+          exit 0
+
+      - name: Upload self-test output and logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-windows
+          path: ${{ runner.temp }}/e2e-artifacts
+          if-no-files-found: warn
+
+  linux:
+    name: Linux AppImage
+    runs-on: ubuntu-22.04
+    timeout-minutes: 120
+    env:
+      SUBFORGE_SUBSOURCE_API_KEY: ${{ secrets.SUBFORGE_SUBSOURCE_API_KEY || 'ci-placeholder-key' }}
+      # Run the AppImage without FUSE.
+      APPIMAGE_EXTRACT_AND_RUN: '1'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install Tauri Linux deps and e2e tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            libdbus-1-dev \
+            libvulkan-dev \
+            patchelf \
+            xvfb \
+            xdotool \
+            rpm
+
+      - name: Install Vulkan SDK
+        uses: jakoch/install-vulkan-sdk-action@d17de7e2f5e50efb5d2123efed18497d3c58c533 # v1.7.0
+        with:
+          vulkan_version: 1.4.304.1
+          install_runtime: false
+          cache: true
+          stripdown: true
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Set work directories
+        run: |
+          {
+            echo "SUBFORGE_TOOLS_CACHE=$RUNNER_TEMP/tools-cache"
+            echo "WHISPER_CACHE=$RUNNER_TEMP/wcache"
+            echo "E2E_LOGS=$RUNNER_TEMP/e2e-artifacts"
+          } >> "$GITHUB_ENV"
+          mkdir -p "$RUNNER_TEMP/e2e-artifacts"
+
+      - name: Cache bundled-tool downloads
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/tools-cache
+          key: bundled-tools-${{ runner.os }}-${{ hashFiles('packaging/bundled-tools.json', 'scripts/fetch-bundled-tools.mjs') }}
+
+      - name: Cache whisper tiny + VAD models
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/wcache
+          key: whisper-models-${{ runner.os }}-${{ hashFiles('crates/subforge-core/src/whisper/models.rs') }}
+
+      - name: Install frontend deps
+        run: npm ci
+
+      - name: Fetch bundled tools
+        run: node scripts/fetch-bundled-tools.mjs linux-x64
+
+      - name: Build the AppImage and the rpm
+        run: npm run tauri build -- --bundles appimage,rpm --features gpu-vulkan
+
+      - name: Bundled tools are in the AppImage
+        run: |
+          app=$(ls "$GITHUB_WORKSPACE"/src-tauri/target/release/bundle/appimage/*.AppImage)
+          echo "APP=$app" >> "$GITHUB_ENV"
+          cd "$RUNNER_TEMP"
+          "$app" --appimage-extract >/dev/null
+          missing=0
+          for f in usr/lib/subforge/bin/{ffmpeg,ffprobe,mkvmerge,mkvextract,mkvpropedit} usr/lib/libvulkan.so.1 \
+                   usr/lib/subforge/licenses/THIRD_PARTY_NOTICES.md; do
+            if [ -e "squashfs-root/$f" ]; then echo "ok $f"; else echo "MISSING $f"; missing=1; fi
+          done
+          rm -rf squashfs-root
+          exit "$missing"
+
+      # So that the self-test can only pass with the bundled copies.
+      - name: Remove FFmpeg and MKVToolNix from the runner
+        run: |
+          for t in ffmpeg ffprobe mkvmerge mkvextract mkvpropedit; do
+            n=0
+            while p=$(command -v "$t"); do
+              if [ "$n" -ge 5 ]; then
+                echo "::error::$t is still on PATH at $p after removing 5 copies"
+                exit 1
+              fi
+              echo "removing $p"; sudo rm -f "$p"; hash -r
+              n=$((n + 1))
+            done
+          done
+
+      # Diagnostic only: shows whether the runner has any Vulkan driver (it is expected to have
+      # none or only a software one, so transcription must fall back to the CPU).
+      - name: List Vulkan ICDs
+        run: |
+          for d in /usr/share/vulkan/icd.d /etc/vulkan/icd.d /usr/local/share/vulkan/icd.d; do
+            echo "== $d"; ls -l "$d" 2>/dev/null || echo "(none)"
+          done
+          if command -v vulkaninfo >/dev/null; then vulkaninfo --summary 2>&1 | head -n 40 || true; fi
+
+      - name: Self-test (AppImage)
+        timeout-minutes: 20
+        run: |
+          for t in ffmpeg ffprobe mkvmerge mkvextract mkvpropedit; do
+            if command -v "$t"; then echo "$t is still on PATH"; exit 1; fi
+          done
+          # Output under a folder with Arabic characters and a space (review focus 2).
+          out="$RUNNER_TEMP/سب فورج out"
+          code=0
+          "$APP" --self-test "$GITHUB_WORKSPACE/crates/subforge-core/tests/fixtures" "$out" \
+            --whisper-cache "$WHISPER_CACHE" \
+            >"$E2E_LOGS/selftest.stdout.txt" 2>"$E2E_LOGS/selftest.stderr.txt" || code=$?
+          cp -r "$out" "$E2E_LOGS/selftest-out" || true
+          if ! node scripts/ci/assert-selftest.mjs "$out/selftest.json" --exit-code "$code" --expect-device cpu; then
+            cat "$E2E_LOGS/selftest.stderr.txt"
+            exit 1
+          fi
+
+      - name: GUI smoke (AppImage under Xvfb)
+        timeout-minutes: 20
+        # 45 s: the GPU-less runner unpacks the 270 MB AppImage and starts WebKit in software.
+        # A private D-Bus session makes portal and accessibility lookups fail fast instead of
+        # waiting on a missing service.
+        run: dbus-run-session -- xvfb-run -a scripts/ci/gui-smoke-linux.sh "$APP" 45 "$E2E_LOGS/gui.log"
+
+      - name: rpm declares its dependencies
+        run: node scripts/ci/check-rpm-requires.mjs src-tauri/target/release/bundle/rpm/*.rpm
+
+      - name: Collect logs
+        if: always()
+        run: |
+          for d in "$HOME/.config/subforge" "$HOME/.local/share/subforge" "$HOME/.local/share/com.updullah.subforge"; do
+            if [ -d "$d" ]; then
+              rsync -a --max-size=5m --exclude '*.bin' --exclude 'whisper-ggml' "$d" "$E2E_LOGS/app-data/" || true
+            fi
+          done
+
+      - name: Upload self-test output and logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-linux
+          path: ${{ runner.temp }}/e2e-artifacts
+          if-no-files-found: warn

@@ -1,11 +1,15 @@
-use crate::tools::mkvtoolnix::{ExternalSub, VideoFileInfo};
-use crate::tools::mkvtoolnix;
-use crate::{AppState, jobs};
-use axum::{extract::{Json, State}, http::StatusCode};
+use crate::tools::tool_paths;
+use crate::{jobs, AppState};
+use axum::{
+    extract::{Json, State},
+    http::StatusCode,
+};
 use serde::Deserialize;
 use std::collections::HashSet;
 use std::path::Path;
 use std::sync::Arc;
+use subforge_core::tools::mkvtoolnix::{self, ExternalSub, VideoFileInfo};
+use subforge_core::tools::{ToolError, ToolPaths};
 use subforge_metadata::filenaming;
 use walkdir::WalkDir;
 
@@ -61,14 +65,23 @@ fn detect_external_subs(video_path: &Path) -> Vec<ExternalSub> {
     subs
 }
 
-pub async fn scan_directory(Json(req): Json<ScanRequest>) -> Result<Json<Vec<VideoFileInfo>>, StatusCode> {
-    crate::error::blocking(move || scan_directory_blocking(req))
+pub async fn scan_directory(
+    Json(req): Json<ScanRequest>,
+) -> Result<Json<Vec<VideoFileInfo>>, StatusCode> {
+    crate::error::blocking(move || scan_directory_blocking(req, &tool_paths()))
         .await?
         .map(Json)
 }
 
-fn scan_directory_blocking(req: ScanRequest) -> Result<Vec<VideoFileInfo>, StatusCode> {
-    let exts: HashSet<String> = req.extensions.into_iter().map(|e| e.to_lowercase().trim_start_matches('.').to_string()).collect();
+fn scan_directory_blocking(
+    req: ScanRequest,
+    paths: &ToolPaths,
+) -> Result<Vec<VideoFileInfo>, StatusCode> {
+    let exts: HashSet<String> = req
+        .extensions
+        .into_iter()
+        .map(|e| e.to_lowercase().trim_start_matches('.').to_string())
+        .collect();
     let mut files = Vec::new();
 
     let walker = if req.recursive {
@@ -80,20 +93,43 @@ fn scan_directory_blocking(req: ScanRequest) -> Result<Vec<VideoFileInfo>, Statu
     for entry in walker {
         let entry = entry.map_err(|_| StatusCode::BAD_REQUEST)?;
         let path = entry.path();
-        if !path.is_file() { continue; }
+        if !path.is_file() {
+            continue;
+        }
 
-        let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("").to_lowercase();
-        if !exts.is_empty() && !exts.contains(&ext) { continue; }
+        let ext = path
+            .extension()
+            .and_then(|e| e.to_str())
+            .unwrap_or("")
+            .to_lowercase();
+        if !exts.is_empty() && !exts.contains(&ext) {
+            continue;
+        }
 
         let path_str = path.to_string_lossy().to_string();
-        match mkvtoolnix::enumerate_tracks(&path_str) {
+        match mkvtoolnix::enumerate_tracks(paths, &path_str) {
             Ok(info) => {
-                let subtitle_count = info.tracks.iter().filter(|t| t.track_type == "subtitles").count();
-                let audio_count = info.tracks.iter().filter(|t| t.track_type == "audio").count();
-                let video_count = info.tracks.iter().filter(|t| t.track_type == "video").count();
+                let subtitle_count = info
+                    .tracks
+                    .iter()
+                    .filter(|t| t.track_type == "subtitles")
+                    .count();
+                let audio_count = info
+                    .tracks
+                    .iter()
+                    .filter(|t| t.track_type == "audio")
+                    .count();
+                let video_count = info
+                    .tracks
+                    .iter()
+                    .filter(|t| t.track_type == "video")
+                    .count();
                 files.push(VideoFileInfo {
                     path: path_str.clone(),
-                    name: path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_else(|| path_str.clone()),
+                    name: path
+                        .file_name()
+                        .map(|n| n.to_string_lossy().to_string())
+                        .unwrap_or_else(|| path_str.clone()),
                     tracks: info.tracks,
                     subtitle_count,
                     audio_count,
@@ -132,20 +168,18 @@ fn effective_output_dir(video: &str, output_dir: &str) -> String {
 
 pub async fn batch_extract_subtitles(
     Json(req): Json<BatchExtractRequest>,
-) -> Result<Json<Vec<String>>, StatusCode> {
+) -> Result<Json<Vec<String>>, crate::error::AppError> {
     crate::error::blocking(move || {
+        let paths = tool_paths();
         let mut all_paths: Vec<String> = Vec::new();
         for file in &req.files {
             let output_dir = effective_output_dir(file, &req.output_dir);
             let result = if req.languages.is_empty() {
-                mkvtoolnix::extract_all_subtitles(file, &output_dir)
+                mkvtoolnix::extract_all_subtitles(&paths, file, &output_dir)
             } else {
-                mkvtoolnix::extract_subtitles_by_language(file, &output_dir, &req.languages)
+                mkvtoolnix::extract_subtitles_by_language(&paths, file, &output_dir, &req.languages)
             };
-            match result {
-                Ok(paths) => all_paths.extend(paths),
-                Err(_) => return Err(StatusCode::INTERNAL_SERVER_ERROR),
-            }
+            all_paths.extend(result?);
         }
         Ok(Json(all_paths))
     })
@@ -200,7 +234,10 @@ pub async fn merge_external_subs(
     let job_id = format!("batch-merge-{}", uuid::Uuid::new_v4());
 
     {
-        let mut q = state.job_queue.lock().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        let mut q = state
+            .job_queue
+            .lock()
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
         q.add(jobs::Job {
             id: job_id.clone(),
             job_type: jobs::JobType::BatchOperation,
@@ -223,9 +260,11 @@ pub async fn merge_external_subs(
             message: None,
             stage: None,
             output_path: None,
+            details: None,
         },
     );
 
+    let paths = tool_paths();
     let queue_clone = state.job_queue.clone();
     let controls_clone = state.job_controls.clone();
     let job_id_clone = job_id.clone();
@@ -260,27 +299,40 @@ pub async fn merge_external_subs(
             q.update_status(&job_id_clone, jobs::JobStatus::Running);
         }
 
-        let result = mkvtoolnix::merge_subtitles_async(&video_path_str, &subs, &output_path, Some(&control), |pct| {
-            let mut q = queue_clone.lock().unwrap();
-            q.update_progress(&job_id_clone, pct, None);
-            jobs::emit_event(
-                &sender_clone,
-                jobs::JobEvent {
-                    event_type: "job-progress".to_string(),
-                    job_id: job_id_clone.clone(),
-                    status: None,
-                    progress: Some(pct),
-                    message: None,
-                    stage: None,
-                    output_path: None,
-                },
-            );
-        }).await;
+        let result = mkvtoolnix::merge_subtitles_async(
+            &paths,
+            &video_path_str,
+            &subs,
+            &output_path,
+            Some(control.token()),
+            |pct| {
+                let mut q = queue_clone.lock().unwrap();
+                q.update_progress(&job_id_clone, pct, None);
+                jobs::emit_event(
+                    &sender_clone,
+                    jobs::JobEvent {
+                        event_type: "job-progress".to_string(),
+                        job_id: job_id_clone.clone(),
+                        status: None,
+                        progress: Some(pct),
+                        message: None,
+                        stage: None,
+                        output_path: None,
+                        details: None,
+                    },
+                );
+            },
+        )
+        .await;
 
         if let Err(e) = result {
-            let cancelled = matches!(e, mkvtoolnix::MkvError::Cancelled);
+            let cancelled = matches!(e, ToolError::Cancelled);
             let msg = e.to_string();
-            let status = if cancelled { jobs::JobStatus::Cancelled } else { jobs::JobStatus::Failed };
+            let status = if cancelled {
+                jobs::JobStatus::Cancelled
+            } else {
+                jobs::JobStatus::Failed
+            };
             let mut q = queue_clone.lock().unwrap();
             q.update_status(&job_id_clone, status.clone());
             q.update_progress(&job_id_clone, 0.0, Some(msg.clone()));
@@ -294,6 +346,7 @@ pub async fn merge_external_subs(
                     message: Some(msg),
                     stage: None,
                     output_path: None,
+                    details: None,
                 },
             );
             let mut registry = controls_clone.lock().unwrap();
@@ -314,13 +367,16 @@ pub async fn merge_external_subs(
         let mut final_output = output_path.clone();
         let mut done_message = "Merge complete".to_string();
         if replace_original {
-            let produced = std::fs::metadata(&output_path).map(|m| m.len() > 0).unwrap_or(false);
+            let produced = std::fs::metadata(&output_path)
+                .map(|m| m.len() > 0)
+                .unwrap_or(false);
             if produced {
                 match std::fs::rename(&output_path, &video_path_str) {
                     Ok(()) => final_output = video_path_str.clone(),
                     Err(e) => {
-                        done_message =
-                            format!("Merged, but could not replace the original (kept {output_path}): {e}");
+                        done_message = format!(
+                            "Merged, but could not replace the original (kept {output_path}): {e}"
+                        );
                     }
                 }
             }
@@ -344,6 +400,7 @@ pub async fn merge_external_subs(
                 message: Some(done_message),
                 stage: None,
                 output_path: Some(final_output),
+                details: None,
             },
         );
 

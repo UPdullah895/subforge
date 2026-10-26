@@ -1,42 +1,83 @@
 import { defineStore } from "pinia";
 import { apiInvoke } from "../api/client";
-import { ref } from "vue";
+import { startAndWait } from "../api/jobs";
+import { computed, ref } from "vue";
 import { useJobQueue } from "../composables/useJobQueue";
+import { errorDetails as errorDetailsOf } from "../api/errors";
 
+/** Built-in whisper.cpp engine, as reported by `get_whisper_info`. */
 export interface WhisperInfo {
-  faster_whisper_version: string;
-  cuda_available: boolean;
+  engine: string;
+  /** GPU device name when a usable GPU was detected. */
+  gpu: string | null;
   devices: string[];
+}
+
+export interface CatalogModel {
+  name: string;
+  size_mb: number;
+}
+
+export interface ModelDownload {
+  model: string;
+  jobId: string | null;
+  progress: number;
+  /** Latest status line from the backend (MB done, speed). */
+  message?: string;
+}
+
+export interface DeviceOption {
+  value: "auto" | "cpu" | "gpu";
+  /** Set for the `gpu` entry: the name to show next to it. */
+  gpuName: string | null;
+}
+
+const LEGACY_NOTE_KEY = "subforge.whisperLegacyNoteDismissed";
+
+function readDismissed(): boolean {
+  try {
+    return localStorage.getItem(LEGACY_NOTE_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function errorText(e: unknown): string {
+  return e instanceof Error ? e.message : String(e);
 }
 
 export const useTranscribeStore = defineStore("transcribe", () => {
   const whisperInfo = ref<WhisperInfo | null>(null);
-  // True when the speech engine (faster-whisper) couldn't be reached at all —
-  // the page then shows setup help instead of a cryptic error.
+  // True when the engine could not be queried at all (e.g. the server is unreachable).
   const whisperMissing = ref(false);
+  const catalog = ref<CatalogModel[]>([]);
   const downloadedModels = ref<string[]>([]);
   const loadingInfo = ref(false);
-  const downloadingModel = ref<string | null>(null);
+  const download = ref<ModelDownload | null>(null);
+  const legacyCache = ref<string | null>(null);
+  const legacyNoteDismissed = ref(readDismissed());
   const error = ref<string | null>(null);
-  const { jobs, addJob, updateJobProgress, completeJob, clearCompleted, removeJob } = useJobQueue();
+  // Raw tool / network output behind `error`, shown in a details expander.
+  const errorDetails = ref<string | null>(null);
+  const { jobs, addJob, updateJobProgress, completeJob, clearCompleted, removeJob, cancelJob } = useJobQueue();
 
-  const allModels = [
-    "tiny",
-    "tiny.en",
-    "base",
-    "base.en",
-    "small",
-    "small.en",
-    "medium",
-    "medium.en",
-    "large-v1",
-    "large-v2",
-    "large-v3",
-  ];
+  const allModels = computed(() => catalog.value.map((m) => m.name));
+  const downloadingModel = computed(() => download.value?.model ?? null);
+  const showLegacyNote = computed(() => legacyCache.value !== null && !legacyNoteDismissed.value);
+
+  const deviceOptions = computed<DeviceOption[]>(() => {
+    const devices = whisperInfo.value?.devices ?? ["auto", "cpu"];
+    const options: DeviceOption[] = [];
+    for (const d of ["auto", "cpu"] as const) {
+      if (devices.includes(d)) options.push({ value: d, gpuName: null });
+    }
+    const gpu = whisperInfo.value?.gpu;
+    if (devices.includes("gpu") && gpu) options.push({ value: "gpu", gpuName: gpu });
+    return options;
+  });
 
   async function loadInfo() {
     loadingInfo.value = true;
-    error.value = null;
     whisperMissing.value = false;
     try {
       whisperInfo.value = await apiInvoke<WhisperInfo>("get_whisper_info");
@@ -49,29 +90,90 @@ export const useTranscribeStore = defineStore("transcribe", () => {
     }
   }
 
+  async function loadCatalog() {
+    try {
+      catalog.value = await apiInvoke<CatalogModel[]>("list_whisper_catalog");
+    } catch (e) {
+      error.value = `Failed to list models: ${errorText(e)}`;
+    }
+  }
+
   async function loadModels() {
     try {
       downloadedModels.value = await apiInvoke<string[]>("list_whisper_models", {
         cacheDir: null,
       });
     } catch (e) {
-      error.value = `Failed to list models: ${e instanceof Error ? e.message : String(e)}`;
+      error.value = `Failed to list models: ${errorText(e)}`;
     }
   }
 
+  /** Downloads `name` as a background job, tracking its progress until it ends. */
   async function downloadModel(name: string) {
-    downloadingModel.value = name;
-    error.value = null;
+    if (download.value) return;
+    download.value = { model: name, jobId: null, progress: 0 };
+    clearError();
     try {
-      await apiInvoke("download_whisper_model", {
-        model: name,
-        cacheDir: null,
-      });
+      const result = await startAndWait(
+        () => apiInvoke<string>("download_whisper_model", { model: name, cacheDir: null }),
+        {
+          onStarted: (jobId) => {
+            if (download.value) download.value.jobId = jobId;
+          },
+          onProgress: (pct, message) => {
+            if (!download.value) return;
+            download.value.progress = pct;
+            if (message) download.value.message = message;
+          },
+        }
+      );
+      if (result.status === "failed") {
+        error.value = `Failed to download model: ${result.message ?? "unknown error"}`;
+        errorDetails.value = result.details ?? null;
+      }
       await loadModels();
     } catch (e) {
-      error.value = `Failed to download model: ${e instanceof Error ? e.message : String(e)}`;
+      error.value = `Failed to download model: ${errorText(e)}`;
+      errorDetails.value = errorDetailsOf(e) ?? null;
     } finally {
-      downloadingModel.value = null;
+      download.value = null;
+    }
+  }
+
+  function clearError() {
+    error.value = null;
+    errorDetails.value = null;
+  }
+
+  async function cancelDownload() {
+    const jobId = download.value?.jobId;
+    if (jobId) await cancelJob(jobId);
+  }
+
+  async function loadLegacyCache() {
+    try {
+      legacyCache.value = (await apiInvoke<string | null>("whisper_legacy_cache")) ?? null;
+    } catch (e) {
+      legacyCache.value = null;
+      console.warn("Legacy model cache check failed", e);
+    }
+  }
+
+  async function deleteLegacyCache() {
+    try {
+      await apiInvoke("delete_whisper_legacy_cache");
+      legacyCache.value = null;
+    } catch (e) {
+      error.value = errorText(e);
+    }
+  }
+
+  function dismissLegacyNote() {
+    legacyNoteDismissed.value = true;
+    try {
+      localStorage.setItem(LEGACY_NOTE_KEY, "1");
+    } catch {
+      /* storage unavailable: the note stays hidden for this session only */
     }
   }
 
@@ -103,26 +205,39 @@ export const useTranscribeStore = defineStore("transcribe", () => {
 
       addJob(jobId, options.input);
     } catch (e) {
-      error.value = `Failed to start transcription: ${e instanceof Error ? e.message : String(e)}`;
+      error.value = `Failed to start transcription: ${errorText(e)}`;
     }
   }
 
   return {
     whisperInfo,
     whisperMissing,
+    catalog,
     downloadedModels,
     loadingInfo,
+    download,
     downloadingModel,
+    deviceOptions,
+    legacyCache,
+    showLegacyNote,
     error,
+    errorDetails,
+    clearError,
     jobs,
     allModels,
     loadInfo,
+    loadCatalog,
     loadModels,
     downloadModel,
+    cancelDownload,
+    loadLegacyCache,
+    deleteLegacyCache,
+    dismissLegacyNote,
     startTranscription,
     updateJobProgress,
     completeJob,
     clearCompleted,
     removeJob,
+    cancelJob,
   };
 });

@@ -12,7 +12,7 @@ const deps = useDepsStore();
     data-testid="deps-banner"
     class="flex items-center justify-between gap-3 px-4 py-2 bg-warning/15 border-b border-warning/40 text-xs text-text-primary"
   >
-    <span>{{ t("deps.bannerText") }}</span>
+    <span>{{ deps.report?.has_missing_required ? t("deps.bannerText") : t("deps.bannerInvalid") }}</span>
     <button
       data-testid="deps-fix"
       class="px-3 py-1 rounded-md bg-warning text-black font-medium hover:opacity-90 transition-opacity"

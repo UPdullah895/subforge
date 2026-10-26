@@ -46,7 +46,7 @@ describe("depsStore", () => {
 
   it("does not open for optional-only gaps", async () => {
     vi.mocked(apiInvoke).mockResolvedValue(
-      report([item({ id: "faster_whisper", severity: "optional", state: "missing" })])
+      report([item({ id: "mkvpropedit", severity: "optional", state: "missing" })])
     );
     const s = useDepsStore();
     await s.check();
@@ -99,29 +99,21 @@ describe("depsStore", () => {
     expect(s.installing).toBeNull();
   });
 
-  it("installAll installs in order and picks up items unlocked by earlier installs", async () => {
+  it("installAll installs every auto-installable required item in order", async () => {
+    const both = (a: DepStatus["state"], b: DepStatus["state"]) =>
+      report([
+        item({ id: "mkvmerge", state: a, can_auto_install: a !== "ok" }),
+        item({ id: "ffmpeg", state: b, can_auto_install: b !== "ok" }),
+      ]);
     vi.mocked(apiInvoke)
-      // initial check: python missing (auto), pysubs2 missing (not yet auto)
-      .mockResolvedValueOnce(
-        report([
-          item({ id: "python", state: "missing", can_auto_install: true }),
-          item({ id: "pysubs2", state: "missing", can_auto_install: false }),
-        ])
-      )
-      // after installing python, pysubs2 becomes installable
-      .mockResolvedValueOnce(
-        report([
-          item({ id: "python", state: "ok" }),
-          item({ id: "pysubs2", state: "missing", can_auto_install: true }),
-        ])
-      )
-      // after installing pysubs2 everything is ok
-      .mockResolvedValueOnce(report([item({ id: "python", state: "ok" }), item({ id: "pysubs2", state: "ok" })]));
+      .mockResolvedValueOnce(both("missing", "missing"))
+      .mockResolvedValueOnce(both("ok", "missing"))
+      .mockResolvedValueOnce(both("ok", "ok"));
     const s = useDepsStore();
     await s.check();
     await s.installAll();
     const installs = vi.mocked(apiInvoke).mock.calls.filter((c) => c[0] === "install_dependency");
-    expect(installs.map((c) => (c[1] as { id: string }).id)).toEqual(["python", "pysubs2"]);
+    expect(installs.map((c) => (c[1] as { id: string }).id)).toEqual(["mkvmerge", "ffmpeg"]);
     expect(s.report?.has_missing_required).toBe(false);
   });
 
@@ -151,13 +143,13 @@ describe("depsStore", () => {
     vi.mocked(apiInvoke)
       .mockResolvedValueOnce(
         report([
-          item({ id: "faster_whisper", severity: "optional", state: "missing", can_auto_install: true }),
+          item({ id: "mkvpropedit", severity: "optional", state: "missing", can_auto_install: true }),
           item({ id: "ffmpeg", state: "missing", can_auto_install: true }),
         ])
       )
       .mockResolvedValueOnce(
         report([
-          item({ id: "faster_whisper", severity: "optional", state: "missing", can_auto_install: true }),
+          item({ id: "mkvpropedit", severity: "optional", state: "missing", can_auto_install: true }),
           item({ id: "ffmpeg", state: "ok" }),
         ])
       );

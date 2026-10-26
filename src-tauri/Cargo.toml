@@ -1,6 +1,6 @@
 [package]
 name = "subforge"
-version = "0.2.0"
+version = "0.3.0"
 description = "Subtitle and audio toolkit: extract, merge, transcribe and translate subtitles"
 authors = ["UPdullah895"]
 license = "GPL-3.0-only"
@@ -19,6 +19,9 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
+[features]
+gpu-vulkan = ["subforge-core/gpu-vulkan"]
+
 [dependencies]
 tauri = { version = "2", features = [] }
 tauri-plugin-opener = "2"
@@ -33,7 +36,7 @@ walkdir = "2"
 uuid = { version = "1", features = ["v4"] }
 reqwest = { version = "0.12", features = ["json"] }
 keyring = { version = "3", features = ["apple-native", "windows-native", "sync-secret-service"] }
+subforge-core = { path = "../crates/subforge-core" }
 subforge-metadata = { path = "../crates/subforge-metadata" }
 subforge-deps = { path = "../crates/subforge-deps", features = ["tokio"] }
 subforge-subtitle-sources = { path = "../crates/subforge-subtitle-sources" }
-

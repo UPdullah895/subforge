@@ -1,12 +1,54 @@
+//! Adapter between the desktop app's config and `subforge-core`'s tool
+//! resolution. The tool wrappers themselves live in `subforge_core::tools`.
+
+use crate::config::AppConfig;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::OnceLock;
+use subforge_core::tools::{tool_status, ToolId, ToolPaths, ToolStatus};
 
-pub mod ffmpeg;
-pub mod mkvtoolnix;
-pub mod pysubs2;
-pub mod translate;
-pub mod whisper;
+static BUNDLED_DIR: OnceLock<PathBuf> = OnceLock::new();
 
+/// Registers the directory holding the tools shipped with the app. Only the
+/// first call has an effect.
+pub fn set_bundled_dir(dir: PathBuf) {
+    let _ = BUNDLED_DIR.set(dir);
+}
+
+pub fn bundled_dir() -> Option<PathBuf> {
+    BUNDLED_DIR.get().cloned()
+}
+
+/// Where tools may come from, built from the saved config (custom paths) and
+/// the bundled directory.
+pub fn tool_paths() -> ToolPaths {
+    tool_paths_from(&AppConfig::load(), bundled_dir())
+}
+
+pub fn tool_paths_from(cfg: &AppConfig, bundled_dir: Option<PathBuf>) -> ToolPaths {
+    let configured = [
+        (ToolId::Mkvmerge, &cfg.mkvmerge_path),
+        (ToolId::Mkvextract, &cfg.mkvextract_path),
+        (ToolId::Mkvpropedit, &cfg.mkvpropedit_path),
+        (ToolId::Ffmpeg, &cfg.ffmpeg_path),
+        (ToolId::Ffprobe, &cfg.ffprobe_path),
+    ];
+    let custom: HashMap<ToolId, PathBuf> = configured
+        .into_iter()
+        .filter_map(|(id, p)| {
+            let p = p.as_deref()?.trim();
+            (!p.is_empty()).then(|| (id, PathBuf::from(p)))
+        })
+        .collect();
+    ToolPaths {
+        custom,
+        bundled_dir,
+    }
+}
+
+/// Shape of the `get_tool_registry` reply that the current frontend reads.
+/// Task 12 moves the UI to `get_tool_status`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ToolInfo {
     pub name: String,
@@ -15,62 +57,79 @@ pub struct ToolInfo {
     pub available: bool,
 }
 
-pub trait Tool {
-    fn name(&self) -> &str;
-    fn discover(&mut self) -> Option<PathBuf>;
-    fn path(&self) -> Option<&str>;
-    fn is_available(&self) -> bool;
-}
-
-pub fn which(cmd: &str) -> Option<PathBuf> {
-    subforge_deps::find_executable(cmd, &subforge_deps::SearchEnv::from_process())
-}
-
-pub fn find_python() -> Option<PathBuf> {
-    subforge_deps::Context::from_process().find_python().map(|info| info.path)
-}
-
-pub fn script_path(name: &str) -> String {
-    if let Some(p) = subforge_deps::locate_script(name) {
-        return p.to_string_lossy().to_string();
-    }
-    // 1. Next to the binary — Linux/Windows packaged builds
-    if let Ok(exe) = std::env::current_exe() {
-        if let Some(dir) = exe.parent() {
-            let p = dir.join("scripts").join(name);
-            if p.exists() {
-                return p.to_string_lossy().to_string();
-            }
-            // 2. macOS .app bundle: exe is in Contents/MacOS, resources in Contents/Resources
-            if let Some(resources) = dir.parent().map(|d| d.join("Resources")) {
-                let p2 = resources.join("scripts").join(name);
-                if p2.exists() {
-                    return p2.to_string_lossy().to_string();
-                }
-            }
+impl ToolInfo {
+    fn from_status(s: &ToolStatus) -> Self {
+        Self {
+            name: s.id.name().to_string(),
+            path: s.path.as_ref().map(|p| p.to_string_lossy().to_string()),
+            version: s.version.clone(),
+            available: s.path.is_some(),
         }
     }
-    // 3. CWD fallback for dev mode (cargo tauri dev from project root)
-    std::env::current_dir()
-        .map(|d| d.join("scripts").join(name).to_string_lossy().to_string())
-        .unwrap_or_else(|_| format!("scripts/{}", name))
 }
 
 #[derive(Debug, Clone, Serialize)]
 pub struct ToolRegistry {
     pub mkvmerge: ToolInfo,
     pub mkvextract: ToolInfo,
+    pub mkvpropedit: ToolInfo,
     pub ffmpeg: ToolInfo,
     pub ffprobe: ToolInfo,
 }
 
 impl ToolRegistry {
-    pub fn discover() -> Self {
+    pub fn from_statuses(statuses: &[ToolStatus]) -> Self {
+        let pick = |id: ToolId| {
+            statuses
+                .iter()
+                .find(|s| s.id == id)
+                .map(ToolInfo::from_status)
+                .unwrap_or_else(|| ToolInfo {
+                    name: id.name().to_string(),
+                    path: None,
+                    version: None,
+                    available: false,
+                })
+        };
         Self {
-            mkvmerge: mkvtoolnix::discover_mkvmerge(),
-            mkvextract: mkvtoolnix::discover_mkvextract(),
-            ffmpeg: ffmpeg::discover_ffmpeg(),
-            ffprobe: ffmpeg::discover_ffprobe(),
+            mkvmerge: pick(ToolId::Mkvmerge),
+            mkvextract: pick(ToolId::Mkvextract),
+            mkvpropedit: pick(ToolId::Mkvpropedit),
+            ffmpeg: pick(ToolId::Ffmpeg),
+            ffprobe: pick(ToolId::Ffprobe),
         }
+    }
+
+    pub fn discover() -> Self {
+        Self::from_statuses(&tool_status(&tool_paths()))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn tool_paths_use_configured_custom_paths_and_skip_blanks() {
+        let cfg = AppConfig {
+            mkvmerge_path: Some("/opt/mkv/mkvmerge".into()),
+            mkvpropedit_path: Some("/opt/mkv/mkvpropedit".into()),
+            ffmpeg_path: Some("   ".into()),
+            ffprobe_path: Some(String::new()),
+            ..AppConfig::default()
+        };
+        let paths = tool_paths_from(&cfg, Some(PathBuf::from("/app/bin")));
+        assert_eq!(
+            paths.custom.get(&ToolId::Mkvmerge),
+            Some(&PathBuf::from("/opt/mkv/mkvmerge"))
+        );
+        assert_eq!(
+            paths.custom.get(&ToolId::Mkvpropedit),
+            Some(&PathBuf::from("/opt/mkv/mkvpropedit"))
+        );
+        assert!(!paths.custom.contains_key(&ToolId::Ffmpeg));
+        assert!(!paths.custom.contains_key(&ToolId::Ffprobe));
+        assert!(!paths.custom.contains_key(&ToolId::Mkvextract));
+        assert_eq!(paths.bundled_dir, Some(PathBuf::from("/app/bin")));
     }
 }

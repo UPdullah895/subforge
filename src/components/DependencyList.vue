@@ -12,9 +12,6 @@ defineProps<{
   errors: Record<string, string>;
 }>();
 
-// Ids installed through pip; they depend on Python being present first.
-const PIP_IDS = new Set(["pysubs2", "faster_whisper"]);
-
 const emit = defineEmits<{ (e: "install", id: string): void }>();
 
 const { t, te } = useI18n();
@@ -27,6 +24,7 @@ function purpose(item: DepStatus): string {
 
 function dotClass(item: DepStatus): string {
   if (item.state === "ok") return "bg-success";
+  if (item.state === "invalid") return "bg-error";
   return item.severity === "required" ? "bg-error" : "bg-warning";
 }
 
@@ -65,14 +63,29 @@ async function copy(item: DepStatus) {
           <p class="text-xs text-text-secondary mt-1">{{ purpose(item) }}</p>
           <p v-if="item.version" class="text-[11px] text-text-muted mt-0.5 truncate">{{ item.version }}</p>
         </div>
-        <span
-          :data-testid="`status-${item.id}`"
-          :class="['text-xs font-medium shrink-0', item.state === 'ok' ? 'text-success' : 'text-text-secondary']"
-          >{{ t(`deps.state.${item.state}`) }}</span
-        >
+        <div class="flex flex-col items-end shrink-0">
+          <span
+            :data-testid="`status-${item.id}`"
+            :class="['text-xs font-medium', item.state === 'ok' ? 'text-success' : 'text-text-secondary']"
+            >{{ t(`deps.state.${item.state}`) }}</span
+          >
+          <span
+            v-if="item.state === 'ok' && item.source"
+            :data-testid="`source-${item.id}`"
+            class="text-[10px] text-text-muted"
+            >{{ t(`settings.source.${item.source}`) }}</span
+          >
+        </div>
       </div>
 
-      <template v-if="item.state !== 'ok'">
+      <template v-if="item.state === 'invalid'">
+        <p :data-testid="`invalid-${item.id}`" class="text-xs text-error break-words" dir="auto">
+          {{ item.error }}
+        </p>
+        <p class="text-xs text-text-muted">{{ t("deps.invalidHint") }}</p>
+      </template>
+
+      <template v-else-if="item.state !== 'ok'">
         <div v-if="item.install_command" class="space-y-1">
           <p class="text-[11px] text-text-muted">{{ t("deps.command") }}</p>
           <code
@@ -85,7 +98,7 @@ async function copy(item: DepStatus) {
           {{ t("deps.manualHint") }}
         </p>
         <p v-else-if="!item.install_command && !item.can_auto_install" class="text-xs text-text-muted">
-          {{ PIP_IDS.has(item.id) ? t("deps.needPython") : t("deps.noPackageManager") }}
+          {{ t("deps.noPackageManager") }}
         </p>
 
         <div class="flex flex-wrap items-center gap-2">

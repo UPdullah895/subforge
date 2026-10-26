@@ -25,7 +25,8 @@
     "extract": "Extract",
     "scanFailed": "Scan failed",
     "cancel": "Cancel",
-    "close": "Close"
+    "close": "Close",
+    "details": "Details"
   },
   "trackType": {
     "video": "Video",
@@ -226,19 +227,17 @@
   },
   "transcribe": {
     "title": "Speech to Text",
-    "tooltip": "Transcribe audio and video to subtitles using faster-whisper. Choose a model, set options, and run.",
+    "tooltip": "Transcribe audio and video to subtitles with the built-in whisper.cpp engine. Choose a model, set options, and run.",
     "openMedia": "Open Media",
-    "cudaAvailable": "CUDA available",
     "cpuOnly": "CPU only",
     "files": "Files ({count})",
     "model": "Model",
     "whisperModel": "Whisper model",
     "downloadModel": "Download this model",
-    "modelNotCached": "This model is not cached. It will be downloaded on first use (may take several minutes for large models).",
+    "modelNotCached": "This model is not downloaded yet. Download it before transcribing.",
     "device": "Device",
     "autoDetect": "Auto-detect",
     "cpu": "CPU",
-    "cuda": "CUDA",
     "language": "Language",
     "languagePlaceholder": "Auto-detect (e.g. en, ja, de)",
     "output": "Output",
@@ -250,10 +249,20 @@
     "transcriptionJobs": "Transcription Jobs",
     "noMediaSelected": "No media selected",
     "noMediaSelectedDesc": "Open an audio or video file to transcribe it to subtitles.",
-    "notInstalledTitle": "Speech-to-text isn't set up yet",
-    "notInstalledBody": "Transcription runs locally with faster-whisper, which wasn't found on this computer. Install it once and this page will unlock.",
-    "notInstalledHint": "Needs Python 3. If your system blocks global pip installs, use a virtual environment (python3 -m venv ~/.venvs/subforge) or pipx. A NVIDIA GPU makes it much faster but isn't required.",
-    "checkAgain": "Check again"
+    "checkAgain": "Check again",
+    "modelOption": "{name} ({size} MB)",
+    "gpuAvailable": "GPU: {name}",
+    "gpu": "GPU ({name})",
+    "downloading": "Downloading {model}… {percent}%",
+    "cancelDownload": "Cancel download",
+    "engineUnavailableTitle": "The speech engine could not be reached",
+    "engineUnavailableBody": "SubForge could not get the speech-to-text engine status. If you use the web version, check that the SubForge server is running, then try again.",
+    "legacyTitle": "Old speech models found",
+    "legacyBody": "SubForge now uses whisper.cpp models. The models downloaded for the previous engine are no longer used and still take disk space in {path}.",
+    "legacyDelete": "Delete old models",
+    "legacyDismiss": "Dismiss",
+    "legacyConfirmTitle": "Delete old speech models?",
+    "legacyConfirmBody": "This permanently deletes the folder {path} and everything in it. Models for the current engine are not affected."
   },
   "translate": {
     "title": "Translate",
@@ -342,6 +351,11 @@
     "mkvmergePlaceholder": "Path to mkvmerge",
     "mkvextract": "MKVExtract",
     "mkvextractPlaceholder": "Path to mkvextract",
+    "mkvpropedit": "MKVPropEdit",
+    "mkvpropeditPlaceholder": "Path to mkvpropedit",
+    "resetToBundled": "Reset to bundled",
+    "executables": "Executables",
+    "source": { "bundled": "Bundled", "custom": "Custom", "system": "System", "none": "Not found" },
     "ffmpeg": "FFmpeg",
     "ffmpegPlaceholder": "Path to ffmpeg",
     "ffprobe": "FFprobe",
@@ -432,8 +446,11 @@
     "state": {
       "ok": "Installed",
       "missing": "Missing",
-      "outdated": "Too old"
+      "outdated": "Too old",
+      "invalid": "Broken path"
     },
+    "invalidHint": "Fix or clear this path in Settings → Tool Paths. SubForge will not fall back to another copy while it is set.",
+    "bannerInvalid": "A tool path set in Settings is broken, so parts of SubForge will not work.",
     "install": "Install",
     "installing": "Installing…",
     "installAll": "Install all missing",
@@ -444,7 +461,6 @@
     "download": "Download page",
     "command": "Or run this in a terminal:",
     "manualHint": "This needs administrator rights, and no graphical password prompt (pkexec) was found. Run the command above in a terminal.",
-    "needPython": "Install Python first, then this can be installed automatically.",
     "noPackageManager": "No supported package manager was found on this system. Use the download page below to install it manually.",
     "details": "Details",
     "bannerText": "Some required programs are missing, so parts of SubForge will not work.",
@@ -454,10 +470,7 @@
       "mkvextract": "Extracting subtitle and audio tracks from MKV files",
       "mkvpropedit": "Editing track names, languages and flags without remuxing",
       "ffmpeg": "Extracting, converting and merging audio",
-      "ffprobe": "Reading audio track information",
-      "python": "Running the subtitle conversion, translation and transcription helpers",
-      "pysubs2": "Converting and retiming subtitle formats (SRT, ASS, VTT)",
-      "faster_whisper": "Speech-to-text transcription"
+      "ffprobe": "Reading audio track information"
     }
   }
 }

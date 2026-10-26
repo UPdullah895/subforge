@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
-use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
+use subforge_core::CancellationToken;
 use tokio::sync::broadcast;
 use tokio::sync::Notify;
 
@@ -27,6 +28,7 @@ pub enum JobType {
     BatchOperation,
     Transcribe,
     Translate,
+    DownloadModel,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -87,6 +89,8 @@ pub struct JobControl {
     cancelled: AtomicBool,
     paused: AtomicBool,
     notify: Notify,
+    /// Cancelled together with the job; handed to `subforge-core` operations.
+    token: CancellationToken,
 }
 
 impl JobControl {
@@ -95,11 +99,17 @@ impl JobControl {
             cancelled: AtomicBool::new(false),
             paused: AtomicBool::new(false),
             notify: Notify::new(),
+            token: CancellationToken::new(),
         }
+    }
+
+    pub fn token(&self) -> &CancellationToken {
+        &self.token
     }
 
     pub fn cancel(&self) {
         self.cancelled.store(true, Ordering::SeqCst);
+        self.token.cancel();
         self.notify.notify_waiters();
     }
 
@@ -149,6 +159,9 @@ pub struct JobEvent {
     pub message: Option<String>,
     pub stage: Option<String>,
     pub output_path: Option<String>,
+    /// Raw tool / network output for a failed job (omitted when there is none).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub details: Option<String>,
 }
 
 pub type EventSender = broadcast::Sender<JobEvent>;

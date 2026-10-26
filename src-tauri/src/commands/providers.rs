@@ -1,5 +1,5 @@
 use crate::config::AppConfig;
-use crate::tools::translate as translate_tools;
+use subforge_core::translate as translate_tools;
 use subforge_metadata::{tmdb::TmdbClient, tvmaze::TvmazeClient};
 
 #[tauri::command]
@@ -14,7 +14,10 @@ pub async fn test_provider_config(
                 .tmdb_api_key
                 .filter(|k| !k.is_empty())
                 .ok_or_else(|| "No TMDB API key configured".to_string())?;
-            TmdbClient::new(key).test_key().await.map_err(|e| e.to_string())
+            TmdbClient::new(key)
+                .test_key()
+                .await
+                .map_err(|e| e.to_string())
         }
         "tvmaze" => TvmazeClient::new()
             .search_shows("test")
@@ -46,21 +49,27 @@ pub async fn test_provider_config(
                 .deepl_api_key
                 .filter(|k| !k.is_empty())
                 .ok_or_else(|| "No DeepL API key configured".to_string())?;
-            translate_tools::test_deepl_key(&key).await.map_err(|e| e.to_string())
+            translate_tools::test_deepl_key(&key)
+                .await
+                .map_err(|e| e.to_string())
         }
         "openai" => {
             let key = config
                 .openai_api_key
                 .filter(|k| !k.is_empty())
                 .ok_or_else(|| "No OpenAI API key configured".to_string())?;
-            translate_tools::test_openai_key(&key).await.map_err(|e| e.to_string())
+            translate_tools::test_openai_key(&key)
+                .await
+                .map_err(|e| e.to_string())
         }
         "google" => {
             let key = config
                 .google_translate_api_key
                 .filter(|k| !k.is_empty())
                 .ok_or_else(|| "No Google Translate API key configured".to_string())?;
-            translate_tools::test_google_key(&key).await.map_err(|e| e.to_string())
+            translate_tools::test_google_key(&key)
+                .await
+                .map_err(|e| e.to_string())
         }
         "opensubtitles" => {
             let creds = credential_store

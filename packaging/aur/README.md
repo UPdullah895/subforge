@@ -20,5 +20,5 @@
 4. `makepkg --printsrcinfo > .SRCINFO`
 5. Push `PKGBUILD` and `.SRCINFO` to `ssh://aur@aur.archlinux.org/<pkgname>.git`.
 
-SubForge checks for MKVToolNix, FFmpeg, Python and `pysubs2` on startup, so a missing
-optional package never leaves users guessing.
+SubForge checks for MKVToolNix and FFmpeg on startup, so a missing
+package never leaves users guessing.

@@ -1,5 +1,5 @@
-use subforge_subtitle_sources::OpenSubtitlesCredentials;
 use keyring::Entry;
+use subforge_subtitle_sources::OpenSubtitlesCredentials;
 
 const SERVICE: &str = "subforge";
 const ACCOUNT: &str = "opensubtitles";
@@ -50,7 +50,9 @@ mod tests {
 
     impl MockCredentialStore {
         fn new() -> Self {
-            Self { stored: Mutex::new(None) }
+            Self {
+                stored: Mutex::new(None),
+            }
         }
     }
 

@@ -8,11 +8,12 @@ git clone https://github.com/UPdullah895/subforge.git && cd subforge
 npm install
 npm run tauri dev
 ```
-You also need MKVToolNix, FFmpeg and Python (see the README); SubForge will tell you what is missing.
+You also need MKVToolNix and FFmpeg (see the README); SubForge will tell you what is missing.
 
 ## Before opening a PR
 ```bash
 npm run check:versions && npm run lint && npx vue-tsc --noEmit && npm test
+(cd crates/subforge-core && cargo test)
 (cd crates/subforge-deps && cargo test --features tokio)
 (cd crates/subforge-metadata && cargo test)
 (cd crates/subforge-subtitle-sources && cargo test)

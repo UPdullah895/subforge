@@ -1,9 +1,7 @@
-use subforge_deps::HideWindow;
 use serde::{Deserialize, Serialize};
-use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicBool, Ordering};
-use tauri::{AppHandle, Emitter};
-use tokio::process::Command;
+use std::sync::{Arc, Mutex};
+use subforge_core::CancellationToken;
 use tokio::sync::Notify;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -29,6 +27,7 @@ pub enum JobType {
     BatchOperation,
     Transcribe,
     Translate,
+    DownloadModel,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -45,6 +44,12 @@ pub struct Job {
 #[derive(Debug, Clone, Serialize)]
 pub struct JobQueue {
     pub jobs: Vec<Job>,
+}
+
+impl Default for JobQueue {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl JobQueue {
@@ -89,6 +94,14 @@ pub struct JobControl {
     cancelled: AtomicBool,
     paused: AtomicBool,
     notify: Notify,
+    /// Cancelled together with the job; handed to `subforge-core` operations.
+    token: CancellationToken,
+}
+
+impl Default for JobControl {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl JobControl {
@@ -97,11 +110,17 @@ impl JobControl {
             cancelled: AtomicBool::new(false),
             paused: AtomicBool::new(false),
             notify: Notify::new(),
+            token: CancellationToken::new(),
         }
+    }
+
+    pub fn token(&self) -> &CancellationToken {
+        &self.token
     }
 
     pub fn cancel(&self) {
         self.cancelled.store(true, Ordering::SeqCst);
+        self.token.cancel();
         self.notify.notify_waiters();
     }
 
@@ -141,53 +160,3 @@ impl JobControl {
 }
 
 pub type JobControlRegistry = Arc<Mutex<std::collections::HashMap<String, Arc<JobControl>>>>;
-
-pub async fn run_command_job(
-    app: AppHandle,
-    queue: SharedJobQueue,
-    job_id: String,
-    program: &str,
-    args: &[String],
-) -> Result<(), String> {
-    {
-        let mut q = queue.lock().map_err(|e| e.to_string())?;
-        q.update_status(&job_id, JobStatus::Running);
-    }
-
-    let _ = app.emit("job-started", &job_id);
-
-    let output = Command::new(program).hide_window()
-        .args(args)
-        .output()
-        .await
-        .map_err(|e| e.to_string())?;
-
-    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-
-    let (status, message) = if output.status.success() {
-        (
-            JobStatus::Completed,
-            Some(if stdout.is_empty() { "Done".to_string() } else { stdout.trim().to_string() }),
-        )
-    } else {
-        (
-            JobStatus::Failed,
-            Some(if stderr.is_empty() { "Unknown error".to_string() } else { stderr.trim().to_string() }),
-        )
-    };
-
-    {
-        let mut q = queue.lock().map_err(|e| e.to_string())?;
-        q.update_status(&job_id, status.clone());
-        q.update_progress(&job_id, 100.0, message.clone());
-    }
-
-    let _ = app.emit("job-completed", serde_json::json!({
-        "job_id": job_id,
-        "status": status,
-        "message": message,
-    }));
-
-    Ok(())
-}

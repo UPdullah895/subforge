@@ -2,7 +2,9 @@ use crate::config::AppConfig;
 use axum::Json;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
-use subforge_subtitle_sources::{find_subtitle, OpenSubtitlesCredentials, SearchRequest, SubtitleSearchResult};
+use subforge_subtitle_sources::{
+    find_subtitle, OpenSubtitlesCredentials, SearchRequest, SubtitleSearchResult,
+};
 
 // Not set at build time = Subsource search is silently disabled (falls through
 // to translate) rather than failing the whole build. OpenSubtitles.com is
@@ -26,7 +28,11 @@ pub struct OnlineSubtitleSearchRequest {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "status", rename_all = "snake_case")]
 pub enum OnlineSubtitleSearchResponse {
-    Found { subtitle_path: String, source: String, matched_via: String },
+    Found {
+        subtitle_path: String,
+        source: String,
+        matched_via: String,
+    },
     NotFound,
 }
 
@@ -39,9 +45,11 @@ pub async fn search_online_subtitle(
         config.opensubtitles_username,
         config.opensubtitles_password,
     ) {
-        (Some(api_key), Some(username), Some(password)) => {
-            Some(OpenSubtitlesCredentials { api_key, username, password })
-        }
+        (Some(api_key), Some(username), Some(password)) => Some(OpenSubtitlesCredentials {
+            api_key,
+            username,
+            password,
+        }),
         _ => None,
     };
 
@@ -64,20 +72,31 @@ pub async fn search_online_subtitle(
     .await;
 
     match result {
-        SubtitleSearchResult::Found { downloaded_path: text, source, matched_via } => {
-            match write_subtitle_next_to_video(&video_path, &request.language, &text) {
-                Ok(subtitle_path) => {
-                    Json(OnlineSubtitleSearchResponse::Found { subtitle_path, source, matched_via })
-                }
-                Err(_) => Json(OnlineSubtitleSearchResponse::NotFound),
-            }
-        }
+        SubtitleSearchResult::Found {
+            downloaded_path: text,
+            source,
+            matched_via,
+        } => match write_subtitle_next_to_video(&video_path, &request.language, &text) {
+            Ok(subtitle_path) => Json(OnlineSubtitleSearchResponse::Found {
+                subtitle_path,
+                source,
+                matched_via,
+            }),
+            Err(_) => Json(OnlineSubtitleSearchResponse::NotFound),
+        },
         SubtitleSearchResult::NotFound => Json(OnlineSubtitleSearchResponse::NotFound),
     }
 }
 
-fn write_subtitle_next_to_video(video_path: &Path, lang: &str, text: &str) -> std::io::Result<String> {
-    let stem = video_path.file_stem().and_then(|s| s.to_str()).unwrap_or("subtitle");
+fn write_subtitle_next_to_video(
+    video_path: &Path,
+    lang: &str,
+    text: &str,
+) -> std::io::Result<String> {
+    let stem = video_path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("subtitle");
     let dir = video_path.parent().unwrap_or_else(|| Path::new("."));
     let out_path = dir.join(format!("{stem}.{lang}.srt"));
     std::fs::write(&out_path, text)?;
@@ -133,7 +152,10 @@ pub async fn check_subsource_status() -> Json<SubsourceStatus> {
     }
     let client = reqwest::Client::new();
     let reachable = client
-        .get(format!("{}/movies/search", subforge_subtitle_sources::subsource::DEFAULT_BASE_URL))
+        .get(format!(
+            "{}/movies/search",
+            subforge_subtitle_sources::subsource::DEFAULT_BASE_URL
+        ))
         .header("X-API-Key", SUBSOURCE_API_KEY)
         .query(&[("searchType", "text"), ("q", "ping")])
         .send()

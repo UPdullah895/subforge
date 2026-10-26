@@ -1,0 +1,40 @@
+[package]
+name = "subforge-core"
+version = "0.1.0"
+edition = "2021"
+license = "GPL-3.0-only"
+description = "Subtitle model, parsing and writing shared by SubForge"
+
+[features]
+# GPU acceleration through whisper.cpp's Vulkan backend (needs the Vulkan SDK to build).
+gpu-vulkan = ["whisper-rs/vulkan", "dep:ash"]
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+thiserror = "2"
+encoding_rs = "0.8"
+chardetng = "0.1"
+regex = "1"
+tokio-util = "0.7"
+dirs = "6"
+sha2 = "0.10"
+reqwest = { version = "0.12", features = ["json"] }
+serde_json = "1"
+tokio = { version = "1", features = ["process", "fs", "io-util", "time", "macros", "rt", "sync"] }
+subforge-deps = { path = "../subforge-deps", features = ["tokio"] }
+subforge-metadata = { path = "../subforge-metadata" }
+# Pinned exactly: transcribe.rs works around 0.16.0's set_abort_callback_safe, which stores a
+# Box<dyn FnMut> but reads it back as `F`. The fix depends on that storage layout; re-check
+# transcribe.rs (abort callback) before changing this version.
+whisper-rs = "=0.16.0"
+# Same version whisper-rs 0.16.0 depends on: log capture and the Vulkan device query use it directly.
+whisper-rs-sys = "=0.15.0"
+uuid = { version = "1", features = ["v4"] }
+# Loads the Vulkan loader at run time to probe for a usable GPU before ggml touches Vulkan.
+ash = { version = "0.38", default-features = false, features = ["loaded", "std"], optional = true }
+
+[dev-dependencies]
+tempfile = "3"
+axum = "0.8"
+futures-util = "0.3"
+tokio = { version = "1", features = ["rt", "rt-multi-thread", "macros", "net"] }

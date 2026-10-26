@@ -42,7 +42,6 @@ pub enum PackageManager {
 pub enum SystemPackage {
     Mkvtoolnix,
     Ffmpeg,
-    Python,
 }
 
 impl PackageManager {
@@ -61,7 +60,10 @@ impl PackageManager {
     pub fn needs_elevation(self) -> bool {
         matches!(
             self,
-            PackageManager::Pacman | PackageManager::Apt | PackageManager::Dnf | PackageManager::Zypper
+            PackageManager::Pacman
+                | PackageManager::Apt
+                | PackageManager::Dnf
+                | PackageManager::Zypper
         )
     }
 
@@ -72,22 +74,16 @@ impl PackageManager {
         match (self, pkg) {
             (Pacman, Mkvtoolnix) => &["mkvtoolnix-cli"],
             (Pacman, Ffmpeg) => &["ffmpeg"],
-            (Pacman, Python) => &["python"],
             (Apt, Mkvtoolnix) => &["mkvtoolnix"],
             (Apt, Ffmpeg) => &["ffmpeg"],
-            (Apt, Python) => &["python3", "python3-venv", "python3-pip"],
             (Dnf, Mkvtoolnix) => &["mkvtoolnix"],
             (Dnf, Ffmpeg) => &["ffmpeg-free"],
-            (Dnf, Python) => &["python3", "python3-pip"],
             (Zypper, Mkvtoolnix) => &["mkvtoolnix"],
             (Zypper, Ffmpeg) => &["ffmpeg"],
-            (Zypper, Python) => &["python3", "python3-pip"],
             (Brew, Mkvtoolnix) => &["mkvtoolnix"],
             (Brew, Ffmpeg) => &["ffmpeg"],
-            (Brew, Python) => &["python"],
             (Winget, Mkvtoolnix) => &["MoritzBunkus.MKVToolNix"],
             (Winget, Ffmpeg) => &["Gyan.FFmpeg"],
-            (Winget, Python) => &["Python.Python.3.12"],
         }
     }
 
@@ -100,8 +96,13 @@ impl PackageManager {
                 .iter()
                 .map(|id| {
                     s(&[
-                        "winget", "install", "--exact", "--id", id,
-                        "--accept-package-agreements", "--accept-source-agreements",
+                        "winget",
+                        "install",
+                        "--exact",
+                        "--id",
+                        id,
+                        "--accept-package-agreements",
+                        "--accept-source-agreements",
                     ])
                 })
                 .collect(),
@@ -182,28 +183,18 @@ mod tests {
     fn pacman_command_is_exact() {
         assert_eq!(
             PackageManager::Pacman.install_commands(SystemPackage::Mkvtoolnix),
-            vec![vec!["pacman", "-S", "--needed", "--noconfirm", "mkvtoolnix-cli"]]
-        );
-    }
-
-    #[test]
-    fn apt_python_installs_venv_and_pip_too() {
-        let cmds = PackageManager::Apt.install_commands(SystemPackage::Python);
-        assert_eq!(
-            cmds,
-            vec![vec!["apt-get", "install", "-y", "python3", "python3-venv", "python3-pip"]]
+            vec![vec![
+                "pacman",
+                "-S",
+                "--needed",
+                "--noconfirm",
+                "mkvtoolnix-cli"
+            ]]
         );
     }
 
     #[test]
     fn winget_uses_one_command_per_package_id() {
-        assert_eq!(
-            PackageManager::Winget.install_commands(SystemPackage::Python),
-            vec![vec![
-                "winget", "install", "--exact", "--id", "Python.Python.3.12",
-                "--accept-package-agreements", "--accept-source-agreements"
-            ]]
-        );
         assert_eq!(
             PackageManager::Winget.install_commands(SystemPackage::Mkvtoolnix)[0][4],
             "MoritzBunkus.MKVToolNix"

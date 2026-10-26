@@ -1,12 +1,12 @@
+use axum::http::{header::HeaderValue, request::Parts};
 use axum::{
     extract::DefaultBodyLimit,
     routing::{get, post},
     Router,
 };
+use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
-use std::collections::HashMap;
-use axum::http::{header::HeaderValue, request::Parts};
 use tower_http::cors::{AllowOrigin, CorsLayer};
 use tower_http::services::ServeDir;
 
@@ -14,16 +14,19 @@ mod config;
 mod error;
 mod jobs;
 mod routes;
+#[cfg(test)]
+mod tests;
 mod tools;
 mod ws;
 
-use jobs::{create_event_channel, JobQueue, SharedJobQueue, JobControlRegistry};
+use jobs::{create_event_channel, JobControlRegistry, JobQueue, SharedJobQueue};
 
 #[derive(Clone)]
 pub struct AppState {
     pub job_queue: SharedJobQueue,
     pub event_sender: jobs::EventSender,
     pub job_controls: JobControlRegistry,
+    pub whisper_downloads: subforge_core::whisper::ActiveDownloads,
 }
 
 #[tokio::main]
@@ -48,6 +51,7 @@ async fn main() {
         job_queue,
         event_sender,
         job_controls,
+        whisper_downloads: Default::default(),
     };
 
     let app = Router::new()
@@ -83,6 +87,7 @@ fn api_routes() -> Router<AppState> {
         .route("/fs/list", get(routes::fs::list_dir))
         // ── Tool registry ────────────────────────────────────────────────────
         .route("/tools/registry", get(routes::tools::get_registry))
+        .route("/tools/status", get(routes::tools::get_status))
         // ── Dependencies (startup check + one-click install) ─────────────────
         .route("/deps", get(routes::deps::get_deps))
         .route("/deps/install", post(routes::deps::install_dep))
@@ -92,9 +97,18 @@ fn api_routes() -> Router<AppState> {
             get(routes::config::load_config).post(routes::config::save_config),
         )
         // ── Subtitle operations ──────────────────────────────────────────────
-        .route("/subtitle/enumerate", post(routes::subtitle::enumerate_tracks))
-        .route("/subtitle/extract", post(routes::subtitle::extract_subtitle))
-        .route("/subtitle/extract-all", post(routes::subtitle::extract_all_subtitles))
+        .route(
+            "/subtitle/enumerate",
+            post(routes::subtitle::enumerate_tracks),
+        )
+        .route(
+            "/subtitle/extract",
+            post(routes::subtitle::extract_subtitle),
+        )
+        .route(
+            "/subtitle/extract-all",
+            post(routes::subtitle::extract_all_subtitles),
+        )
         .route("/subtitle/merge", post(routes::subtitle::merge_subtitle))
         .route("/subtitle/remove", post(routes::subtitle::remove_subtitles))
         .route("/subtitle/convert", post(routes::subtitle::convert_format))
@@ -108,17 +122,41 @@ fn api_routes() -> Router<AppState> {
         .route("/audio/remove", post(routes::audio::remove_audio_tracks))
         // ── Batch operations ─────────────────────────────────────────────────
         .route("/batch/scan", post(routes::batch::scan_directory))
-        .route("/batch/extract", post(routes::batch::batch_extract_subtitles))
-        .route("/batch/merge-subs", post(routes::batch::merge_external_subs))
+        .route(
+            "/batch/extract",
+            post(routes::batch::batch_extract_subtitles),
+        )
+        .route(
+            "/batch/merge-subs",
+            post(routes::batch::merge_external_subs),
+        )
         // ── Transcription (Whisper) ──────────────────────────────────────────
         // GET for browser direct access; POST for apiInvoke() from frontend
         .route(
             "/transcribe/info",
-            get(routes::transcribe::get_whisper_info)
-                .post(routes::transcribe::get_whisper_info),
+            get(routes::transcribe::get_whisper_info).post(routes::transcribe::get_whisper_info),
         )
-        .route("/transcribe/models", post(routes::transcribe::list_whisper_models))
-        .route("/transcribe/download", post(routes::transcribe::download_whisper_model))
+        .route(
+            "/transcribe/models",
+            post(routes::transcribe::list_whisper_models),
+        )
+        .route(
+            "/transcribe/download",
+            post(routes::transcribe::download_whisper_model),
+        )
+        .route(
+            "/transcribe/catalog",
+            get(routes::transcribe::list_whisper_catalog)
+                .post(routes::transcribe::list_whisper_catalog),
+        )
+        .route(
+            "/transcribe/legacy-cache",
+            post(routes::transcribe::whisper_legacy_cache),
+        )
+        .route(
+            "/transcribe/legacy-cache/delete",
+            post(routes::transcribe::delete_whisper_legacy_cache),
+        )
         .route("/transcribe", post(routes::transcribe::transcribe_audio))
         // ── Translation ──────────────────────────────────────────────────────
         .route(
@@ -141,7 +179,10 @@ fn api_routes() -> Router<AppState> {
         .route("/rename/preview", post(routes::rename::preview_rename))
         .route("/rename/apply", post(routes::rename::apply_rename))
         // ── Providers ─────────────────────────────────────────────────────────
-        .route("/providers/test", post(routes::providers::test_provider_config))
+        .route(
+            "/providers/test",
+            post(routes::providers::test_provider_config),
+        )
         // ── Online subtitle sources ─────────────────────────────────────────
         .route(
             "/subtitle-sources/search",
@@ -172,7 +213,9 @@ fn api_routes() -> Router<AppState> {
 fn cors_layer() -> CorsLayer {
     CorsLayer::new()
         .allow_origin(AllowOrigin::predicate(|origin: &HeaderValue, _: &Parts| {
-            let Ok(origin) = origin.to_str() else { return false };
+            let Ok(origin) = origin.to_str() else {
+                return false;
+            };
             let Some(rest) = origin
                 .strip_prefix("http://")
                 .or_else(|| origin.strip_prefix("https://"))
