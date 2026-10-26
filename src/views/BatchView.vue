@@ -6,9 +6,11 @@ import { useBatchStore } from "../stores/batchStore";
 import DropOverlay from "../components/DropOverlay.vue";
 import { useFileDrop } from "../composables/useFileDrop";
 import { useAppStore } from "../stores/appStore";
-import { dirOf } from "../utils/subtitleNaming";
+import { splitFilesAndFolders } from "../utils/paths";
+import { useToastStore } from "../stores/toastStore";
 
 const { t } = useI18n();
+const toastStore = useToastStore();
 import BatchFileList from "../components/BatchFileList.vue";
 import JobMonitor from "../components/JobMonitor.vue";
 import RenameModal from "../components/RenameModal.vue";
@@ -60,12 +62,14 @@ function openBatchTranslate() {
 
 const { dragging: dropActive } = useFileDrop({
   onDrop: async (paths) => {
-    // A dropped file means "scan the folder it lives in"; a folder is scanned
-    // directly. In both cases the first path wins (batch is per-directory).
-    const first = paths[0];
-    const hasExtension = /\.[^./\\]+$/.test(first);
-    const dir = hasExtension ? dirOf(first) : first;
-    await batchStore.scanDirectory(dir);
+    // Batch is per-directory. Dropping a single file used to scan the whole
+    // folder it lived in, which was surprising; ask for a folder instead.
+    const { folders } = await splitFilesAndFolders(paths);
+    if (folders.length === 0) {
+      toastStore.info(t("drop.batchNeedsFolder"));
+      return;
+    }
+    await batchStore.scanDirectory(folders[0]);
   },
 });
 

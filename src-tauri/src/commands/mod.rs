@@ -2,6 +2,7 @@ pub mod audio;
 pub mod batch;
 pub mod deps;
 pub mod jobs;
+pub mod paths;
 pub mod providers;
 pub mod rename;
 pub mod subtitle;

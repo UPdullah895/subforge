@@ -6,6 +6,8 @@ import { dirOf, fileStem, joinPath } from "../utils/subtitleNaming";
 import { useAudioStore } from "../stores/audioStore";
 import DropOverlay from "../components/DropOverlay.vue";
 import { useFileDrop } from "../composables/useFileDrop";
+import { splitFilesAndFolders } from "../utils/paths";
+import { useToastStore } from "../stores/toastStore";
 import { useAppStore } from "../stores/appStore";
 
 const { t } = useI18n();
@@ -26,6 +28,7 @@ import {
 } from "lucide-vue-next";
 
 const audioStore = useAudioStore();
+const toastStore = useToastStore();
 const appStore = useAppStore();
 const selectedFiles = ref<string[]>([]);
 const activeFile = ref<string | null>(null);
@@ -44,8 +47,10 @@ const { dragging: dropActive } = useFileDrop({
   onDrop: onFilesDropped,
 });
 
-async function onFilesDropped(paths: string[]) {
-  for (const path of paths) {
+async function onFilesDropped(dropped: string[]) {
+  const { files, folders } = await splitFilesAndFolders(dropped);
+  if (folders.length > 0) toastStore.info(t("drop.folderNotSupported"));
+  for (const path of files) {
     if (!selectedFiles.value.includes(path)) selectedFiles.value.push(path);
   }
   if (!activeFile.value && selectedFiles.value.length > 0) {

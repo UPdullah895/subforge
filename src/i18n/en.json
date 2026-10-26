@@ -489,6 +489,9 @@
     "audioHint": "Drop a video file to list its audio tracks",
     "transcribeHint": "Drop audio or video files to transcribe them",
     "batchHint": "Drop a folder to scan it for video files"
+,
+    "folderNotSupported": "That is a folder. Drop a video file here, or use the Batch page to scan a folder.",
+    "batchNeedsFolder": "Drop a folder here to scan it. A single video file can be opened from the Subtitles page."
   },
   "toast": {
     "jobDone": "Finished",

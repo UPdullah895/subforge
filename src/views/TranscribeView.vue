@@ -8,11 +8,14 @@ import type { UnlistenFn } from "@tauri-apps/api/event";
 import { useTranscribeStore } from "../stores/transcribeStore";
 
 const { t } = useI18n();
+const toastStore = useToastStore();
 import { JOB_STATUS, type JobStatus } from "../constants/jobStatus";
 import { useAppStore } from "../stores/appStore";
 import ErrorBanner from "../components/ErrorBanner.vue";
 import DropOverlay from "../components/DropOverlay.vue";
 import { useFileDrop } from "../composables/useFileDrop";
+import { splitFilesAndFolders } from "../utils/paths";
+import { useToastStore } from "../stores/toastStore";
 import ErrorDetails from "../components/ErrorDetails.vue";
 import Modal from "../components/Modal.vue";
 import {
@@ -71,8 +74,10 @@ const MEDIA_EXTS = [
 
 const { dragging: dropActive } = useFileDrop({
   extensions: MEDIA_EXTS,
-  onDrop: (paths) => {
-    for (const path of paths) {
+  onDrop: async (paths) => {
+    const { files, folders } = await splitFilesAndFolders(paths);
+    if (folders.length > 0) toastStore.info(t("drop.folderNotSupported"));
+    for (const path of files) {
       if (!selectedFiles.value.includes(path)) selectedFiles.value.push(path);
     }
   },

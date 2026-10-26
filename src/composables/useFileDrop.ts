@@ -4,7 +4,8 @@ import { isTauri } from "../api/client";
 export interface FileDropOptions {
   /**
    * Extensions to accept (lowercase, no dot). A path with no extension is
-   * treated as a folder and always accepted. Empty/omitted accepts anything.
+   * passed through too: it may be a folder, and only the backend can tell
+   * (`utils/paths.ts`). Empty/omitted accepts anything.
    */
   extensions?: string[];
   onDrop: (paths: string[]) => void;

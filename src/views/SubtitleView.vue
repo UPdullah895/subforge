@@ -5,6 +5,7 @@ import { open, save } from "../utils/dialog";
 import { apiInvoke } from "../api/client";
 import { startAndWait } from "../api/jobs";
 import { baseName, dirOf, fileStem, joinPath, planSubtitleFilenames } from "../utils/subtitleNaming";
+import { splitFilesAndFolders } from "../utils/paths";
 import { useToastStore } from "../stores/toastStore";
 import { useSubtitleStore } from "../stores/subtitleStore";
 import { useAppStore } from "../stores/appStore";
@@ -76,7 +77,16 @@ function extensionOf(path: string): string {
   return match ? match[1].toLowerCase() : "";
 }
 
-async function onFilesDropped(paths: string[]) {
+async function onFilesDropped(dropped: string[]) {
+  // A bare path with no extension can be a folder (which mkvmerge cannot
+  // open). Ask the backend before treating anything as a media file.
+  const { files, folders } = await splitFilesAndFolders(dropped);
+  if (folders.length > 0) {
+    toastStore.info(t("drop.folderNotSupported"));
+  }
+  if (files.length === 0) return;
+  const paths = files;
+
   const subtitles = paths.filter((p) => SUB_EXTS.includes(extensionOf(p)));
   const media = paths.filter((p) => !subtitles.includes(p));
 
