@@ -68,8 +68,17 @@ fn read(id: SecretId) -> Option<String> {
     }
 }
 
+/// Set by the hidden `--self-test` entry point: CI and headless runs have no
+/// session keyring, and some Secret Service clients stall trying to reach one.
+fn enabled() -> bool {
+    std::env::var_os("SUBFORGE_DISABLE_KEYRING").is_none()
+}
+
 /// The stored value, if any. Cached for the life of the process.
 pub fn get(id: SecretId) -> Option<String> {
+    if !enabled() {
+        return None;
+    }
     {
         let map = cache();
         if let Some(v) = map.get(&id) {
@@ -83,6 +92,9 @@ pub fn get(id: SecretId) -> Option<String> {
 
 /// Stores `value`, replacing any previous one.
 pub fn set(id: SecretId, value: &str) -> Result<(), String> {
+    if !enabled() {
+        return Err("the OS keyring is disabled for this run".to_string());
+    }
     if value.is_empty() {
         return clear(id);
     }

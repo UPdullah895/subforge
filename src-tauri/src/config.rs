@@ -188,13 +188,25 @@ impl AppConfig {
     ) -> bool {
         let mut changed = false;
         for (id, slot) in self.secret_slots() {
-            let Some(value) = slot.clone().filter(|v| !v.is_empty()) else {
-                if slot.is_some() {
-                    *slot = None;
-                    changed = true;
-                }
+            // `None` means "no opinion" (the keyring may well have a value);
+            // only an empty string is an explicit "remove this key", which is
+            // what the settings form sends after the user clears the field.
+            let Some(value) = slot.clone() else {
                 continue;
             };
+            if value.is_empty() {
+                match set(id, "") {
+                    Ok(()) => {
+                        *slot = None;
+                        changed = true;
+                    }
+                    Err(e) => eprintln!(
+                        "SubForge: could not remove {} from the OS keyring ({e})",
+                        id.account()
+                    ),
+                }
+                continue;
+            }
             if get(id).as_deref() == Some(value.as_str()) {
                 // Already in the keyring: just keep it out of the file.
                 *slot = None;
@@ -412,7 +424,11 @@ mod tests {
         let changed = cfg.store_secrets_with(
             |id| stored.borrow().get(&id).cloned(),
             |id, value| {
-                stored.borrow_mut().insert(id, value.to_string());
+                if value.is_empty() {
+                    stored.borrow_mut().remove(&id);
+                } else {
+                    stored.borrow_mut().insert(id, value.to_string());
+                }
                 Ok(())
             },
         );
@@ -469,4 +485,43 @@ mod tests {
         cfg.openai_api_key = Some("x".into());
         assert!(cfg.has_stored_secrets());
     }
+    #[test]
+    fn clearing_a_key_removes_it_from_the_keyring() {
+        let mut cfg = AppConfig {
+            tmdb_api_key: Some(String::new()),
+            ..AppConfig::default()
+        };
+        let stored = std::cell::RefCell::new(std::collections::HashMap::from([(
+            SecretId::TmdbApiKey,
+            "old".to_string(),
+        )]));
+        cfg.store_secrets_with(
+            |id| stored.borrow().get(&id).cloned(),
+            |id, value| {
+                if value.is_empty() {
+                    stored.borrow_mut().remove(&id);
+                } else {
+                    stored.borrow_mut().insert(id, value.to_string());
+                }
+                Ok(())
+            },
+        );
+        assert!(!stored.borrow().contains_key(&SecretId::TmdbApiKey));
+        assert_eq!(cfg.tmdb_api_key, None);
+    }
+
+    #[test]
+    fn none_means_no_opinion_and_leaves_the_keyring_alone() {
+        let mut cfg = AppConfig::default();
+        let mut writes = 0;
+        cfg.store_secrets_with(
+            |_| Some("stored".into()),
+            |_, _| {
+                writes += 1;
+                Ok(())
+            },
+        );
+        assert_eq!(writes, 0);
+    }
+
 }
