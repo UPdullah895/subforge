@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, nextTick, onMounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import { open, save } from "../utils/dialog";
 import { apiInvoke } from "../api/client";
@@ -13,6 +13,8 @@ const { t } = useI18n();
 const toastStore = useToastStore();
 import TrackTable from "../components/TrackTable.vue";
 import CleanSubtitlePanel from "../components/CleanSubtitlePanel.vue";
+import DropOverlay from "../components/DropOverlay.vue";
+import { useFileDrop } from "../composables/useFileDrop";
 import ErrorDetails from "../components/ErrorDetails.vue";
 import {
   FolderOpen,
@@ -62,6 +64,55 @@ const shiftMs = ref(0);
 const convertLoading = ref(false);
 const convertError = ref<string | null>(null);
 const convertSuccess = ref(false);
+// Path handed to the Clean panel when a subtitle is dropped on the Clean tab.
+const cleanDropPath = ref("");
+
+const MEDIA_EXTS = ["mkv", "mp4", "avi", "mov", "wmv", "flv", "webm"];
+const SUB_EXTS = ["srt", "ass", "ssa", "vtt"];
+
+function extensionOf(path: string): string {
+  const match = /\.([^./\\]+)$/.exec(path);
+  return match ? match[1].toLowerCase() : "";
+}
+
+async function onFilesDropped(paths: string[]) {
+  const subtitles = paths.filter((p) => SUB_EXTS.includes(extensionOf(p)));
+  const media = paths.filter((p) => !subtitles.includes(p));
+
+  if (media.length > 0) {
+    for (const path of media) {
+      if (!selectedFiles.value.includes(path)) selectedFiles.value.push(path);
+    }
+    if (!activeFile.value) {
+      activeFile.value = selectedFiles.value[0];
+      await subtitleStore.loadTracks(activeFile.value);
+    }
+    activeTab.value = "tracks";
+    return;
+  }
+
+  if (subtitles.length > 0) {
+    const [first] = subtitles;
+    if (activeTab.value === "merge") {
+      mergeSubtitlePath.value = first;
+    } else if (activeTab.value === "convert") {
+      convertInputPath.value = first;
+    } else if (activeTab.value === "clean") {
+      // Re-set through null so dropping the same file twice works.
+      cleanDropPath.value = "";
+      await nextTick();
+      cleanDropPath.value = first;
+    } else {
+      convertInputPath.value = first;
+      activeTab.value = "convert";
+    }
+  }
+}
+
+const { dragging: dropActive } = useFileDrop({
+  extensions: [...MEDIA_EXTS, ...SUB_EXTS],
+  onDrop: onFilesDropped,
+});
 
 async function pickFiles() {
   const selected = await open({
@@ -301,7 +352,8 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="flex flex-col h-full">
+  <div class="relative flex flex-col h-full">
+    <DropOverlay :show="dropActive" :label="t('drop.subtitleHint')" />
     <!-- Header -->
     <div class="flex items-center justify-between px-6 py-4 border-b border-border">
       <div class="flex items-center gap-2">
@@ -680,7 +732,7 @@ onMounted(() => {
       </template>
 
       <template v-if="activeTab === 'clean'">
-        <CleanSubtitlePanel />
+        <CleanSubtitlePanel :initial-path="cleanDropPath" />
       </template>
     </div>
   </div>

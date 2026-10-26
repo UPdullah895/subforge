@@ -11,6 +11,8 @@ const { t } = useI18n();
 import { JOB_STATUS, type JobStatus } from "../constants/jobStatus";
 import { useAppStore } from "../stores/appStore";
 import ErrorBanner from "../components/ErrorBanner.vue";
+import DropOverlay from "../components/DropOverlay.vue";
+import { useFileDrop } from "../composables/useFileDrop";
 import ErrorDetails from "../components/ErrorDetails.vue";
 import Modal from "../components/Modal.vue";
 import {
@@ -61,6 +63,20 @@ function buildOutputPath(inputPath: string, format: string): string {
   const base = name.replace(/\.[^.]+$/, "");
   return `${dir}${base}.${format}`;
 }
+
+const MEDIA_EXTS = [
+  "mkv", "mp4", "avi", "mov", "wmv", "flv", "webm",
+  "mp3", "wav", "flac", "aac", "m4a", "ogg", "opus",
+];
+
+const { dragging: dropActive } = useFileDrop({
+  extensions: MEDIA_EXTS,
+  onDrop: (paths) => {
+    for (const path of paths) {
+      if (!selectedFiles.value.includes(path)) selectedFiles.value.push(path);
+    }
+  },
+});
 
 async function pickFiles() {
   const selected = await open({
@@ -150,7 +166,8 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="flex flex-col h-full">
+  <div class="relative flex flex-col h-full">
+    <DropOverlay :show="dropActive" :label="t('drop.transcribeHint')" />
     <!-- Header -->
     <div class="flex items-center justify-between px-6 py-4 border-b border-border">
       <div class="flex items-center gap-2">

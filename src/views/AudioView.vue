@@ -4,6 +4,8 @@ import { useI18n } from "vue-i18n";
 import { open, save } from "../utils/dialog";
 import { dirOf, fileStem, joinPath } from "../utils/subtitleNaming";
 import { useAudioStore } from "../stores/audioStore";
+import DropOverlay from "../components/DropOverlay.vue";
+import { useFileDrop } from "../composables/useFileDrop";
 import { useAppStore } from "../stores/appStore";
 
 const { t } = useI18n();
@@ -36,6 +38,21 @@ const activeFileName = computed(() => {
   const parts = activeFile.value.split(/[/\\]/);
   return parts[parts.length - 1];
 });
+
+const { dragging: dropActive } = useFileDrop({
+  extensions: ["mkv", "mp4", "avi", "mov", "wmv", "flv", "webm"],
+  onDrop: onFilesDropped,
+});
+
+async function onFilesDropped(paths: string[]) {
+  for (const path of paths) {
+    if (!selectedFiles.value.includes(path)) selectedFiles.value.push(path);
+  }
+  if (!activeFile.value && selectedFiles.value.length > 0) {
+    activeFile.value = selectedFiles.value[0];
+    await audioStore.loadTracks(activeFile.value);
+  }
+}
 
 async function pickFiles() {
   const selected = await open({
@@ -166,7 +183,8 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="flex flex-col h-full">
+  <div class="relative flex flex-col h-full">
+    <DropOverlay :show="dropActive" :label="t('drop.audioHint')" />
     <!-- Header -->
     <div class="flex items-center justify-between px-6 py-4 border-b border-border">
       <div class="flex items-center gap-2">

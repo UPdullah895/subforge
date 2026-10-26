@@ -99,6 +99,7 @@ Developers can print the same dependency report in a terminal with `cargo run --
 - **Online subtitle search before translating** — before running machine translation on a file, SubForge searches [Subsource](https://subsource.net) (on by default) and, if you supply your own account, [OpenSubtitles.com](https://www.opensubtitles.com) (file-hash matching for exact-release accuracy) for an existing human-made subtitle in the target language. If one is found it's used directly; if not, translation runs as normal. Toggle this off, or configure OpenSubtitles.com or your own Subsource key, from Settings → Subtitle Sources. API keys are kept in the operating system's keyring, not in `config.json`.
 
 ### Interface
+- **Drag and drop** — drop video files (or a folder on the Batch page, or a subtitle on the Convert/Clean tabs) straight onto the window.
 - Dark theme, fully responsive layout, English/Arabic localization.
 
 ---

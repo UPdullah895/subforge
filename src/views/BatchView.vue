@@ -3,7 +3,10 @@ import { computed, onMounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import { open } from "../utils/dialog";
 import { useBatchStore } from "../stores/batchStore";
+import DropOverlay from "../components/DropOverlay.vue";
+import { useFileDrop } from "../composables/useFileDrop";
 import { useAppStore } from "../stores/appStore";
+import { dirOf } from "../utils/subtitleNaming";
 
 const { t } = useI18n();
 import BatchFileList from "../components/BatchFileList.vue";
@@ -54,6 +57,17 @@ function openTranslateModal(files: string[]) {
 function openBatchTranslate() {
   openTranslateModal(Array.from(batchStore.selectedFiles));
 }
+
+const { dragging: dropActive } = useFileDrop({
+  onDrop: async (paths) => {
+    // A dropped file means "scan the folder it lives in"; a folder is scanned
+    // directly. In both cases the first path wins (batch is per-directory).
+    const first = paths[0];
+    const hasExtension = /\.[^./\\]+$/.test(first);
+    const dir = hasExtension ? dirOf(first) : first;
+    await batchStore.scanDirectory(dir);
+  },
+});
 
 async function pickDirectory() {
   const selected = await open({
@@ -121,7 +135,8 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="flex flex-col h-full">
+  <div class="relative flex flex-col h-full">
+    <DropOverlay :show="dropActive" :label="t('drop.batchHint')" />
     <!-- Header -->
     <div class="flex items-center justify-between px-6 py-4 border-b border-border">
       <div class="flex items-center gap-2">

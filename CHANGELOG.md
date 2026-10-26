@@ -6,6 +6,7 @@ All notable changes to this project are documented here. Format based on
 ## [Unreleased]
 
 ### Added
+- **Drag and drop** in the desktop app: drop videos on the Subtitle, Audio or Transcribe pages, a folder on Batch, or a subtitle file on the Convert/Clean tabs.
 - **Clean** tab for subtitles: removes translator credits, social-media handles, links and channel advertisements from SRT, ASS, SSA and VTT. Every match is previewed first with the reason it matched, any line can be kept, and overwriting the original keeps a `.bak` copy. ASS styles, `[Fonts]`, `[Graphics]` and drawings are left untouched.
 - Subsource search can use your own API key from **Settings → Subtitle Sources**; a key set there takes precedence over the one (if any) built into the app.
 

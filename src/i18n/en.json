@@ -458,6 +458,12 @@
     "selectedCount": "{n} selected",
     "emptyFolderMode": "No subfolders here. You can still use this folder."
   },
+  "drop": {
+    "subtitleHint": "Drop video files to open them, or a subtitle to work on it",
+    "audioHint": "Drop a video file to list its audio tracks",
+    "transcribeHint": "Drop audio or video files to transcribe them",
+    "batchHint": "Drop a folder to scan it for video files"
+  },
   "toast": {
     "jobDone": "Finished",
     "jobFailed": "Something went wrong",

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { computed, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { apiInvoke } from "../api/client";
 import { open } from "../utils/dialog";
@@ -14,6 +14,8 @@ import {
 } from "lucide-vue-next";
 
 const { t } = useI18n();
+
+const props = withDefaults(defineProps<{ initialPath?: string }>(), { initialPath: "" });
 
 export interface RemovedCue {
   index: number;
@@ -40,6 +42,21 @@ const backupPath = ref<string | null>(null);
 const overwrite = ref(false);
 /** Indexes the user un-ticked: keep them even though a rule matched. */
 const keptIndexes = ref<number[]>([]);
+
+// A subtitle dropped on the Clean tab arrives as a prop; treat it exactly like
+// picking the file (without leaving stale results on screen).
+watch(
+  () => props.initialPath,
+  (path) => {
+    if (!path) return;
+    inputPath.value = path;
+    result.value = null;
+    error.value = null;
+    donePath.value = null;
+    backupPath.value = null;
+    keptIndexes.value = [];
+  }
+);
 
 const removals = computed(() => result.value?.removed ?? []);
 
