@@ -18,7 +18,7 @@ All notable changes to this project are documented here. Format based on
 - Subsource reports **Not configured** when there is no key, instead of the misleading **Unreachable**; an invalid key and rate limiting get their own messages.
 
 ### Security
-- API keys (TMDB, DeepL, OpenAI, Google Translate, Subsource) are stored in the OS keyring instead of `config.json`, and existing keys are migrated on first launch (a key stays in the file if the keyring is unavailable, so nothing is lost). `config.json` is now owner-only (`0600`).
+- API keys (TMDB, DeepL, OpenAI, Google Translate, Subsource) are stored in the OS keyring instead of `config.json`, and existing keys are migrated on first launch (a key stays in the file if the keyring is unavailable, so nothing is lost). `config.json` is now owner-only (`0600`). Server mode has no keychain and keeps its keys in `config.json`; running both modes on one machine means entering them again in the other mode.
 - The "Required Programs" dialog no longer appears on installs that bundle FFmpeg and MKVToolNix. It now uses the same lookup as every tool call (custom path, then bundled, then system), shows where each tool was found, and appears when a custom tool path in Settings is broken.
 - Only one transcription runs at a time; others wait with a "Queued" status and can be cancelled while waiting (several at once could run out of memory and crash the app).
 - Translating an ASS/SSA track keeps it ASS/SSA (`{video}.{lang}.ass`) with its styles, instead of writing ASS text into a `.srt` file.
