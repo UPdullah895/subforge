@@ -40,18 +40,20 @@ fi
 RELEASE_DIR="${PROJECT_ROOT}/src-tauri/target/release"
 APP_IMAGE_DIR="${RELEASE_DIR}/bundle/appimage"
 
-# 1. AppImage bundle
+# 1. Direct binary. `cargo build --release`/`tauri build` refreshes this,
+# whereas a leftover AppImage can be months old — running a stale bundle made
+# it look like recent fixes were missing.
+BINARY="${RELEASE_DIR}/subforge"
+if [[ -f "$BINARY" && -x "$BINARY" ]]; then
+    exec "$BINARY"
+fi
+
+# 2. AppImage bundle
 if [[ -d "$APP_IMAGE_DIR" ]]; then
     APPIMAGE=$(find "$APP_IMAGE_DIR" -maxdepth 1 -name "*.AppImage" -type f -print -quit 2>/dev/null || true)
     if [[ -n "${APPIMAGE:-}" && -f "$APPIMAGE" ]]; then
         exec "$APPIMAGE"
     fi
-fi
-
-# 2. Direct binary
-BINARY="${RELEASE_DIR}/subforge"
-if [[ -f "$BINARY" && -x "$BINARY" ]]; then
-    exec "$BINARY"
 fi
 
 # ── Fall back to dev mode ───────────────────────────────────────────────────
