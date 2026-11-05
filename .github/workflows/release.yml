@@ -21,6 +21,11 @@ jobs:
 
     runs-on: ${{ matrix.platform }}
 
+    env:
+      # ggml defaults to -march=native, which made v0.3.0 an AVX-512-only build: it died with
+      # SIGILL on every CPU without AVX-512 (see packaging/ci/ggml-portable.cmake).
+      CMAKE_TOOLCHAIN_FILE: ${{ github.workspace }}/packaging/ci/ggml-portable.cmake
+
     steps:
       - uses: actions/checkout@v4
 
@@ -75,6 +80,8 @@ jobs:
         with:
           workspaces: src-tauri
           cache-targets: ${{ matrix.platform != 'windows-latest' }}
+          # The ggml build flags changed; a reused native build would keep AVX-512 code.
+          key: ggml-portable-v1
 
       - name: Install frontend deps
         run: npm ci
@@ -113,6 +120,20 @@ jobs:
           releaseDraft: false
           prerelease: false
           args: ${{ matrix.args }}
+
+      # Never ship an installer that only runs on AVX-512 CPUs again (v0.3.0 did).
+      - name: whisper.cpp is portable, not AVX-512-only
+        if: matrix.platform == 'ubuntu-22.04'
+        shell: bash
+        run: |
+          cache=$(ls -d src-tauri/target/release/build/whisper-rs-sys-*/out/build 2>/dev/null | head -1)
+          if [ -z "$cache" ]; then echo "::error::no whisper-rs-sys CMake build directory"; exit 1; fi
+          grep -E 'GGML_NATIVE:BOOL=OFF|GGML_AVX512:BOOL=OFF' "$cache/CMakeCache.txt" || {
+            echo "::error::ggml was built with native/AVX-512 flags"
+            grep -E 'GGML_(NATIVE|AVX512)' "$cache/CMakeCache.txt" || true
+            exit 1
+          }
+          node scripts/ci/check-no-avx512.mjs src-tauri/target/release/subforge
 
       # Corresponding source of the GPL/LGPL programs and libraries the installers redistribute
       # (packaging/bundled-tools.json "sources"), checksum-verified, attached once per release.

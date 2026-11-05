@@ -16,6 +16,7 @@ All notable changes to this project are documented here. Format based on
 - Releases attach the GPL/LGPL corresponding sources as one `third-party-sources.tar.xz` instead of eleven loose archives, so the page shows the installers first.
 
 ### Fixed
+- **Speech to text crashed on CPUs without AVX-512.** whisper.cpp's ggml defaults to `-march=native`, so the release inherited the AVX-512 support of the CI runner and died with `SIGILL` inside `ggml_cpu` while loading a model — on a Ryzen 5000 or any Intel 12th–14th gen, the Speech to Text page was unusable and the app could not say why. The build now pins a portable baseline (`packaging/ci/ggml-portable.cmake`: AVX2/FMA/F16C, no AVX-512), CI asserts `GGML_NATIVE=OFF` in whisper's CMake cache, and `scripts/ci/check-no-avx512.mjs` fails the build if ggml/whisper code contains any AVX-512 instruction.
 - The AUR `PKGBUILD`s carry real `sha256sum`s instead of `SKIP`, so `subforge-bin` and `subforge` can be built and submitted (`makepkg --verifysource` passes for v0.3.0).
 - The desktop entry uses a single main category (`AudioVideo;`) and sets `StartupWMClass`, so `desktop-file-validate` is clean and the window groups under its own launcher icon. Same fix in `scripts/install-desktop-launcher.sh`, which writes the entry for source checkouts.
 

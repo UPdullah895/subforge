@@ -29,7 +29,7 @@ yay -S subforge       # builds from source
 ### Other Linux
 Download the `.AppImage`, `.deb` (Debian/Ubuntu) or `.rpm` (Fedora/openSUSE) from the [Releases page](https://github.com/UPdullah895/subforge/releases). The AppImage needs no other *program* installed — FFmpeg, MKVToolNix, GTK and WebKit are inside it — while the `.deb` and `.rpm` pull the tools from your distribution.
 
-The AppImage runs on distributions with **glibc 2.35 or newer** (Ubuntu 22.04+, Debian 12+, Fedora 35+, RHEL 10+, current Arch and openSUSE Tumbleweed) and needs **FUSE 2** to mount itself:
+The builds are x86-64 and need **AVX2** (Intel Haswell 2013+, AMD Excavator 2015+); AVX-512 is not required. The AppImage runs on distributions with **glibc 2.35 or newer** (Ubuntu 22.04+, Debian 12+, Fedora 35+, RHEL 10+, current Arch and openSUSE Tumbleweed) and needs **FUSE 2** to mount itself:
 ```bash
 # Debian/Ubuntu: sudo apt install libfuse2    Fedora: sudo dnf install fuse-libs
 # Arch: sudo pacman -S fuse2                  openSUSE: sudo zypper install libfuse2
