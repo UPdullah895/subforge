@@ -14,7 +14,7 @@ All notable changes to this project are documented here. Format based on
 
 ### Fixed
 - The AUR `PKGBUILD`s carry real `sha256sum`s instead of `SKIP`, so `subforge-bin` and `subforge` can be built and submitted (`makepkg --verifysource` passes for v0.3.0).
-- The desktop entry uses a single main category (`AudioVideo;`) and sets `StartupWMClass`, so `desktop-file-validate` is clean and the window groups under its own launcher icon.
+- The desktop entry uses a single main category (`AudioVideo;`) and sets `StartupWMClass`, so `desktop-file-validate` is clean and the window groups under its own launcher icon. Same fix in `scripts/install-desktop-launcher.sh`, which writes the entry for source checkouts.
 
 ## [0.3.0] - 2026-10-26
 

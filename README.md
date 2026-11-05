@@ -42,6 +42,7 @@ An AppImage installs nothing by itself — no menu icon, no `subforge` command. 
 curl -fsSLO https://raw.githubusercontent.com/UPdullah895/subforge/main/scripts/install-appimage.sh
 bash install-appimage.sh subforge_0.3.0_amd64.AppImage
 ```
+Building from source instead? `scripts/install-desktop-launcher.sh` registers a launcher that runs your checkout (see [Build from source](#build-from-source)).
 
 Every release publishes `SHA256SUMS.txt` next to the installers, so a download can be checked before it is run:
 ```bash

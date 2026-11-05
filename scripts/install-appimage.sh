@@ -82,6 +82,12 @@ if [ -d "$icon_src" ]; then
   done < <(find "$icon_src" -path '*/apps/subforge.png' -type f)
 fi
 
+# scripts/install-desktop-launcher.sh (source checkouts) writes the same file name;
+# one entry is what we want, so say plainly that it is being replaced.
+if [ -f "$desktop_dir/subforge.desktop" ] && grep -q 'launch-subforge.sh' "$desktop_dir/subforge.desktop"; then
+  echo "note: replacing the development launcher entry installed by scripts/install-desktop-launcher.sh"
+fi
+
 cat >"$desktop_dir/subforge.desktop" <<EOF
 [Desktop Entry]
 Type=Application

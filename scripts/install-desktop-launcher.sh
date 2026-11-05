@@ -48,9 +48,11 @@ Comment=Subtitle & audio toolkit
 Exec=${LAUNCHER_SCRIPT}
 Icon=${ICON_NAME%.png}
 Type=Application
-Categories=AudioVideo;Utility;
+Categories=AudioVideo;
+Keywords=subtitle;srt;ass;mkv;ffmpeg;transcribe;translate;
 Terminal=false
 StartupNotify=true
+StartupWMClass=subforge
 EOF
 
 echo "✓ Installed desktop entry → ${DESKTOP_FILE}"
