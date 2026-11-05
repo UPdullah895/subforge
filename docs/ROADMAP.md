@@ -49,6 +49,16 @@ Reusable parts worth calling out, because they shorten later phases:
   episode have Arabic?" needs.
 - `server/` already exposes ~35 endpoints; an MCP server is a thin typed wrapper, not a rewrite.
 
+### Decisions (locked 2026-11-05)
+
+| Question | Decision | Consequence |
+|---|---|---|
+| What triggers automation | **The program watches library folders itself** — no Jellyfin plugin/API | Works with any server; the deployment target is a container, so the Docker image lands with P2 instead of P7 |
+| Dub alignment | **Deterministic first** (ASR windows + cross-correlation), a video-language model only adjudicates disagreements | No GPU dependency for the core promise; the model is a tie-breaker, never the primary signal |
+| MCP transport | **stdio and streamable HTTP** in the same crate | Local agents get stdio; agents on another machine get HTTP; one tool table for both |
+| Editor playback | **Proxy first** (480p fMP4), libmpv only if frame accuracy turns out to be needed | P6 ships without a native player dependency; the proxy is cached and disposable |
+| Target languages | **Several per policy**, executed sequentially inside one job | One library pass can fill `ar` and `en`; the scheduler still runs one heavy step at a time |
+
 ---
 
 ## 2. Target architecture
@@ -127,7 +137,10 @@ killing the process mid-job leaves the queue intact and resumable.
 - [ ] Watcher: `notify` + debounce, initial scan, ignore `.part`/`.tmp`/files still growing.
 - [ ] Safety: dry-run mode on by default for a new library; quarantine folder for failures;
       one JSON log line per step; never modify a file that another process has open.
-- [ ] Notification hook (optional): webhook or Jellyfin "scan library" request after a successful publish.
+- [ ] Notification hook (optional): webhook (or a Jellyfin "scan library" request) after a successful publish.
+- [ ] **Docker image** shipped with this phase: multi-stage build, `SUBFORGE_*` env config, the library
+      mounted as a volume, GPU optional. The watcher is the feature a container owner actually wants,
+      so it must not wait for a packaging phase.
 
 **Done when:** an episode with no Arabic subtitle is dropped into a watched folder; within N
 minutes the MKV carries an `ar` track, the external file is gone, the log explains every step, and
@@ -147,8 +160,10 @@ The hard, differentiating phase.
       background*, *original SFX preserved*.
 - [ ] Mux with `mkvmerge`: language, track name, default/forced flags, per-track channels.
 - [ ] Manual editor: waveform + per-segment offset nudge, "snap to nearest cue" and A/B preview.
-- [ ] Optional AI assist: a video-language model (LFM3-VL, Qwen-VL) checks mouth movement against
-      audio energy on disagreements — used only as a tie-breaker, never as the primary signal.
+- [ ] AI adjudication, only when the two deterministic signals disagree: a video-language model
+      (LFM3-VL, Qwen-VL) compares mouth movement with the dub's audio energy on the disputed window
+      and returns a verdict. It never produces the offset itself, so a machine without a usable GPU
+      still gets full alignment.
 
 **Done when:** a Japanese episode plus an Arabic dub file becomes an MKV with aligned `ar` audio
 (±40 ms on music passages, no visible drift over 24 minutes), original `ja` track intact, and a
@@ -186,9 +201,9 @@ whole run finishes overnight with the queue never running two heavy jobs at once
 
 The part that makes the tool pleasant instead of batch-only.
 
-- [ ] Playback inside the app. MKV cannot be played by WebKit reliably, so: build a **proxy**
-      (ffmpeg → fragmented MP4, 480p, audio kept) on first open, cached next to the config dir;
-      later, optional libmpv embedding for native playback and frame accuracy.
+- [ ] Playback inside the app by **proxy** (decided): ffmpeg → fragmented MP4, 480p, audio kept,
+      built on first open and cached next to the config dir. libmpv stays an option only if
+      frame-accurate dragging later proves the proxy insufficient.
 - [ ] Waveform strip from `ffmpeg` peak data, draggable zoom, cue blocks over the audio.
 - [ ] Cue list: inline edit, drag start/end with snapping to frames and to neighbours, split/merge,
       shift-all, keyboard-first workflow, full undo/redo.
@@ -199,11 +214,11 @@ The part that makes the tool pleasant instead of batch-only.
 **Done when:** open an episode and its SRT, drag a cue onto the right word, undo it, save, and the
 file is valid for every player — without launching another program.
 
-### P7 — Ship it — ~1 week, split across phases
+### P7 — Ship it — ~1 week, spread across the phases
 
-- [ ] Docker image for server mode (multi-stage, GPU optional, `SUBFORGE_*` env config).
-- [ ] Docs: MCP tools reference, policy file reference, Jellyfin cookbook.
+- [ ] Docs: MCP tools reference, policy file reference, Jellyfin cookbook, container deployment guide.
 - [ ] Packaging: the AUR packages this branch prepares, plus a Flatpak consideration for Linux.
+- [ ] Docker image is delivered with P2 (see above), not here.
 
 ---
 
