@@ -9,10 +9,7 @@
 // usage: node scripts/ci/check-no-avx512.mjs <binary> [more binaries…]
 
 import { execFile } from "node:child_process";
-import { promisify } from "node:util";
 import { existsSync } from "node:fs";
-
-const run = promisify(execFile);
 
 /** Counts AVX-512 (zmm) instructions inside symbols whose name mentions ggml or whisper. */
 async function avx512Instructions(binary) {
