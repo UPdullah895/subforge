@@ -125,3 +125,20 @@ jobs:
         run: |
           node scripts/fetch-bundled-tools.mjs --sources "$RUNNER_TEMP/third-party-sources"
           gh release upload "$TAG" "$RUNNER_TEMP"/third-party-sources/* --clobber
+
+  # SHA256SUMS.txt over the installers, so a normal user can check a download before
+  # running it (`sha256sum -c SHA256SUMS.txt --ignore-missing`). Runs after both matrix
+  # legs so it covers the Windows and Linux assets, and hashes what GitHub actually
+  # serves rather than files on the runner.
+  checksums:
+    needs: build
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Publish SHA256SUMS.txt
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: bash scripts/release-checksums.sh "$TAG"

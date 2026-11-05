@@ -27,10 +27,29 @@ yay -S subforge       # builds from source
 -->
 
 ### Other Linux
-Download the `.AppImage` (any distro), `.deb` (Debian/Ubuntu) or `.rpm` (Fedora/openSUSE) from the Releases page. The AppImage needs nothing else installed (FFmpeg and MKVToolNix are inside it); the `.deb` and `.rpm` install them as dependencies.
+Download the `.AppImage`, `.deb` (Debian/Ubuntu) or `.rpm` (Fedora/openSUSE) from the [Releases page](https://github.com/UPdullah895/subforge/releases). The AppImage needs no other *program* installed — FFmpeg, MKVToolNix, GTK and WebKit are inside it — while the `.deb` and `.rpm` pull the tools from your distribution.
+
+The AppImage runs on distributions with **glibc 2.35 or newer** (Ubuntu 22.04+, Debian 12+, Fedora 35+, RHEL 10+, current Arch and openSUSE Tumbleweed) and needs **FUSE 2** to mount itself:
 ```bash
-chmod +x subforge_*.AppImage && ./subforge_*.AppImage
+# Debian/Ubuntu: sudo apt install libfuse2    Fedora: sudo dnf install fuse-libs
+# Arch: sudo pacman -S fuse2                  openSUSE: sudo zypper install libfuse2
+chmod +x subforge_0.3.0_amd64.AppImage && ./subforge_0.3.0_amd64.AppImage
 ```
+Without FUSE 2 the AppImage will not start; either install it, or run the AppImage once as `./subforge_0.3.0_amd64.AppImage --appimage-extract-and-run`, or use the `.deb`/`.rpm`.
+
+An AppImage installs nothing by itself — no menu icon, no `subforge` command. Run the installer script once to get both (it copies the file to `~/.local/bin`, adds the entry and the icons, and accepts `--uninstall`):
+```bash
+curl -fsSLO https://raw.githubusercontent.com/UPdullah895/subforge/main/scripts/install-appimage.sh
+bash install-appimage.sh subforge_0.3.0_amd64.AppImage
+```
+
+Every release publishes `SHA256SUMS.txt` next to the installers, so a download can be checked before it is run:
+```bash
+sha256sum -c SHA256SUMS.txt --ignore-missing
+```
+
+### Updating
+SubForge does not check for updates on its own. Download the new installer from the Releases page and install it again: on Windows run the new `-setup.exe`, on Linux re-run `install-appimage.sh` with the new AppImage (or install the new `.deb`/`.rpm`). Settings and downloaded speech models are kept.
 
 ### macOS
 Not published. Build from source (below); support is best-effort.

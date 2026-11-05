@@ -5,6 +5,17 @@ All notable changes to this project are documented here. Format based on
 
 ## [Unreleased]
 
+### Added
+- `scripts/install-appimage.sh`: installs the Linux AppImage for the current user — copies it to `~/.local/bin/subforge`, adds the menu entry and the icons, and supports `--uninstall`. An AppImage installs none of that by itself, so a user who is not a developer previously had no launcher icon and no `subforge` command.
+- The release workflow publishes `SHA256SUMS.txt` for the installers of every release, so a download can be verified with `sha256sum -c` before it is run.
+
+### Changed
+- README: the Linux section states the real runtime requirements (glibc 2.35+, FUSE 2, with the `--appimage-extract-and-run` fallback), how to get a launcher, and how to update; the old "any distro / nothing else installed" claim was wrong for older distributions.
+
+### Fixed
+- The AUR `PKGBUILD`s carry real `sha256sum`s instead of `SKIP`, so `subforge-bin` and `subforge` can be built and submitted (`makepkg --verifysource` passes for v0.3.0).
+- The desktop entry uses a single main category (`AudioVideo;`) and sets `StartupWMClass`, so `desktop-file-validate` is clean and the window groups under its own launcher icon.
+
 ## [0.3.0] - 2026-10-26
 
 ### Added
