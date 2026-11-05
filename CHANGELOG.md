@@ -6,6 +6,9 @@ All notable changes to this project are documented here. Format based on
 ## [Unreleased]
 
 ### Added
+- **Job scheduler for server mode.** One heavy job at a time by default (transcription, translation, batch, model download) — `SUBFORGE_MAX_HEAVY_JOBS`/`SUBFORGE_MAX_LIGHT_JOBS` change the budgets — with user jobs ranked ahead of automation jobs, one writer per input file, and every transition appended to `<config dir>/server/jobs.jsonl`. A restart now leaves an honest history: jobs that were running come back as `failed` with "interrupted", instead of disappearing. `GET /api/jobs` lists the queue with each job's `class`, `source` and `stage` (`queued`, `waiting_for_file`, `waiting_for_slot`, `running`, `done`).
+
+### Added
 - `scripts/install-appimage.sh`: installs the Linux AppImage for the current user — copies it to `~/.local/bin/subforge`, adds the menu entry and the icons, and supports `--uninstall`. An AppImage installs none of that by itself, so a user who is not a developer previously had no launcher icon and no `subforge` command.
 - The release workflow publishes `SHA256SUMS.txt` for the installers of every release, so a download can be verified with `sha256sum -c` before it is run.
 - An update notice: the app asks GitHub once a day whether a newer release exists and shows a bar with a link when there is one (dismissible per version, no download). The version comes from `package.json` through a Vite define, so the web UI served by `server/` shows it too.

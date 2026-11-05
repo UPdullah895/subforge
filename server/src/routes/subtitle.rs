@@ -133,8 +133,14 @@ pub async fn merge_subtitle(
     let subtitle_path = req.subtitle_path.clone();
     let output_path = req.output_path.clone();
     let language = req.language.clone();
+    let slot_path = video_path.clone();
 
-    tokio::spawn(async move {
+    state.scheduler.gated(
+        job_id.clone(),
+        jobs::JobType::MergeSubtitle,
+        jobs::scheduler::JobSource::User,
+        slot_path,
+        async move {
         let control = Arc::new(jobs::JobControl::new());
         {
             let mut registry = controls_clone.lock().unwrap();

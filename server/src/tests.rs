@@ -8,11 +8,18 @@ use tower::ServiceExt;
 
 fn test_app() -> Router {
     let (event_sender, _rx) = create_event_channel();
+    let job_queue: SharedJobQueue = Arc::new(Mutex::new(JobQueue::new()));
+    let scheduler = jobs::scheduler::Scheduler::with_journal(
+        job_queue.clone(),
+        event_sender.clone(),
+        None,
+    );
     let state = AppState {
-        job_queue: Arc::new(Mutex::new(JobQueue::new())),
+        job_queue,
         event_sender,
         job_controls: Arc::new(Mutex::new(HashMap::new())),
         whisper_downloads: Default::default(),
+        scheduler,
     };
     Router::new().nest("/api", api_routes()).with_state(state)
 }
@@ -304,4 +311,16 @@ async fn whisper_download_rejects_unknown_model() {
         body["error"].as_str().unwrap().contains("large-v9"),
         "{body}"
     );
+}
+
+#[tokio::test]
+async fn jobs_endpoint_lists_nothing_when_idle() {
+    let _cfg = TestConfigDir::new();
+    let res = test_app()
+        .oneshot(Request::get("/api/jobs").body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    let json = body_json(res).await;
+    assert_eq!(json["jobs"], serde_json::json!([]));
 }
