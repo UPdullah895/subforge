@@ -4,7 +4,8 @@ import { defineStore } from "pinia";
 // so this is the smallest useful thing — ask GitHub once a day and offer a link.
 // It never downloads or installs anything; the About/Linux install steps in the
 // README stay the source of truth for how to update.
-export const LATEST_RELEASE_API = "https://api.github.com/repos/UPdullah895/subforge/releases/latest";
+export const LATEST_RELEASE_API =
+  "https://api.github.com/repos/UPdullah895/subforge/releases/latest";
 export const RELEASES_PAGE = "https://github.com/UPdullah895/subforge/releases/latest";
 
 const STORAGE_KEY = "subforge.update";

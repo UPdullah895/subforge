@@ -152,7 +152,11 @@ describe("updateStore", () => {
   it("treats a non-200 answer as a failure, not as an update", async () => {
     vi.stubGlobal(
       "fetch",
-      vi.fn().mockResolvedValue({ ok: false, status: 403, json: async () => ({}) } as unknown as Response)
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 403,
+        json: async () => ({}),
+      } as unknown as Response)
     );
     const store = useUpdateStore();
     store.currentVersion = "0.3.0";
