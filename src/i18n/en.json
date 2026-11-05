@@ -541,5 +541,10 @@
       "ffmpeg": "Extracting, converting and merging audio",
       "ffprobe": "Reading audio track information"
     }
+  },
+  "update": {
+    "available": "SubForge {version} is available",
+    "open": "Get it",
+    "dismiss": "Skip this version"
   }
 }

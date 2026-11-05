@@ -11,6 +11,7 @@ import ToastHost from "./components/ToastHost.vue";
 import { useDepsStore } from "./stores/depsStore";
 import DependencyDialog from "./components/DependencyDialog.vue";
 import DependencyBanner from "./components/DependencyBanner.vue";
+import UpdateBanner from "./components/UpdateBanner.vue";
 import WebFilePicker from "./components/WebFilePicker.vue";
 import ResizeHandles from "./components/ResizeHandles.vue";
 import AppSidebar from "./components/AppSidebar.vue";
@@ -94,6 +95,7 @@ onUnmounted(() => {
     <ToastHost />
     <TitleBar />
     <DependencyBanner />
+    <UpdateBanner />
     <DependencyDialog />
     <div class="flex flex-1 min-h-0">
       <AppSidebar :current="currentView" @navigate="currentView = $event" />

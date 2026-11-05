@@ -50,7 +50,7 @@ sha256sum -c SHA256SUMS.txt --ignore-missing
 ```
 
 ### Updating
-SubForge does not check for updates on its own. Download the new installer from the Releases page and install it again: on Windows run the new `-setup.exe`, on Linux re-run `install-appimage.sh` with the new AppImage (or install the new `.deb`/`.rpm`). Settings and downloaded speech models are kept.
+SubForge does not update itself. It asks GitHub once a day whether a newer release exists and, if one does, shows a bar with a link to it — it never downloads or installs anything for you. To update, download the new installer from the Releases page and install it again: on Windows run the new `-setup.exe`, on Linux re-run `install-appimage.sh` with the new AppImage (or install the new `.deb`/`.rpm`). Settings and downloaded speech models are kept.
 
 ### macOS
 Not published. Build from source (below); support is best-effort.
