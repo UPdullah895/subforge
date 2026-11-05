@@ -18,8 +18,18 @@ jobs:
             args: '--features gpu-vulkan'
           - platform: windows-latest
             args: '--features gpu-vulkan'
+          # No gpu-vulkan on macOS: whisper.cpp's Vulkan backend is not available there, the
+          # ggml Metal backend is what it uses instead. macos-latest is arm64 (Apple Silicon);
+          # Intel Macs build from source.
+          - platform: macos-latest
+            args: ''
 
     runs-on: ${{ matrix.platform }}
+
+    env:
+      # ggml defaults to -march=native, which made v0.3.0 an AVX-512-only build: it died with
+      # SIGILL on every CPU without AVX-512 (see packaging/ci/ggml-portable.cmake).
+      CMAKE_TOOLCHAIN_FILE: ${{ github.workspace }}/packaging/ci/ggml-portable.cmake
 
     steps:
       - uses: actions/checkout@v4
@@ -52,6 +62,7 @@ jobs:
       # glslc to build; the SDK provides both and sets VULKAN_SDK. On Windows it also supplies the
       # redistributable loader (vulkan-1.dll) that the bundle ships; see packaging/bundled-tools.json.
       - name: Install Vulkan SDK
+        if: matrix.platform != 'macos-latest'
         uses: jakoch/install-vulkan-sdk-action@d17de7e2f5e50efb5d2123efed18497d3c58c533 # v1.7.0
         with:
           vulkan_version: 1.4.304.1
@@ -75,6 +86,8 @@ jobs:
         with:
           workspaces: src-tauri
           cache-targets: ${{ matrix.platform != 'windows-latest' }}
+          # The ggml build flags changed; a reused native build would keep AVX-512 code.
+          key: ggml-portable-v1
 
       - name: Install frontend deps
         run: npm ci
@@ -91,7 +104,10 @@ jobs:
 
       # FFmpeg, MKVToolNix and the Vulkan loader for the Windows installer and the AppImage
       # (pinned + sha256-verified in packaging/bundled-tools.json; deb/rpm use system packages).
+      # FFmpeg/MKVToolNix are bundled into the Windows installer and the AppImage only; the
+      # macOS build uses the Homebrew copies (the app offers to install them on first start).
       - name: Fetch bundled tools
+        if: matrix.platform != 'macos-latest'
         shell: bash
         run: node scripts/fetch-bundled-tools.mjs ${{ matrix.platform == 'windows-latest' && 'windows-x64' || 'linux-x64' }}
 
@@ -107,12 +123,27 @@ jobs:
             ## Install
             - **Windows:** run the `.msi` or `-setup.exe`.
             - **Linux:** `.AppImage` (any distro), `.deb` or `.rpm`.
+            - **macOS:** `.dmg` for Apple Silicon; unsigned, so right-click → Open the first time.
 
             The Windows installer and the AppImage include MKVToolNix and FFmpeg; the `.deb` and `.rpm` install them as dependencies.
             See the [README](https://github.com/UPdullah895/subforge#readme) for details.
           releaseDraft: false
           prerelease: false
           args: ${{ matrix.args }}
+
+      # Never ship an installer that only runs on AVX-512 CPUs again (v0.3.0 did).
+      - name: whisper.cpp is portable, not AVX-512-only
+        if: matrix.platform == 'ubuntu-22.04'
+        shell: bash
+        run: |
+          cache=$(ls -d src-tauri/target/release/build/whisper-rs-sys-*/out/build 2>/dev/null | head -1)
+          if [ -z "$cache" ]; then echo "::error::no whisper-rs-sys CMake build directory"; exit 1; fi
+          grep -E 'GGML_NATIVE:BOOL=OFF|GGML_AVX512:BOOL=OFF' "$cache/CMakeCache.txt" || {
+            echo "::error::ggml was built with native/AVX-512 flags"
+            grep -E 'GGML_(NATIVE|AVX512)' "$cache/CMakeCache.txt" || true
+            exit 1
+          }
+          node scripts/ci/check-no-avx512.mjs src-tauri/target/release/subforge
 
       # Corresponding source of the GPL/LGPL programs and libraries the installers redistribute
       # (packaging/bundled-tools.json "sources"), checksum-verified, attached once per release.
@@ -124,4 +155,24 @@ jobs:
           TAG: ${{ github.ref_name }}
         run: |
           node scripts/fetch-bundled-tools.mjs --sources "$RUNNER_TEMP/third-party-sources"
-          gh release upload "$TAG" "$RUNNER_TEMP"/third-party-sources/* --clobber
+          # One archive, not eleven loose files: the release then lists the six installers
+          # plus the checksums and this, so a user can find what they need at a glance.
+          tar -C "$RUNNER_TEMP/third-party-sources" -cJf "$RUNNER_TEMP/third-party-sources.tar.xz" .
+          gh release upload "$TAG" "$RUNNER_TEMP/third-party-sources.tar.xz" --clobber
+
+  # SHA256SUMS.txt over the installers, so a normal user can check a download before
+  # running it (`sha256sum -c SHA256SUMS.txt --ignore-missing`). Runs after both matrix
+  # legs so it covers the Windows and Linux assets, and hashes what GitHub actually
+  # serves rather than files on the runner.
+  checksums:
+    needs: build
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Publish SHA256SUMS.txt
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: bash scripts/release-checksums.sh "$TAG"

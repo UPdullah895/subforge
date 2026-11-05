@@ -39,6 +39,9 @@ jobs:
       # whisper.cpp's Vulkan shader-generator build nests deep enough under
       # src-tauri\target to exceed MAX_PATH (MSBuild FileTracker FTK1011).
       CARGO_TARGET_DIR: 'C:\t'
+      # Same portable ggml baseline as the Linux job: the Windows runner also has AVX-512,
+      # and an -march=native build crashes on every user CPU without it.
+      CMAKE_TOOLCHAIN_FILE: ${{ github.workspace }}/packaging/ci/ggml-portable.cmake
     steps:
       - uses: actions/checkout@v4
 
@@ -65,6 +68,9 @@ jobs:
         with:
           workspaces: src-tauri
           cache-targets: false
+          # Salt the cache: the ggml build flags changed, and a reused native build would
+          # silently keep AVX-512 code in the artifact.
+          key: ggml-portable-v1
 
       - name: Set work directories
         run: |
@@ -93,6 +99,19 @@ jobs:
 
       - name: Build the NSIS and MSI installers
         run: npm run tauri build -- --bundles nsis,msi --features gpu-vulkan
+
+      - name: whisper.cpp is portable, not AVX-512-only
+        run: |
+          $cache = Get-ChildItem -Path "$env:CARGO_TARGET_DIR\release\build" -Directory -Filter 'whisper-rs-sys-*' |
+            ForEach-Object { Join-Path $_.FullName 'out\build\CMakeCache.txt' } |
+            Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
+          if (-not $cache) { throw "no whisper-rs-sys CMake build directory" }
+          $hit = Select-String -LiteralPath $cache -Pattern 'GGML_NATIVE:BOOL=OFF|GGML_AVX512:BOOL=OFF'
+          if (-not $hit) {
+            Get-Content -LiteralPath $cache | Select-String -Pattern 'GGML_(NATIVE|AVX512)'
+            throw "ggml was built with native/AVX-512 flags, so the installer only runs on AVX-512 CPUs"
+          }
+          Write-Host "portable ggml: $($hit.Line)"
 
       # An administrative install only unpacks the MSI, so it checks the MSI payload
       # without installing a second copy.
@@ -223,6 +242,10 @@ jobs:
       SUBFORGE_SUBSOURCE_API_KEY: ${{ secrets.SUBFORGE_SUBSOURCE_API_KEY || 'ci-placeholder-key' }}
       # Run the AppImage without FUSE.
       APPIMAGE_EXTRACT_AND_RUN: '1'
+      # ggml defaults to -march=native, which turned v0.3.0 into an AVX-512-only build that
+      # died with SIGILL on every CPU without AVX-512. whisper-rs-sys forwards CMAKE_*
+      # environment variables to whisper.cpp's CMake, so this file pins a portable baseline.
+      CMAKE_TOOLCHAIN_FILE: ${{ github.workspace }}/packaging/ci/ggml-portable.cmake
     steps:
       - uses: actions/checkout@v4
 
@@ -259,6 +282,9 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
+          # Salt the cache: the ggml build flags changed, and a reused native build would
+          # silently keep AVX-512 code in the artifact.
+          key: ggml-portable-v1
 
       - name: Set work directories
         run: |
@@ -289,6 +315,17 @@ jobs:
 
       - name: Build the AppImage and the rpm
         run: npm run tauri build -- --bundles appimage,rpm --features gpu-vulkan
+
+      - name: whisper.cpp is portable, not AVX-512-only
+        run: |
+          cache=$(ls -d src-tauri/target/release/build/whisper-rs-sys-*/out/build 2>/dev/null | head -1)
+          if [ -z "$cache" ]; then echo "::error::no whisper-rs-sys CMake build directory"; exit 1; fi
+          grep -E 'GGML_NATIVE:BOOL=OFF|GGML_AVX512:BOOL=OFF' "$cache/CMakeCache.txt" || {
+            echo "::error::ggml was built with native/AVX-512 flags:"
+            grep -E 'GGML_(NATIVE|AVX512)' "$cache/CMakeCache.txt" || true
+            exit 1
+          }
+          node scripts/ci/check-no-avx512.mjs src-tauri/target/release/subforge
 
       - name: Bundled tools are in the AppImage
         run: |
