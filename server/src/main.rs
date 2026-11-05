@@ -19,6 +19,7 @@ mod tests;
 mod tools;
 mod ws;
 
+use jobs::scheduler::Scheduler;
 use jobs::{create_event_channel, JobControlRegistry, JobQueue, SharedJobQueue};
 
 #[derive(Clone)]
@@ -27,6 +28,8 @@ pub struct AppState {
     pub event_sender: jobs::EventSender,
     pub job_controls: JobControlRegistry,
     pub whisper_downloads: subforge_core::whisper::ActiveDownloads,
+    /// One heavy job at a time, priority, per-file locks, journal (see `jobs::scheduler`).
+    pub scheduler: Scheduler,
 }
 
 #[tokio::main]
@@ -34,6 +37,7 @@ async fn main() {
     let job_queue: SharedJobQueue = Arc::new(Mutex::new(JobQueue::new()));
     let (event_sender, _event_receiver) = create_event_channel();
     let job_controls: JobControlRegistry = Arc::new(Mutex::new(HashMap::new()));
+    let scheduler = Scheduler::new(job_queue.clone(), event_sender.clone());
 
     let mut config = crate::config::AppConfig::load();
     if let Ok(key) = std::env::var("OPENSUBTITLES_API_KEY") {
@@ -52,6 +56,7 @@ async fn main() {
         event_sender,
         job_controls,
         whisper_downloads: Default::default(),
+        scheduler,
     };
 
     let app = Router::new()
@@ -79,6 +84,8 @@ fn api_routes() -> Router<AppState> {
         .route("/upload", post(routes::upload::upload_file))
         .route("/download/{job_id}", get(routes::upload::download_file))
         .route("/jobs/{job_id}", get(routes::upload::get_job_status))
+        // Every job the scheduler knows about, with its stage and class.
+        .route("/jobs", get(routes::jobs::list_jobs))
         // ── Job control (cancel / pause / resume) ────────────────────────────
         .route("/jobs/cancel", post(routes::jobs::cancel_job))
         .route("/jobs/pause", post(routes::jobs::pause_job))

@@ -286,8 +286,14 @@ pub async fn merge_external_subs(
 
     let orig_subs = req.subs.clone();
     let video_path_str = req.video_path.clone();
+    let slot_path = video_path_str.clone();
 
-    tokio::spawn(async move {
+    state.scheduler.gated(
+        job_id.clone(),
+        jobs::JobType::MergeSubtitle,
+        jobs::scheduler::JobSource::User,
+        slot_path,
+        async move {
         let control = Arc::new(jobs::JobControl::new());
         {
             let mut registry = controls_clone.lock().unwrap();

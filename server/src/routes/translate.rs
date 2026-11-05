@@ -152,8 +152,16 @@ pub async fn translate_subtitles(
     let req_host = req.host.clone();
     let req_model = req.model.clone();
     let req_key = req.api_key.clone();
+    let slot_path = req.input.clone();
 
-    tokio::spawn(async move {
+    state
+        .scheduler
+        .gated(
+            job_id.clone(),
+            jobs::JobType::Translate,
+            jobs::scheduler::JobSource::User,
+            slot_path,
+            async move {
         use std::sync::Arc;
         let control = Arc::new(jobs::JobControl::new());
         {
