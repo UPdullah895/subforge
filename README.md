@@ -53,7 +53,9 @@ sha256sum -c SHA256SUMS.txt --ignore-missing
 SubForge does not update itself. It asks GitHub once a day whether a newer release exists and, if one does, shows a bar with a link to it — it never downloads or installs anything for you. To update, download the new installer from the Releases page and install it again: on Windows run the new `-setup.exe`, on Linux re-run `install-appimage.sh` with the new AppImage (or install the new `.deb`/`.rpm`). Settings and downloaded speech models are kept.
 
 ### macOS
-Not published. Build from source (below); support is best-effort.
+Apple Silicon (arm64): download the `.dmg` from the [Releases page](https://github.com/UPdullah895/subforge/releases). It is unsigned, so the first launch has to go through **right-click → Open** (or System Settings → Privacy & Security → Open Anyway). Intel Macs: build from source (below).
+
+FFmpeg and MKVToolNix are not bundled on macOS — SubForge offers to install them with Homebrew on first start (`brew install ffmpeg mkvtoolnix`), and speech-to-text runs on the CPU.
 
 ---
 

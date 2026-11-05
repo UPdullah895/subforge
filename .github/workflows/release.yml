@@ -18,6 +18,11 @@ jobs:
             args: '--features gpu-vulkan'
           - platform: windows-latest
             args: '--features gpu-vulkan'
+          # No gpu-vulkan on macOS: whisper.cpp's Vulkan backend is not available there, the
+          # ggml Metal backend is what it uses instead. macos-latest is arm64 (Apple Silicon);
+          # Intel Macs build from source.
+          - platform: macos-latest
+            args: ''
 
     runs-on: ${{ matrix.platform }}
 
@@ -57,6 +62,7 @@ jobs:
       # glslc to build; the SDK provides both and sets VULKAN_SDK. On Windows it also supplies the
       # redistributable loader (vulkan-1.dll) that the bundle ships; see packaging/bundled-tools.json.
       - name: Install Vulkan SDK
+        if: matrix.platform != 'macos-latest'
         uses: jakoch/install-vulkan-sdk-action@d17de7e2f5e50efb5d2123efed18497d3c58c533 # v1.7.0
         with:
           vulkan_version: 1.4.304.1
@@ -98,7 +104,10 @@ jobs:
 
       # FFmpeg, MKVToolNix and the Vulkan loader for the Windows installer and the AppImage
       # (pinned + sha256-verified in packaging/bundled-tools.json; deb/rpm use system packages).
+      # FFmpeg/MKVToolNix are bundled into the Windows installer and the AppImage only; the
+      # macOS build uses the Homebrew copies (the app offers to install them on first start).
       - name: Fetch bundled tools
+        if: matrix.platform != 'macos-latest'
         shell: bash
         run: node scripts/fetch-bundled-tools.mjs ${{ matrix.platform == 'windows-latest' && 'windows-x64' || 'linux-x64' }}
 
@@ -114,6 +123,7 @@ jobs:
             ## Install
             - **Windows:** run the `.msi` or `-setup.exe`.
             - **Linux:** `.AppImage` (any distro), `.deb` or `.rpm`.
+            - **macOS:** `.dmg` for Apple Silicon; unsigned, so right-click → Open the first time.
 
             The Windows installer and the AppImage include MKVToolNix and FFmpeg; the `.deb` and `.rpm` install them as dependencies.
             See the [README](https://github.com/UPdullah895/subforge#readme) for details.
