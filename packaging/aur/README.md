@@ -12,6 +12,14 @@
 - Run `namcap PKGBUILD` and `namcap` on the built package.
 - Build in a clean chroot (`extra-x86_64-build`).
 
+## Checksums
+
+Neither package may be submitted with `sha256sums=('SKIP')`. Both carry the real
+sum for the current version: `subforge-bin` hashes the `.deb` from the release,
+`subforge` hashes the tag archive. The release also publishes `SHA256SUMS.txt`
+over the installers (`scripts/release-checksums.sh`), which is the quickest way to
+find the `.deb` sum.
+
 ## Publishing (maintainer steps)
 
 1. Push the git tag `vX.Y.Z` and wait for the Release workflow to publish the assets.

@@ -10,7 +10,8 @@ depends=('webkit2gtk-4.1' 'gtk3' 'mkvtoolnix-cli' 'ffmpeg' 'vulkan-icd-loader')
 makedepends=('cargo' 'nodejs' 'npm' 'cmake' 'clang' 'vulkan-headers' 'shaderc')
 optdepends=('ollama: local LLM subtitle translation')
 source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
-sha256sums=('SKIP') # replace with the real sum: run `updpkgsums` after the v$pkgver tag exists
+sha256sums=('f285f897d60455317b5d5349ef7d471069559edf41dbb9b4840e79a0b84613b8')
+# Re-run `updpkgsums` for every new tag: GitHub regenerates the tag archive on demand.
 
 prepare() {
   cd "$pkgname-$pkgver"

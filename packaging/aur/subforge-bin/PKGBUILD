@@ -13,7 +13,9 @@ provides=("$_pkgname")
 conflicts=("$_pkgname")
 options=('!strip')
 source_x86_64=("$_pkgname-$pkgver-amd64.deb::$url/releases/download/v$pkgver/${_pkgname}_${pkgver}_amd64.deb")
-sha256sums_x86_64=('SKIP') # replace with the real sum: run `updpkgsums` after the release is published
+sha256sums_x86_64=('84c18234fd617739b2f3efbee54c623b3d61ae0fe9689327747f940f7edced68')
+# Re-run `updpkgsums` for every new release; the value also appears in the release's
+# SHA256SUMS.txt (scripts/release-checksums.sh).
 
 package() {
   bsdtar -xf "$srcdir/$_pkgname-$pkgver-amd64.deb" data.tar.gz
