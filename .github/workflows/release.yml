@@ -124,7 +124,10 @@ jobs:
           TAG: ${{ github.ref_name }}
         run: |
           node scripts/fetch-bundled-tools.mjs --sources "$RUNNER_TEMP/third-party-sources"
-          gh release upload "$TAG" "$RUNNER_TEMP"/third-party-sources/* --clobber
+          # One archive, not eleven loose files: the release then lists the six installers
+          # plus the checksums and this, so a user can find what they need at a glance.
+          tar -C "$RUNNER_TEMP/third-party-sources" -cJf "$RUNNER_TEMP/third-party-sources.tar.xz" .
+          gh release upload "$TAG" "$RUNNER_TEMP/third-party-sources.tar.xz" --clobber
 
   # SHA256SUMS.txt over the installers, so a normal user can check a download before
   # running it (`sha256sum -c SHA256SUMS.txt --ignore-missing`). Runs after both matrix

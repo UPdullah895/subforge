@@ -68,6 +68,21 @@ jobs:
         env:
           SUBFORGE_SUBSOURCE_API_KEY: ${{ secrets.SUBFORGE_SUBSOURCE_API_KEY || 'ci-placeholder-key' }}
 
+  # macOS is not published yet; this keeps it from rotting silently, so adding it to
+  # release.yml is a small change and not a porting project.
+  rust-tauri-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - run: cargo check
+        working-directory: src-tauri
+        env:
+          SUBFORGE_SUBSOURCE_API_KEY: ${{ secrets.SUBFORGE_SUBSOURCE_API_KEY || 'ci-placeholder-key' }}
+
   rust-tauri-windows:
     runs-on: windows-latest
     steps:
