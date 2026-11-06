@@ -214,4 +214,36 @@ mod tests {
             "unexpected error: {error}"
         );
     }
+
+    #[test]
+    #[ignore = "needs a local ollama with a model loaded (SUBFORGE_OLLAMA_MODEL)"]
+    fn a_real_engine_translates_the_fixture() {
+        let runtime = tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+            .expect("runtime");
+        let result = runtime.block_on(async {
+            let translate = translator(Some("ollama".to_string()))?;
+            let dir = std::env::temp_dir().join(format!("sf_engine_{}", uuid::Uuid::new_v4()));
+            std::fs::create_dir_all(&dir).unwrap();
+            let input = dir.join("episode.source.srt");
+            let fixture = Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../crates/subforge-core/tests/fixtures/subtitles/basic.srt");
+            std::fs::copy(&fixture, &input).unwrap();
+            let path = input.to_string_lossy().to_string();
+            let output = tokio::task::spawn_blocking(move || translate(&path, Some("en"), "ar"))
+                .await
+                .map_err(|error| error.to_string())??;
+            let text = std::fs::read_to_string(&output).map_err(|error| error.to_string())?;
+            let _ = std::fs::remove_dir_all(&dir);
+            Ok::<String, String>(text)
+        });
+        let text = result.expect("the engine should translate the fixture");
+        assert!(
+            text.chars().any(|c| ('\u{0600}'..='\u{06FF}').contains(&c)),
+            "no Arabic in the translation: {text}"
+        );
+        // The cue count must survive the round trip.
+        assert!(text.matches(" --> ").count() >= 3, "lost cues: {text}");
+    }
 }
