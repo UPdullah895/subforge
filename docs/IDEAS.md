@@ -424,6 +424,52 @@ names repeat every episode. *Effort*: L and S respectively.
 
 ---
 
+## J. Translation quality you can actually measure (and ship)
+
+**J1. The licences decide which local MT model we may ship, not the benchmarks.**
+
+| Model | Licence | Usable in a shipped product? |
+|---|---|---|
+| `google/madlad400-3b-mt` | **Apache-2.0** | yes — 400+ languages incl. Arabic, plain MT |
+| `Qwen/Qwen2.5-7B-Instruct` | **Apache-2.0** | yes — the LLM path (glossary, context, tone) |
+| `facebook/nllb-200-distilled-600M` | CC-BY-NC | no — research/dev only |
+| `facebook/seamless-m4t-v2-large` | CC-BY-NC | no — 96 text / 101 speech languages; dev only |
+| `CohereLabs/aya-expanse-8b` | CC-BY-NC | no — dev only |
+| `Unbabel/XCOMET-XL`, `wmt22-cometkiwi-da` | CC-BY-NC-**SA** | **no — evaluation tooling, never a shipped feature** |
+
+(Licences read from each model card through the Hugging Face API, 2026-11-06.)
+*Where*: the "local model" engine offers madlad/Qwen; anything CC-BY-NC appears only as a developer
+switch the release build does not expose. This is the XTTS-v2 trap one layer deeper, and it is easy
+to walk into because NLLB is the obvious first answer for Arabic.
+
+**J2. Measure with subtitle-specific checks we own, because the good metric is non-commercial.**
+COMET / COMETKiwi are reference-free and XCOMET even localises errors
+([Unbabel/COMET](https://github.com/Unbabel/COMET)), but their weights are CC-BY-NC-SA. So the
+shipped quality gate is deterministic and free: per-cue **length ratio** (target/source), **CPS
+compliance** against the chosen profile, **cue count preserved**, **no merged or dropped cues**,
+**numbers/dates preserved**, **termbase terms present**, and a **script check** (an Arabic target
+that comes back in Latin script is a failure, not a translation). Each is one assertion, and together
+they catch what a user notices. *Effort*: S.
+
+**J3. Give the model the movie, not just the line.**
+A 2025 ACL student-workshop paper, *Translating Movie Subtitles by Large Language Models using
+Movie-meta Information*, argues that meta information (title, genre, synopsis) is what lets an LLM
+resolve the colloquial, context-dependent lines that make subtitles hard
+([aclanthology.org/2025.acl-srw.22](https://aclanthology.org/2025.acl-srw.22.pdf)). We already store a
+TMDB key and already learn the series/episode from the *arr payload, so a short metadata block in the
+system prompt costs nothing. *Effort*: S.
+
+**J4. Two passes, cached.** Translate, then a review pass that sees its own output plus the rules
+(CPS budget, termbase, tone) and fixes only what breaks them. Cache by `(engine, model, prompt_hash,
+batch)` so a retry never re-pays for work already done — the pattern VideoLingo ships. *Effort*: S–M.
+
+**J5. A caution before designing around whisper's translate task.** Whisper's `translate` task is
+documented as producing English; do not assume it can be pointed at Arabic. Check the whisper.cpp
+arguments before putting it in a plan — the safe design is ASR in the source language plus our own MT
+step.
+
+---
+
 ## Roadmap mapping
 
 | Idea | Phase | Notes |
@@ -435,6 +481,7 @@ names repeat every episode. *Effort*: L and S respectively.
 | C1 dual ASR, C2 word timings, C3 alignment | P4 | the توزين milestone |
 | E/F packaging (linuxserver image, multi-arch, Unraid) | P2 | parallel to the Docker work |
 | D1/D2/D3 OCR, D5–D7 scenes/chapters | P4 | after the pipeline is trusted |
+| J1 shipped-model licences, J2 quality gate, J3 metadata prompt | P3 | the translation quality story |
 | C4 mix, C5 TTS, H5 diarization/termbase | P5 | licence review first |
 | D8/D9/D10 moderation + GPU lease | P5 | report-only until proven; the lease belongs in P2 |
 
