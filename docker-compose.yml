@@ -1,0 +1,22 @@
+# `docker compose up -d` — the library and the config are the only two things you mount.
+services:
+  subforge:
+    build: .
+    image: subforge-server:latest
+    container_name: subforge
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./data:/data          # config.json + the job journal
+      - /srv/media:/media     # your library; the same path must be visible to Jellyfin
+    environment:
+      # Keep the container's clock and file paths aligned with the host library.
+      TZ: UTC
+      # One heavy job at a time is the default; raise it only with the RAM/VRAM to match.
+      SUBFORGE_MAX_HEAVY_JOBS: "1"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/api/health"]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s

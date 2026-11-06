@@ -92,6 +92,12 @@ winget install MoritzBunkus.MKVToolNix Gyan.FFmpeg
 
 Developers can print the same dependency report in a terminal with `cargo run --example check` inside `crates/subforge-deps`.
 
+### Docker (server mode)
+```bash
+docker compose up -d --build        # http://localhost:8080, library at /media, state in ./data
+```
+The image builds the frontend, the server and whisper.cpp, and installs FFmpeg + MKVToolNix from the distribution — the one place where "install these two" is not the user's job. Mount the library at the same path the media server uses, and keep `/data` (config + job journal) on a volume. `SUBFORGE_MAX_HEAVY_JOBS` / `SUBFORGE_MAX_LIGHT_JOBS` control how much runs at once.
+
 ### Server mode
 `subforge-server` shows the same dependency dialog in the web UI. A server has no OS keychain, so server mode keeps API keys in `config.json` instead of the keyring; if you run both the desktop app and the server on the same machine, note that the desktop app removes keys from that file and you will need to enter them again for the server (and vice versa). Because installing software on a server is sensitive, without `SUBFORGE_ALLOW_INSTALL=1` the server refuses installs and returns a message containing the command to run on the server yourself; set `SUBFORGE_ALLOW_INSTALL=1` to let the Install button run it.
 

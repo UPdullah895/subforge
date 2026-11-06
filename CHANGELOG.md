@@ -6,6 +6,7 @@ All notable changes to this project are documented here. Format based on
 ## [Unreleased]
 
 ### Added
+- **Docker image for server mode** (`Dockerfile` + `docker-compose.yml`): three stages (Vite build, Rust build with whisper.cpp, slim runtime with FFmpeg/MKVToolNix), a non-root user, `/data` for config and the job journal, `/media` for the library, and a healthcheck on `/api/health`. CI builds the image on every PR so it cannot rot.
 - `scripts/install-appimage.sh`: installs the Linux AppImage for the current user — copies it to `~/.local/bin/subforge`, adds the menu entry and the icons, and supports `--uninstall`. An AppImage installs none of that by itself, so a user who is not a developer previously had no launcher icon and no `subforge` command.
 - The release workflow publishes `SHA256SUMS.txt` for the installers of every release, so a download can be verified with `sha256sum -c` before it is run.
 - An update notice: the app asks GitHub once a day whether a newer release exists and shows a bar with a link when there is one (dismissible per version, no download). The version comes from `package.json` through a Vite define, so the web UI served by `server/` shows it too.

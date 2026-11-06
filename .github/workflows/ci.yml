@@ -46,6 +46,22 @@ jobs:
       - run: cargo test
         working-directory: crates/subforge-subtitle-sources
 
+  docker:
+    # The image is the deployment target for library automation; build it on every PR so a
+    # broken Dockerfile is caught before a release rather than by a user.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build the server image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          load: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
   rust-tauri:
     runs-on: ubuntu-latest
     steps:
