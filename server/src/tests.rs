@@ -359,3 +359,102 @@ async fn jobs_endpoint_lists_nothing_when_idle() {
     let json = body_json(res).await;
     assert_eq!(json["jobs"], serde_json::json!([]));
 }
+
+fn write_pipeline_policy(targets: &str, dry_run: bool) {
+    let path = crate::pipeline::PipelineConfig::path().expect("a config dir");
+    std::fs::write(
+        &path,
+        format!(r#"{{"policy":{{"target_languages":{targets},"dry_run":{dry_run}}}}}"#),
+    )
+    .expect("write pipeline.json");
+}
+
+fn sonarr_hook(subtitles: &str) -> String {
+    format!(
+        r#"{{"eventType":"Download","series":{{"title":"Show"}},
+            "episodeFiles":[{{"path":"/media/tv/Show/S01E01.mkv",
+              "mediaInfo":{{"subtitles":{subtitles},"audioLanguages":["ja"]}}}}]}}"#
+    )
+}
+
+#[tokio::test]
+async fn a_sonarr_webhook_that_already_has_the_language_queues_nothing() {
+    let _cfg = TestConfigDir::new();
+    write_pipeline_policy(r#"["ar"]"#, true);
+    let res = test_app()
+        .oneshot(
+            Request::post("/api/hooks/sonarr")
+                .header("content-type", "application/json")
+                .body(Body::from(sonarr_hook(r#"["ara"]"#)))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    let json = body_json(res).await;
+    assert_eq!(json["accepted"], 0);
+    assert_eq!(json["skipped"], 1);
+    assert_eq!(json["event"]["already_present"], true);
+}
+
+#[tokio::test]
+async fn a_sonarr_webhook_without_the_language_is_accepted() {
+    let _cfg = TestConfigDir::new();
+    write_pipeline_policy(r#"["ar"]"#, true);
+    let res = test_app()
+        .oneshot(
+            Request::post("/api/hooks/sonarr")
+                .header("content-type", "application/json")
+                .body(Body::from(sonarr_hook(r#"["eng"]"#)))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    let json = body_json(res).await;
+    assert_eq!(json["accepted"], 1);
+    assert_eq!(json["skipped"], 0);
+    assert_eq!(json["event"]["missing"], serde_json::json!(["ar"]));
+    // A dry-run policy must not create a job.
+    let jobs = test_app()
+        .oneshot(Request::get("/api/jobs").body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+    assert_eq!(body_json(jobs).await["jobs"], serde_json::json!([]));
+}
+
+#[tokio::test]
+async fn a_grabbed_episode_is_acknowledged_and_ignored() {
+    let _cfg = TestConfigDir::new();
+    write_pipeline_policy(r#"["ar"]"#, true);
+    let res = test_app()
+        .oneshot(
+            Request::post("/api/hooks/sonarr")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    r#"{"eventType":"Grab","series":{"title":"Show"},"episodeFiles":[]}"#,
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    let json = body_json(res).await;
+    assert_eq!(json["accepted"], 0);
+    assert!(json["reason"].as_str().unwrap().contains("Grab"));
+}
+
+#[tokio::test]
+async fn an_unknown_hook_source_is_404() {
+    let _cfg = TestConfigDir::new();
+    let res = test_app()
+        .oneshot(
+            Request::post("/api/hooks/lidarr")
+                .header("content-type", "application/json")
+                .body(Body::from("{}"))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::NOT_FOUND);
+}

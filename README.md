@@ -113,6 +113,18 @@ Transcription, translation and the vision scan join once they can be queued as j
 ### Server mode
 `subforge-server` shows the same dependency dialog in the web UI. A server has no OS keychain, so server mode keeps API keys in `config.json` instead of the keyring; if you run both the desktop app and the server on the same machine, note that the desktop app removes keys from that file and you will need to enter them again for the server (and vice versa). Because installing software on a server is sensitive, without `SUBFORGE_ALLOW_INSTALL=1` the server refuses installs and returns a message containing the command to run on the server yourself; set `SUBFORGE_ALLOW_INSTALL=1` to let the Install button run it.
 
+### Library automation (unattended)
+Point `subforge-server` at a library and it finishes episodes by itself: search for a human
+subtitle, transcribe when the file has none, translate, check the result against a readability
+rule-set (Netflix/BBC), mux it, verify the track, and only then remove the sidecar. Three triggers
+work today — the Sonarr/Radarr **SignalR feed** (zero configuration on the *arr side), an ***arr
+webhook** (which already knows the file's subtitle languages, so an episode that has the language
+is skipped before any work starts), and a **folder watcher** that ignores partial downloads.
+
+It starts in dry-run mode and plans nothing until a policy exists:
+[`docs/pipeline.md`](docs/pipeline.md) is the configuration reference, the Sonarr/Radarr/Jellyfin
+setup, the Docker example and the environment variables.
+
 ---
 
 ## Features

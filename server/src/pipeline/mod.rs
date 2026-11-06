@@ -12,6 +12,7 @@ use subforge_pipeline::Policy;
 
 pub mod arr;
 pub mod engines;
+pub mod hooks;
 pub mod run;
 pub mod watch;
 

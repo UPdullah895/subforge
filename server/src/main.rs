@@ -102,6 +102,8 @@ fn api_routes() -> Router<AppState> {
         .route("/tools/registry", get(routes::tools::get_registry))
         // ── Library automation (policy + dry run) ────────────────────────────
         .route("/pipeline/config", get(routes::pipeline::get_config))
+        // *arr webhooks: the second trigger, and the one that knows the file's tracks already.
+        .route("/hooks/{kind}", post(pipeline::hooks::post_hook))
         .route("/pipeline/plan", post(routes::pipeline::post_plan))
         .route("/tools/status", get(routes::tools::get_status))
         // ── Dependencies (startup check + one-click install) ─────────────────
