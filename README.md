@@ -218,6 +218,10 @@ subforge/
 
 ## Roadmap
 
+Short term: what the next release needs is tracked in [docs/ROADMAP.md](docs/ROADMAP.md),
+which also maps the longer goal — a media-server owner pointing SubForge at a library,
+letting an AI drive it over MCP, and trusting it to fill in missing subtitles and audio.
+
 | Goal | Status |
 |---|---|
 | Foundation — scaffold, track enum, single-file extraction | ✅ Done |
