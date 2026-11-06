@@ -31,6 +31,7 @@ describe("check-versions", () => {
       "src-tauri/tauri.conf.json": '{"version":"1.2.3"}',
       "src-tauri/Cargo.toml": '[package]\nname = "subforge"\nversion = "1.2.3"\n',
       "src-tauri/Cargo.lock": '[[package]]\nname = "subforge"\nversion = "1.2.3"\n',
+      "crates/subforge-mcp/Cargo.toml": '[package]\nname = "subforge-mcp"\nversion = "1.2.3"\n',
       "server/Cargo.toml": '[package]\nname = "subforge-server"\nversion = "1.2.3"\n',
       "server/Cargo.lock": '[[package]]\nname = "subforge-server"\nversion = "1.2.3"\n',
       "packaging/aur/subforge/PKGBUILD": "pkgver=1.2.3\n",
