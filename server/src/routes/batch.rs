@@ -286,127 +286,134 @@ pub async fn merge_external_subs(
 
     let orig_subs = req.subs.clone();
     let video_path_str = req.video_path.clone();
+    let slot_path = video_path_str.clone();
 
-    tokio::spawn(async move {
-        let control = Arc::new(jobs::JobControl::new());
-        {
-            let mut registry = controls_clone.lock().unwrap();
-            registry.insert(job_id_clone.clone(), control.clone());
-        }
+    state.scheduler.gated(
+        job_id.clone(),
+        jobs::JobType::MergeSubtitle,
+        jobs::scheduler::JobSource::User,
+        slot_path,
+        async move {
+            let control = Arc::new(jobs::JobControl::new());
+            {
+                let mut registry = controls_clone.lock().unwrap();
+                registry.insert(job_id_clone.clone(), control.clone());
+            }
 
-        {
-            let mut q = queue_clone.lock().unwrap();
-            q.update_status(&job_id_clone, jobs::JobStatus::Running);
-        }
-
-        let result = mkvtoolnix::merge_subtitles_async(
-            &paths,
-            &video_path_str,
-            &subs,
-            &output_path,
-            Some(control.token()),
-            |pct| {
+            {
                 let mut q = queue_clone.lock().unwrap();
-                q.update_progress(&job_id_clone, pct, None);
+                q.update_status(&job_id_clone, jobs::JobStatus::Running);
+            }
+
+            let result = mkvtoolnix::merge_subtitles_async(
+                &paths,
+                &video_path_str,
+                &subs,
+                &output_path,
+                Some(control.token()),
+                |pct| {
+                    let mut q = queue_clone.lock().unwrap();
+                    q.update_progress(&job_id_clone, pct, None);
+                    jobs::emit_event(
+                        &sender_clone,
+                        jobs::JobEvent {
+                            event_type: "job-progress".to_string(),
+                            job_id: job_id_clone.clone(),
+                            status: None,
+                            progress: Some(pct),
+                            message: None,
+                            stage: None,
+                            output_path: None,
+                            details: None,
+                        },
+                    );
+                },
+            )
+            .await;
+
+            if let Err(e) = result {
+                let cancelled = matches!(e, ToolError::Cancelled);
+                let msg = e.to_string();
+                let status = if cancelled {
+                    jobs::JobStatus::Cancelled
+                } else {
+                    jobs::JobStatus::Failed
+                };
+                let mut q = queue_clone.lock().unwrap();
+                q.update_status(&job_id_clone, status.clone());
+                q.update_progress(&job_id_clone, 0.0, Some(msg.clone()));
                 jobs::emit_event(
                     &sender_clone,
                     jobs::JobEvent {
-                        event_type: "job-progress".to_string(),
+                        event_type: "job-completed".to_string(),
                         job_id: job_id_clone.clone(),
-                        status: None,
-                        progress: Some(pct),
-                        message: None,
+                        status: Some(status),
+                        progress: Some(0.0),
+                        message: Some(msg),
                         stage: None,
                         output_path: None,
                         details: None,
                     },
                 );
-            },
-        )
-        .await;
+                let mut registry = controls_clone.lock().unwrap();
+                registry.remove(&job_id_clone);
+                return;
+            }
 
-        if let Err(e) = result {
-            let cancelled = matches!(e, ToolError::Cancelled);
-            let msg = e.to_string();
-            let status = if cancelled {
-                jobs::JobStatus::Cancelled
-            } else {
-                jobs::JobStatus::Failed
-            };
-            let mut q = queue_clone.lock().unwrap();
-            q.update_status(&job_id_clone, status.clone());
-            q.update_progress(&job_id_clone, 0.0, Some(msg.clone()));
+            if delete_originals {
+                for sub in &orig_subs {
+                    let _ = std::fs::remove_file(&sub.path);
+                }
+            }
+
+            // Optionally swap the merged file in for the original, so the library
+            // doesn't end up with two copies of the same episode. Only after the
+            // merge succeeded and produced a non-empty file; if the swap fails
+            // (file in use, permissions) the merged copy is kept and we say so.
+            let mut final_output = output_path.clone();
+            let mut done_message = "Merge complete".to_string();
+            if replace_original {
+                let produced = std::fs::metadata(&output_path)
+                    .map(|m| m.len() > 0)
+                    .unwrap_or(false);
+                if produced {
+                    match std::fs::rename(&output_path, &video_path_str) {
+                        Ok(()) => final_output = video_path_str.clone(),
+                        Err(e) => {
+                            done_message = format!(
+                            "Merged, but could not replace the original (kept {output_path}): {e}"
+                        );
+                        }
+                    }
+                }
+            }
+
+            {
+                let mut q = queue_clone.lock().unwrap();
+                if let Some(job) = q.get_mut(&job_id_clone) {
+                    job.output_file = Some(final_output.clone());
+                }
+                q.update_status(&job_id_clone, jobs::JobStatus::Completed);
+                q.update_progress(&job_id_clone, 100.0, Some(done_message.clone()));
+            }
             jobs::emit_event(
                 &sender_clone,
                 jobs::JobEvent {
                     event_type: "job-completed".to_string(),
                     job_id: job_id_clone.clone(),
-                    status: Some(status),
-                    progress: Some(0.0),
-                    message: Some(msg),
+                    status: Some(jobs::JobStatus::Completed),
+                    progress: Some(100.0),
+                    message: Some(done_message),
                     stage: None,
-                    output_path: None,
+                    output_path: Some(final_output),
                     details: None,
                 },
             );
+
             let mut registry = controls_clone.lock().unwrap();
             registry.remove(&job_id_clone);
-            return;
-        }
-
-        if delete_originals {
-            for sub in &orig_subs {
-                let _ = std::fs::remove_file(&sub.path);
-            }
-        }
-
-        // Optionally swap the merged file in for the original, so the library
-        // doesn't end up with two copies of the same episode. Only after the
-        // merge succeeded and produced a non-empty file; if the swap fails
-        // (file in use, permissions) the merged copy is kept and we say so.
-        let mut final_output = output_path.clone();
-        let mut done_message = "Merge complete".to_string();
-        if replace_original {
-            let produced = std::fs::metadata(&output_path)
-                .map(|m| m.len() > 0)
-                .unwrap_or(false);
-            if produced {
-                match std::fs::rename(&output_path, &video_path_str) {
-                    Ok(()) => final_output = video_path_str.clone(),
-                    Err(e) => {
-                        done_message = format!(
-                            "Merged, but could not replace the original (kept {output_path}): {e}"
-                        );
-                    }
-                }
-            }
-        }
-
-        {
-            let mut q = queue_clone.lock().unwrap();
-            if let Some(job) = q.get_mut(&job_id_clone) {
-                job.output_file = Some(final_output.clone());
-            }
-            q.update_status(&job_id_clone, jobs::JobStatus::Completed);
-            q.update_progress(&job_id_clone, 100.0, Some(done_message.clone()));
-        }
-        jobs::emit_event(
-            &sender_clone,
-            jobs::JobEvent {
-                event_type: "job-completed".to_string(),
-                job_id: job_id_clone.clone(),
-                status: Some(jobs::JobStatus::Completed),
-                progress: Some(100.0),
-                message: Some(done_message),
-                stage: None,
-                output_path: Some(final_output),
-                details: None,
-            },
-        );
-
-        let mut registry = controls_clone.lock().unwrap();
-        registry.remove(&job_id_clone);
-    });
+        },
+    );
 
     // A bare job id string, matching the desktop backend and the other job
     // commands, so the frontend can wait on it uniformly.

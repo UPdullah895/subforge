@@ -152,83 +152,246 @@ pub async fn translate_subtitles(
     let req_host = req.host.clone();
     let req_model = req.model.clone();
     let req_key = req.api_key.clone();
+    let slot_path = req.input.clone();
 
-    tokio::spawn(async move {
-        use std::sync::Arc;
-        let control = Arc::new(jobs::JobControl::new());
-        {
-            let mut registry = controls_clone.lock().unwrap();
-            registry.insert(job_id_clone.clone(), control.clone());
-        }
-        // Extract lines
-        {
-            let mut q = queue_clone.lock().unwrap();
-            q.update_status(&job_id_clone, jobs::JobStatus::Running);
-            q.update_progress(&job_id_clone, 5.0, Some("Extracting lines...".to_string()));
-        }
-        jobs::emit_event(
-            &sender,
-            jobs::JobEvent {
-                event_type: "job-progress".to_string(),
-                job_id: job_id_clone.clone(),
-                status: None,
-                progress: Some(5.0),
-                message: Some("Extracting lines...".to_string()),
-                stage: None,
-                output_path: None,
-                details: None,
-            },
-        );
+    state.scheduler.gated(
+        job_id.clone(),
+        jobs::JobType::Translate,
+        jobs::scheduler::JobSource::User,
+        slot_path,
+        async move {
+            use std::sync::Arc;
+            let control = Arc::new(jobs::JobControl::new());
+            {
+                let mut registry = controls_clone.lock().unwrap();
+                registry.insert(job_id_clone.clone(), control.clone());
+            }
+            // Extract lines
+            {
+                let mut q = queue_clone.lock().unwrap();
+                q.update_status(&job_id_clone, jobs::JobStatus::Running);
+                q.update_progress(&job_id_clone, 5.0, Some("Extracting lines...".to_string()));
+            }
+            jobs::emit_event(
+                &sender,
+                jobs::JobEvent {
+                    event_type: "job-progress".to_string(),
+                    job_id: job_id_clone.clone(),
+                    status: None,
+                    progress: Some(5.0),
+                    message: Some("Extracting lines...".to_string()),
+                    stage: None,
+                    output_path: None,
+                    details: None,
+                },
+            );
 
-        let lines = match extract_lines_async(&req_input).await {
-            Ok(l) => l,
-            Err(e) => {
+            let lines = match extract_lines_async(&req_input).await {
+                Ok(l) => l,
+                Err(e) => {
+                    let mut q = queue_clone.lock().unwrap();
+                    q.update_status(&job_id_clone, jobs::JobStatus::Failed);
+                    jobs::emit_event(
+                        &sender,
+                        jobs::JobEvent {
+                            event_type: "job-completed".to_string(),
+                            job_id: job_id_clone,
+                            status: Some(jobs::JobStatus::Failed),
+                            progress: Some(0.0),
+                            message: Some(e.to_string()),
+                            stage: None,
+                            output_path: None,
+                            details: None,
+                        },
+                    );
+                    return;
+                }
+            };
+
+            let total = lines.len();
+            let mut translated: Vec<String> = Vec::with_capacity(total);
+            let batch_size = match req_engine.as_str() {
+                "ollama" | "openai" => 25,
+                _ => 10,
+            };
+
+            for (batch_idx, chunk) in lines.chunks(batch_size).enumerate() {
+                control.wait_if_paused().await;
+                if control.is_cancelled() {
+                    {
+                        let mut q = queue_clone.lock().unwrap();
+                        q.update_status(&job_id_clone, jobs::JobStatus::Cancelled);
+                        q.update_progress(
+                            &job_id_clone,
+                            0.0,
+                            Some("Translation cancelled".to_string()),
+                        );
+                    }
+                    jobs::emit_event(
+                        &sender_clone,
+                        jobs::JobEvent {
+                            event_type: "job-completed".to_string(),
+                            job_id: job_id_clone.clone(),
+                            status: Some(jobs::JobStatus::Cancelled),
+                            progress: Some(0.0),
+                            message: Some("Translation cancelled".to_string()),
+                            stage: None,
+                            output_path: None,
+                            details: None,
+                        },
+                    );
+                    let mut registry = controls_clone.lock().unwrap();
+                    registry.remove(&job_id_clone);
+                    return;
+                }
+
+                let batch_start = batch_idx * batch_size;
+                let batch_end = (batch_start + chunk.len()).min(total);
+                let pct = 10 + ((batch_start as f64 / total as f64) * 80.0) as i32;
+
+                {
+                    let mut q = queue_clone.lock().unwrap();
+                    q.update_progress(
+                        &job_id_clone,
+                        pct as f64,
+                        Some(format!(
+                            "Translating lines {}-{}/{}",
+                            batch_start + 1,
+                            batch_end,
+                            total
+                        )),
+                    );
+                }
+                jobs::emit_event(
+                    &sender,
+                    jobs::JobEvent {
+                        event_type: "job-progress".to_string(),
+                        job_id: job_id_clone.clone(),
+                        status: None,
+                        progress: Some(pct as f64),
+                        message: Some(format!(
+                            "Translating lines {}-{}/{}",
+                            batch_start + 1,
+                            batch_end,
+                            total
+                        )),
+                        stage: None,
+                        output_path: None,
+                        details: None,
+                    },
+                );
+
+                let result = match req_engine.as_str() {
+                    "ollama" => {
+                        let host = resolve_host(
+                            req_host.clone(),
+                            |c| c.ollama_base_url,
+                            "http://localhost:11434",
+                        );
+                        let model = req_model.clone().unwrap_or_else(|| "llama3".to_string());
+                        translate::translate_ollama(&host, &model, chunk, &req_source, &req_target)
+                            .await
+                    }
+                    "libretranslate" => {
+                        let host = resolve_host(
+                            req_host.clone(),
+                            |c| c.libretranslate_base_url,
+                            "http://localhost:5000",
+                        );
+                        translate::translate_libretranslate(&host, chunk, &req_source, &req_target)
+                            .await
+                    }
+                    "deepl" => {
+                        let key = resolve_api_key(&req_engine, req_key.clone());
+                        translate::translate_deepl(&key, chunk, &req_source, &req_target).await
+                    }
+                    "openai" => {
+                        let key = resolve_api_key(&req_engine, req_key.clone());
+                        let model = req_model
+                            .clone()
+                            .unwrap_or_else(|| "gpt-4o-mini".to_string());
+                        translate::translate_openai(&key, &model, chunk, &req_source, &req_target)
+                            .await
+                    }
+                    "google" => {
+                        let key = resolve_api_key(&req_engine, req_key.clone());
+                        translate::translate_google(&key, chunk, &req_source, &req_target).await
+                    }
+                    _ => {
+                        let mut q = queue_clone.lock().unwrap();
+                        q.update_status(&job_id_clone, jobs::JobStatus::Failed);
+                        jobs::emit_event(
+                            &sender_clone,
+                            jobs::JobEvent {
+                                event_type: "job-completed".to_string(),
+                                job_id: job_id_clone.clone(),
+                                status: Some(jobs::JobStatus::Failed),
+                                progress: Some(0.0),
+                                message: Some("Unknown engine".to_string()),
+                                stage: None,
+                                output_path: None,
+                                details: None,
+                            },
+                        );
+                        let mut registry = controls_clone.lock().unwrap();
+                        registry.remove(&job_id_clone);
+                        return;
+                    }
+                };
+
+                match result {
+                    Ok(batch_translated) => translated.extend(batch_translated),
+                    Err(e) => {
+                        let mut q = queue_clone.lock().unwrap();
+                        q.update_status(&job_id_clone, jobs::JobStatus::Failed);
+                        jobs::emit_event(
+                            &sender_clone,
+                            jobs::JobEvent {
+                                event_type: "job-completed".to_string(),
+                                job_id: job_id_clone.clone(),
+                                status: Some(jobs::JobStatus::Failed),
+                                progress: Some(0.0),
+                                message: Some(e.to_string()),
+                                stage: None,
+                                output_path: None,
+                                details: None,
+                            },
+                        );
+                        let mut registry = controls_clone.lock().unwrap();
+                        registry.remove(&job_id_clone);
+                        return;
+                    }
+                }
+            }
+
+            // Pad to original count if any batch returned fewer lines
+            if translated.len() != total {
+                while translated.len() < total {
+                    translated.push(lines[translated.len()].text.clone());
+                }
+                translated.truncate(total);
+            }
+
+            {
+                let mut q = queue_clone.lock().unwrap();
+                q.update_progress(
+                    &job_id_clone,
+                    95.0,
+                    Some("Rebuilding subtitle file...".to_string()),
+                );
+            }
+
+            if let Err(e) = rebuild_lines_async(&req_input, translated, &req_output).await {
                 let mut q = queue_clone.lock().unwrap();
                 q.update_status(&job_id_clone, jobs::JobStatus::Failed);
                 jobs::emit_event(
                     &sender,
                     jobs::JobEvent {
                         event_type: "job-completed".to_string(),
-                        job_id: job_id_clone,
+                        job_id: job_id_clone.clone(),
                         status: Some(jobs::JobStatus::Failed),
                         progress: Some(0.0),
                         message: Some(e.to_string()),
-                        stage: None,
-                        output_path: None,
-                        details: None,
-                    },
-                );
-                return;
-            }
-        };
-
-        let total = lines.len();
-        let mut translated: Vec<String> = Vec::with_capacity(total);
-        let batch_size = match req_engine.as_str() {
-            "ollama" | "openai" => 25,
-            _ => 10,
-        };
-
-        for (batch_idx, chunk) in lines.chunks(batch_size).enumerate() {
-            control.wait_if_paused().await;
-            if control.is_cancelled() {
-                {
-                    let mut q = queue_clone.lock().unwrap();
-                    q.update_status(&job_id_clone, jobs::JobStatus::Cancelled);
-                    q.update_progress(
-                        &job_id_clone,
-                        0.0,
-                        Some("Translation cancelled".to_string()),
-                    );
-                }
-                jobs::emit_event(
-                    &sender_clone,
-                    jobs::JobEvent {
-                        event_type: "job-completed".to_string(),
-                        job_id: job_id_clone.clone(),
-                        status: Some(jobs::JobStatus::Cancelled),
-                        progress: Some(0.0),
-                        message: Some("Translation cancelled".to_string()),
                         stage: None,
                         output_path: None,
                         details: None,
@@ -239,188 +402,33 @@ pub async fn translate_subtitles(
                 return;
             }
 
-            let batch_start = batch_idx * batch_size;
-            let batch_end = (batch_start + chunk.len()).min(total);
-            let pct = 10 + ((batch_start as f64 / total as f64) * 80.0) as i32;
-
             {
                 let mut q = queue_clone.lock().unwrap();
+                q.update_status(&job_id_clone, jobs::JobStatus::Completed);
                 q.update_progress(
                     &job_id_clone,
-                    pct as f64,
-                    Some(format!(
-                        "Translating lines {}-{}/{}",
-                        batch_start + 1,
-                        batch_end,
-                        total
-                    )),
+                    100.0,
+                    Some(format!("Translated {} lines", total)),
                 );
             }
             jobs::emit_event(
-                &sender,
-                jobs::JobEvent {
-                    event_type: "job-progress".to_string(),
-                    job_id: job_id_clone.clone(),
-                    status: None,
-                    progress: Some(pct as f64),
-                    message: Some(format!(
-                        "Translating lines {}-{}/{}",
-                        batch_start + 1,
-                        batch_end,
-                        total
-                    )),
-                    stage: None,
-                    output_path: None,
-                    details: None,
-                },
-            );
-
-            let result = match req_engine.as_str() {
-                "ollama" => {
-                    let host = resolve_host(
-                        req_host.clone(),
-                        |c| c.ollama_base_url,
-                        "http://localhost:11434",
-                    );
-                    let model = req_model.clone().unwrap_or_else(|| "llama3".to_string());
-                    translate::translate_ollama(&host, &model, chunk, &req_source, &req_target)
-                        .await
-                }
-                "libretranslate" => {
-                    let host = resolve_host(
-                        req_host.clone(),
-                        |c| c.libretranslate_base_url,
-                        "http://localhost:5000",
-                    );
-                    translate::translate_libretranslate(&host, chunk, &req_source, &req_target)
-                        .await
-                }
-                "deepl" => {
-                    let key = resolve_api_key(&req_engine, req_key.clone());
-                    translate::translate_deepl(&key, chunk, &req_source, &req_target).await
-                }
-                "openai" => {
-                    let key = resolve_api_key(&req_engine, req_key.clone());
-                    let model = req_model
-                        .clone()
-                        .unwrap_or_else(|| "gpt-4o-mini".to_string());
-                    translate::translate_openai(&key, &model, chunk, &req_source, &req_target).await
-                }
-                "google" => {
-                    let key = resolve_api_key(&req_engine, req_key.clone());
-                    translate::translate_google(&key, chunk, &req_source, &req_target).await
-                }
-                _ => {
-                    let mut q = queue_clone.lock().unwrap();
-                    q.update_status(&job_id_clone, jobs::JobStatus::Failed);
-                    jobs::emit_event(
-                        &sender_clone,
-                        jobs::JobEvent {
-                            event_type: "job-completed".to_string(),
-                            job_id: job_id_clone.clone(),
-                            status: Some(jobs::JobStatus::Failed),
-                            progress: Some(0.0),
-                            message: Some("Unknown engine".to_string()),
-                            stage: None,
-                            output_path: None,
-                            details: None,
-                        },
-                    );
-                    let mut registry = controls_clone.lock().unwrap();
-                    registry.remove(&job_id_clone);
-                    return;
-                }
-            };
-
-            match result {
-                Ok(batch_translated) => translated.extend(batch_translated),
-                Err(e) => {
-                    let mut q = queue_clone.lock().unwrap();
-                    q.update_status(&job_id_clone, jobs::JobStatus::Failed);
-                    jobs::emit_event(
-                        &sender_clone,
-                        jobs::JobEvent {
-                            event_type: "job-completed".to_string(),
-                            job_id: job_id_clone.clone(),
-                            status: Some(jobs::JobStatus::Failed),
-                            progress: Some(0.0),
-                            message: Some(e.to_string()),
-                            stage: None,
-                            output_path: None,
-                            details: None,
-                        },
-                    );
-                    let mut registry = controls_clone.lock().unwrap();
-                    registry.remove(&job_id_clone);
-                    return;
-                }
-            }
-        }
-
-        // Pad to original count if any batch returned fewer lines
-        if translated.len() != total {
-            while translated.len() < total {
-                translated.push(lines[translated.len()].text.clone());
-            }
-            translated.truncate(total);
-        }
-
-        {
-            let mut q = queue_clone.lock().unwrap();
-            q.update_progress(
-                &job_id_clone,
-                95.0,
-                Some("Rebuilding subtitle file...".to_string()),
-            );
-        }
-
-        if let Err(e) = rebuild_lines_async(&req_input, translated, &req_output).await {
-            let mut q = queue_clone.lock().unwrap();
-            q.update_status(&job_id_clone, jobs::JobStatus::Failed);
-            jobs::emit_event(
-                &sender,
+                &sender_clone,
                 jobs::JobEvent {
                     event_type: "job-completed".to_string(),
                     job_id: job_id_clone.clone(),
-                    status: Some(jobs::JobStatus::Failed),
-                    progress: Some(0.0),
-                    message: Some(e.to_string()),
+                    status: Some(jobs::JobStatus::Completed),
+                    progress: Some(100.0),
+                    message: Some(format!("Translated {} lines", total)),
                     stage: None,
                     output_path: None,
                     details: None,
                 },
             );
+
             let mut registry = controls_clone.lock().unwrap();
             registry.remove(&job_id_clone);
-            return;
-        }
-
-        {
-            let mut q = queue_clone.lock().unwrap();
-            q.update_status(&job_id_clone, jobs::JobStatus::Completed);
-            q.update_progress(
-                &job_id_clone,
-                100.0,
-                Some(format!("Translated {} lines", total)),
-            );
-        }
-        jobs::emit_event(
-            &sender_clone,
-            jobs::JobEvent {
-                event_type: "job-completed".to_string(),
-                job_id: job_id_clone.clone(),
-                status: Some(jobs::JobStatus::Completed),
-                progress: Some(100.0),
-                message: Some(format!("Translated {} lines", total)),
-                stage: None,
-                output_path: None,
-                details: None,
-            },
-        );
-
-        let mut registry = controls_clone.lock().unwrap();
-        registry.remove(&job_id_clone);
-    });
+        },
+    );
 
     Ok(Json(job_id))
 }
