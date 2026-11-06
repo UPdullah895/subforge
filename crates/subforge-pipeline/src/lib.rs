@@ -15,6 +15,7 @@ use subforge_core::tools::{mkvtoolnix, ToolPaths};
 
 pub mod exec;
 pub mod language;
+pub mod runner;
 
 pub use language::normalize_language;
 

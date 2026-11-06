@@ -1270,6 +1270,7 @@ dependencies = [
  "serde_json",
  "subforge-core",
  "subforge-metadata",
+ "uuid",
 ]
 
 [[package]]
