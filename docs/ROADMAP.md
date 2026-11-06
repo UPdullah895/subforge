@@ -7,6 +7,10 @@ subtitles and audio by itself.**
 It is a map, not a promise of dates. Each phase ends with a *done-when* that can be checked
 by running the app, and every phase is useful on its own.
 
+The research that should shape the phases — what the *arr/Jellyfin ecosystem already solved,
+which subtitle rule-sets to implement, how to align a dub deterministically, and which licences
+forbid bundling — lives in [IDEAS.md](IDEAS.md), with a source for every number.
+
 ---
 
 ## 1. Where SubForge is today
