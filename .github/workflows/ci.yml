@@ -38,8 +38,15 @@ jobs:
             crates/subforge-metadata
             crates/subforge-subtitle-sources
             crates/subforge-mcp
+            crates/subforge-pipeline
       - run: cargo test
         working-directory: crates/subforge-core
+      # The pipeline's runner tests mux a real file with mkvmerge and skip if it is missing —
+      # install it so those tests actually run instead of quietly skipping.
+      - name: Install MKVToolNix for the pipeline tests (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y mkvtoolnix
+
       - run: cargo test --features tokio
         working-directory: crates/subforge-deps
       - run: cargo test
@@ -48,6 +55,8 @@ jobs:
         working-directory: crates/subforge-subtitle-sources
       - run: cargo test
         working-directory: crates/subforge-mcp
+      - run: cargo test
+        working-directory: crates/subforge-pipeline
 
   rust-tauri:
     runs-on: ubuntu-latest

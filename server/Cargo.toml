@@ -30,6 +30,9 @@ hyper = { version = "1", features = ["full"] }
 http-body-util = "0.1"
 subforge-metadata = { path = "../crates/subforge-metadata" }
 subforge-subtitle-sources = { path = "../crates/subforge-subtitle-sources" }
+subforge-pipeline = { version = "0.3.0", path = "../crates/subforge-pipeline" }
+notify = "8.2.1"
+tokio-tungstenite = "0.30.0"
 
 [dev-dependencies]
 tower = { version = "0.5", features = ["util"] }

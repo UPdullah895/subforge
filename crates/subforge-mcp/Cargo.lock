@@ -1334,6 +1334,7 @@ dependencies = [
  "serde",
  "serde_json",
  "subforge-core",
+ "subforge-pipeline",
  "tokio",
 ]
 
@@ -1347,6 +1348,16 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror",
+]
+
+[[package]]
+name = "subforge-pipeline"
+version = "0.3.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "subforge-core",
+ "subforge-metadata",
 ]
 
 [[package]]

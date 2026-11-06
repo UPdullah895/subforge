@@ -45,7 +45,10 @@ pub struct OpenSubtitlesCredentials {
 #[serde(tag = "status", rename_all = "snake_case")]
 pub enum SubtitleSearchResult {
     Found {
-        downloaded_path: String,
+        /// The subtitle file's **contents**. The caller decides where it goes — this crate never
+        /// writes to disk, so the pipeline can put it in its work directory and the desktop can
+        /// put it beside the video.
+        text: String,
         source: String,
         matched_via: String,
     },
@@ -161,7 +164,7 @@ async fn try_opensubtitles(
     .ok()?;
 
     Some(SubtitleSearchResult::Found {
-        downloaded_path: text,
+        text,
         source: "opensubtitles".to_string(),
         matched_via: matched_via.to_string(),
     })
@@ -196,7 +199,7 @@ async fn try_subsource(
         .ok()?;
 
     Some(SubtitleSearchResult::Found {
-        downloaded_path: text,
+        text,
         source: "subsource".to_string(),
         matched_via: "title".to_string(),
     })

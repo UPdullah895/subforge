@@ -13,12 +13,14 @@ use tower_http::services::ServeDir;
 mod config;
 mod error;
 mod jobs;
+mod pipeline;
 mod routes;
 #[cfg(test)]
 mod tests;
 mod tools;
 mod ws;
 
+use jobs::scheduler::Scheduler;
 use jobs::{create_event_channel, JobControlRegistry, JobQueue, SharedJobQueue};
 
 #[derive(Clone)]
@@ -27,6 +29,8 @@ pub struct AppState {
     pub event_sender: jobs::EventSender,
     pub job_controls: JobControlRegistry,
     pub whisper_downloads: subforge_core::whisper::ActiveDownloads,
+    /// One heavy job at a time, priority, per-file locks, journal (see `jobs::scheduler`).
+    pub scheduler: Scheduler,
 }
 
 #[tokio::main]
@@ -34,6 +38,7 @@ async fn main() {
     let job_queue: SharedJobQueue = Arc::new(Mutex::new(JobQueue::new()));
     let (event_sender, _event_receiver) = create_event_channel();
     let job_controls: JobControlRegistry = Arc::new(Mutex::new(HashMap::new()));
+    let scheduler = Scheduler::new(job_queue.clone(), event_sender.clone());
 
     let mut config = crate::config::AppConfig::load();
     if let Ok(key) = std::env::var("OPENSUBTITLES_API_KEY") {
@@ -52,7 +57,13 @@ async fn main() {
         event_sender,
         job_controls,
         whisper_downloads: Default::default(),
+        scheduler,
     };
+
+    // The triggers are opt-in through pipeline.json: the *arr feed and the folder watcher. While
+    // `dry_run` is on they log plans; when it is off every file goes through the scheduler's
+    // heavy slot (see `pipeline::watch`).
+    pipeline::watch::spawn(state.scheduler.clone(), state.job_queue.clone());
 
     let app = Router::new()
         .nest("/api", api_routes())
@@ -79,6 +90,8 @@ fn api_routes() -> Router<AppState> {
         .route("/upload", post(routes::upload::upload_file))
         .route("/download/{job_id}", get(routes::upload::download_file))
         .route("/jobs/{job_id}", get(routes::upload::get_job_status))
+        // Every job the scheduler knows about, with its stage and class.
+        .route("/jobs", get(routes::jobs::list_jobs))
         // ── Job control (cancel / pause / resume) ────────────────────────────
         .route("/jobs/cancel", post(routes::jobs::cancel_job))
         .route("/jobs/pause", post(routes::jobs::pause_job))
@@ -87,6 +100,11 @@ fn api_routes() -> Router<AppState> {
         .route("/fs/list", get(routes::fs::list_dir))
         // ── Tool registry ────────────────────────────────────────────────────
         .route("/tools/registry", get(routes::tools::get_registry))
+        // ── Library automation (policy + dry run) ────────────────────────────
+        .route("/pipeline/config", get(routes::pipeline::get_config))
+        // *arr webhooks: the second trigger, and the one that knows the file's tracks already.
+        .route("/hooks/{kind}", post(pipeline::hooks::post_hook))
+        .route("/pipeline/plan", post(routes::pipeline::post_plan))
         .route("/tools/status", get(routes::tools::get_status))
         // ── Dependencies (startup check + one-click install) ─────────────────
         .route("/deps", get(routes::deps::get_deps))
@@ -119,7 +137,10 @@ fn api_routes() -> Router<AppState> {
             "/subtitle/check-sync",
             post(routes::subtitle::check_subtitle_sync),
         )
-        .route("/subtitle/fix-sync", post(routes::subtitle::fix_subtitle_sync))
+        .route(
+            "/subtitle/fix-sync",
+            post(routes::subtitle::fix_subtitle_sync),
+        )
         .route("/subtitle/meta", post(routes::subtitle::set_track_metadata))
         // ── Audio operations ─────────────────────────────────────────────────
         .route("/audio/tracks", post(routes::audio::list_audio_tracks))

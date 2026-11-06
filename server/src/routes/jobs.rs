@@ -9,6 +9,11 @@ pub struct JobControlRequest {
     pub job_id: String,
 }
 
+/// `GET /api/jobs` — queue snapshot with the scheduler's stage and class per job.
+pub async fn list_jobs(State(state): State<AppState>) -> Json<serde_json::Value> {
+    Json(serde_json::json!({ "jobs": state.scheduler.snapshot() }))
+}
+
 pub async fn cancel_job(
     State(state): State<AppState>,
     Json(payload): Json<JobControlRequest>,

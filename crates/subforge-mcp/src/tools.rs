@@ -12,6 +12,7 @@ use serde_json::{json, Value};
 use subforge_core::subtitle::Format;
 use subforge_core::tools::mkvtoolnix::{self, SubtitleMergeSpec};
 use subforge_core::tools::{ffmpeg, ToolPaths};
+use subforge_pipeline::{plan_file, Policy, RuleProfile};
 
 /// Tools shipped next to the binary (`<exe>/bin`) or pointed at with `SUBFORGE_BUNDLED_DIR`.
 fn tool_paths() -> ToolPaths {
@@ -143,6 +144,66 @@ pub fn specs() -> Value {
             }
         },
         {
+            "name": "plan_policy",
+            "description": "Say what an unattended run would do to this file for the given languages — the ordered steps (search, transcribe, translate, lint, mux, verify, cleanup) — without touching it.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "file": { "type": "string" },
+                    "languages": {
+                        "description": "Target languages, ISO 639-1, e.g. [\"ar\"]",
+                        "type": "array",
+                        "items": { "type": "string" }
+                    },
+                    "rule_profile": {
+                        "description": "Readability rules: off, netflix_adult, netflix_kids, bbc",
+                        "type": "string"
+                    },
+                    "delete_source_after_mux": { "type": "boolean" }
+                },
+                "required": ["file", "languages"]
+            }
+        },
+        {
+            "name": "library_audit",
+            "description": "Walk a folder and report which files are missing which languages, so an agent can decide what to hand to plan_policy.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "dir": { "type": "string" },
+                    "languages": {
+                        "type": "array",
+                        "items": { "type": "string" }
+                    },
+                    "recursive": { "type": "boolean" }
+                },
+                "required": ["dir", "languages"]
+            }
+        },
+        {
+            "name": "lint_subtitle",
+            "description": "Check a subtitle against a readability rule-set (42 chars/line, 2 lines, 20 cps, 5/6–7 s for Netflix) and optionally rewrite it to fit. Reports what is still wrong afterwards.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "input": { "type": "string" },
+                    "output": {
+                        "description": "Where the fixed file goes. Without it the input is left untouched.",
+                        "type": "string"
+                    },
+                    "profile": {
+                        "description": "off, netflix_adult, netflix_kids, bbc",
+                        "type": "string"
+                    },
+                    "fix": {
+                        "description": "Rewrite the subtitle instead of only reporting",
+                        "type": "boolean"
+                    }
+                },
+                "required": ["input"]
+            }
+        },
+        {
             "name": "probe_media",
             "description": "Read a file's container duration and frame rate with ffprobe.",
             "inputSchema": {
@@ -154,10 +215,140 @@ pub fn specs() -> Value {
     ] })
 }
 
+fn rule_profile(args: &Value, default: RuleProfile) -> Result<RuleProfile, String> {
+    match args.get("rule_profile").or_else(|| args.get("profile")) {
+        None | Some(Value::Null) => Ok(default),
+        Some(Value::String(name)) => match name.as_str() {
+            "off" => Ok(RuleProfile::Off),
+            "netflix_adult" => Ok(RuleProfile::NetflixAdult),
+            "netflix_kids" => Ok(RuleProfile::NetflixKids),
+            "bbc" => Ok(RuleProfile::Bbc),
+            other => Err(format!(
+                "unknown rule profile `{other}` (off, netflix_adult, netflix_kids, bbc)"
+            )),
+        },
+        Some(_) => Err("`profile` must be a string".to_string()),
+    }
+}
+
+fn flag(args: &Value, key: &str, default: bool) -> bool {
+    args.get(key).and_then(Value::as_bool).unwrap_or(default)
+}
+
+fn is_video(path: &std::path::Path) -> bool {
+    matches!(
+        path.extension()
+            .and_then(|extension| extension.to_str())
+            .map(str::to_ascii_lowercase)
+            .as_deref(),
+        Some("mkv" | "mp4" | "m4v" | "avi" | "mov" | "ts" | "webm")
+    )
+}
+
+fn collect_videos(dir: &std::path::Path, recursive: bool, out: &mut Vec<PathBuf>) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            if recursive {
+                collect_videos(&path, recursive, out);
+            }
+        } else if is_video(&path) {
+            out.push(path);
+        }
+    }
+}
+
 /// Runs one tool. `Ok` is the data to hand back (serialised as JSON text), `Err` a message
 /// for the agent — a tool failure is not a protocol error.
 pub fn call(name: &str, args: &Value) -> Result<Value, String> {
     match name {
+        "plan_policy" => {
+            let file = require_str(args, "file")?;
+            let languages = optional_str_list(args, "languages")?;
+            if languages.is_empty() {
+                return Err("`languages` must name at least one target language".to_string());
+            }
+            let policy = Policy {
+                target_languages: languages,
+                rule_profile: rule_profile(args, RuleProfile::Off)?,
+                delete_source_after_mux: flag(args, "delete_source_after_mux", false),
+                ..Policy::default()
+            };
+            let plan = plan_file(&tool_paths(), &file, &policy).map_err(err)?;
+            serde_json::to_value(&plan).map_err(|error| error.to_string())
+        }
+
+        "library_audit" => {
+            let dir = require_str(args, "dir")?;
+            let languages = optional_str_list(args, "languages")?;
+            if languages.is_empty() {
+                return Err("`languages` must name at least one target language".to_string());
+            }
+            let recursive = flag(args, "recursive", true);
+            let root = PathBuf::from(&dir);
+            if !root.is_dir() {
+                return Err(format!("`{dir}` is not a directory"));
+            }
+            let mut videos = Vec::new();
+            collect_videos(&root, recursive, &mut videos);
+            let policy = Policy {
+                target_languages: languages,
+                ..Policy::default()
+            };
+            let paths = tool_paths();
+            let mut complete = 0usize;
+            let mut unreadable = Vec::new();
+            let mut missing = Vec::new();
+            for video in &videos {
+                let file = video.to_string_lossy().to_string();
+                match plan_file(&paths, &file, &policy) {
+                    Ok(plan) if plan.is_noop() => complete += 1,
+                    Ok(plan) => missing.push(json!({
+                        "file": file,
+                        "present": plan.present,
+                        "missing": plan.missing,
+                    })),
+                    Err(error) => unreadable.push(json!({ "file": file, "error": error })),
+                }
+            }
+            Ok(json!({
+                "dir": dir,
+                "checked": videos.len(),
+                "complete": complete,
+                "missing": missing,
+                "unreadable": unreadable,
+            }))
+        }
+
+        "lint_subtitle" => {
+            let input = require_str(args, "input")?;
+            let profile = rule_profile(args, RuleProfile::NetflixAdult)?;
+            let fix = flag(args, "fix", false);
+            let output = args
+                .get("output")
+                .and_then(Value::as_str)
+                .map(str::to_string);
+            if fix {
+                // Never rewrite the input unless it was asked for explicitly: a tool call is
+                // cheap, a lost subtitle is not.
+                let target = output.clone().unwrap_or_else(|| input.clone());
+                if target != input {
+                    std::fs::copy(&input, &target)
+                        .map_err(|error| format!("cannot copy to {target}: {error}"))?;
+                }
+                let report =
+                    subforge_pipeline::rules::lint_file(std::path::Path::new(&target), profile)
+                        .map_err(err)?;
+                return Ok(json!({ "output": target, "report": report }));
+            }
+            let report = subforge_pipeline::rules::inspect(std::path::Path::new(&input), profile)
+                .map_err(err)?;
+            Ok(json!({ "input": input, "report": report }))
+        }
+
         "list_tracks" => {
             let file = require_str(args, "file")?;
             let info = mkvtoolnix::enumerate_tracks(&tool_paths(), &file).map_err(err)?;
@@ -357,6 +548,95 @@ mod tests {
     fn an_unknown_tool_is_reported_not_crashed() {
         let error = call("not_a_tool", &json!({})).unwrap_err();
         assert!(error.contains("unknown tool"));
+    }
+
+    #[test]
+    fn plan_policy_needs_a_language_and_a_file() {
+        let error = call("plan_policy", &json!({"file": "/x.mkv", "languages": []})).unwrap_err();
+        assert!(error.contains("at least one"), "{error}");
+        let error = call("plan_policy", &json!({"languages": ["ar"]})).unwrap_err();
+        assert!(error.contains("`file`"), "{error}");
+        // A file that is not there is a tool error naming the file, not a panic.
+        let error = call(
+            "plan_policy",
+            &json!({"file": "/definitely/missing.mkv", "languages": ["ar"]}),
+        )
+        .unwrap_err();
+        assert!(!error.is_empty());
+    }
+
+    #[test]
+    fn lint_subtitle_reports_and_only_rewrites_when_asked() {
+        let dir = std::env::temp_dir().join(format!("sf_mcp_lint_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let input = dir.join("messy.srt");
+        let original = format!(
+            "1\n00:00:01,000 --> 00:00:02,000\n{}\n\n",
+            "A line far too long for any subtitle profile, which must be re-wrapped before anyone reads it."
+        );
+        std::fs::write(&input, &original).unwrap();
+        let input_str = input.to_string_lossy().to_string();
+
+        // Report only: nothing on disk changes.
+        let report = call(
+            "lint_subtitle",
+            &json!({"input": input_str, "profile": "netflix_adult"}),
+        )
+        .unwrap();
+        assert!(!report["report"]["found"].as_array().unwrap().is_empty());
+        assert_eq!(std::fs::read_to_string(&input).unwrap(), original);
+
+        // Fix into another file: the input is still byte-identical.
+        let output = dir.join("fixed.srt");
+        let fixed = call(
+            "lint_subtitle",
+            &json!({
+                "input": input_str,
+                "output": output.to_string_lossy(),
+                "profile": "netflix_adult",
+                "fix": true
+            }),
+        )
+        .unwrap();
+        assert_eq!(fixed["report"]["written"], true);
+        assert_ne!(std::fs::read_to_string(&output).unwrap(), original);
+        assert_eq!(std::fs::read_to_string(&input).unwrap(), original);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn library_audit_counts_only_video_files() {
+        let dir = std::env::temp_dir().join(format!("sf_mcp_audit_{}", std::process::id()));
+        std::fs::create_dir_all(dir.join("sub")).unwrap();
+        std::fs::write(dir.join("notes.txt"), "not a video").unwrap();
+        std::fs::write(dir.join("sub/poster.jpg"), "not a video").unwrap();
+
+        let audit = call(
+            "library_audit",
+            &json!({"dir": dir.to_string_lossy(), "languages": ["ar"]}),
+        )
+        .unwrap();
+        assert_eq!(audit["checked"], 0);
+        assert_eq!(audit["complete"], 0);
+
+        let error = call(
+            "library_audit",
+            &json!({"dir": "/nope", "languages": ["ar"]}),
+        )
+        .unwrap_err();
+        assert!(error.contains("not a directory"), "{error}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn an_unknown_rule_profile_lists_the_known_ones() {
+        let error = call(
+            "lint_subtitle",
+            &json!({"input": "/x.srt", "profile": "netflix_ultra"}),
+        )
+        .unwrap_err();
+        assert!(error.contains("netflix_adult"), "{error}");
     }
 
     #[test]

@@ -268,11 +268,12 @@
       "merging": "Merging...",
       "done": "Done",
       "error": "Error",
-      "cancelled": "Cancelled"
+      "cancelled": "Cancelled",
+      "skipped": "Skipped"
     },
-    "foundOnline": "Found on {source}"
-,
-    "foundOnlineTiming": "Found on {source} — timing may be off ({verdict})"
+    "foundOnline": "Found on {source}",
+    "foundOnlineTiming": "Found on {source} — timing may be off ({verdict})",
+    "skippedAfterFatal": "Not started: the previous file stopped with an error no retry can fix."
   },
   "transcribe": {
     "title": "Speech to Text",
@@ -374,7 +375,8 @@
     "activeJobProgress": "Translating...",
     "translationJobs": "Translation Jobs",
     "noSubtitleSelected": "No subtitle selected",
-    "noSubtitleSelectedDesc": "Open a subtitle file and choose a translation engine to get started."
+    "noSubtitleSelectedDesc": "Open a subtitle file and choose a translation engine to get started.",
+    "errorOutOfMemory": "The model did not fit in the GPU's memory. Close other GPU apps (games, browsers with video), pick a smaller model, or run the translation on the CPU."
   },
   "settings": {
     "title": "Settings",
@@ -406,7 +408,12 @@
     "mkvpropeditPlaceholder": "Path to mkvpropedit",
     "resetToBundled": "Reset to bundled",
     "executables": "Executables",
-    "source": { "bundled": "Bundled", "custom": "Custom", "system": "System", "none": "Not found" },
+    "source": {
+      "bundled": "Bundled",
+      "custom": "Custom",
+      "system": "System",
+      "none": "Not found"
+    },
     "ffmpeg": "FFmpeg",
     "ffmpegPlaceholder": "Path to ffmpeg",
     "ffprobe": "FFprobe",
@@ -488,8 +495,7 @@
     "subtitleHint": "Drop video files to open them, or a subtitle to work on it",
     "audioHint": "Drop a video file to list its audio tracks",
     "transcribeHint": "Drop audio or video files to transcribe them",
-    "batchHint": "Drop a folder to scan it for video files"
-,
+    "batchHint": "Drop a folder to scan it for video files",
     "folderNotSupported": "That is a folder. Drop a video file here, or use the Batch page to scan a folder.",
     "batchNeedsFolder": "Drop a folder here to scan it. A single video file can be opened from the Subtitles page."
   },

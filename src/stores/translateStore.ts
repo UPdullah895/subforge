@@ -30,9 +30,19 @@ export type EngineType = "ollama" | "libretranslate" | "deepl" | "openai" | "goo
  * probes — a real translation job failing to reach Ollama mid-batch must show
  * the same friendly message as the Test Connection button.
  */
+/// Errors no amount of retrying fixes, so the rest of a batch is pointless.
+export function isFatalEngineError(message: string): boolean {
+  return message.startsWith("out_of_memory:") || message === "connect_failed";
+}
+
 export function mapJobErrorMessage(message?: string): string | undefined {
   if (message === "connect_failed") {
     return i18n.global.t("translate.errorOllamaUnreachable");
+  }
+  // The engine could not get GPU memory. Retrying cannot help, so the batch stops and this
+  // message is what the user sees instead of a page of llama.cpp stderr.
+  if (message?.startsWith("out_of_memory:")) {
+    return i18n.global.t("translate.errorOutOfMemory");
   }
   if (message?.startsWith("deepl_unsupported_lang:")) {
     const code = message.substring("deepl_unsupported_lang:".length);
@@ -61,8 +71,16 @@ export const useTranslateStore = defineStore("translate", () => {
   const openaiKey = ref("");
   const openaiModel = ref("gpt-4o-mini");
   const googleApiKey = ref("");
-  const { jobs, addJob, updateJobProgress, completeJob, clearCompleted, cancelJob, pauseJob, resumeJob } =
-    useJobQueue();
+  const {
+    jobs,
+    addJob,
+    updateJobProgress,
+    completeJob,
+    clearCompleted,
+    cancelJob,
+    pauseJob,
+    resumeJob,
+  } = useJobQueue();
   const error = ref<string | null>(null);
   const previewOriginal = ref<string[]>([]);
   const previewTranslated = ref<string[]>([]);
