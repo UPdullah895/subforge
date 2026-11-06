@@ -268,11 +268,12 @@
       "merging": "جاري الدمج...",
       "done": "تم",
       "error": "خطأ",
-      "cancelled": "ملغاة"
+      "cancelled": "ملغاة",
+      "skipped": "متجاوَز"
     },
-    "foundOnline": "تم العثور عليها في {source}"
-,
-    "foundOnlineTiming": "تم العثور عليها في {source} — قد يكون التوقيت غير متطابق ({verdict})"
+    "foundOnline": "تم العثور عليها في {source}",
+    "foundOnlineTiming": "تم العثور عليها في {source} — قد يكون التوقيت غير متطابق ({verdict})",
+    "skippedAfterFatal": "لم يبدأ: الملف السابق توقّف بخطأ لا تُجديه إعادة المحاولة."
   },
   "transcribe": {
     "title": "تحويل الكلام إلى نص",
@@ -374,7 +375,8 @@
     "activeJobProgress": "جاري الترجمة...",
     "translationJobs": "مهام الترجمة",
     "noSubtitleSelected": "لم يتم تحديد ترجمة",
-    "noSubtitleSelectedDesc": "افتح ملف ترجمة واختر محرك ترجمة للبدء."
+    "noSubtitleSelectedDesc": "افتح ملف ترجمة واختر محرك ترجمة للبدء.",
+    "errorOutOfMemory": "النموذج لم يتّسع في ذاكرة كرت الشاشة. أغلق التطبيقات التي تستخدم الكرت (الألعاب، المتصفح بالفيديو)، أو اختر نموذجًا أصغر، أو شغّل الترجمة على المعالج."
   },
   "settings": {
     "title": "الإعدادات",
@@ -406,7 +408,12 @@
     "mkvpropeditPlaceholder": "مسار إلى mkvpropedit",
     "resetToBundled": "إعادة التعيين إلى المضمّن",
     "executables": "الملفات التنفيذية",
-    "source": { "bundled": "مضمّن", "custom": "مخصص", "system": "النظام", "none": "غير موجود" },
+    "source": {
+      "bundled": "مضمّن",
+      "custom": "مخصص",
+      "system": "النظام",
+      "none": "غير موجود"
+    },
     "ffmpeg": "FFmpeg",
     "ffmpegPlaceholder": "مسار إلى ffmpeg",
     "ffprobe": "FFprobe",
@@ -488,8 +495,7 @@
     "subtitleHint": "أفلت ملفات فيديو لفتحها، أو ملف ترجمة للعمل عليه",
     "audioHint": "أفلت ملف فيديو لعرض مساراته الصوتية",
     "transcribeHint": "أفلت ملفات صوت أو فيديو لنسخها نصيًا",
-    "batchHint": "أفلت مجلدًا لفحصه بحثًا عن ملفات فيديو"
-,
+    "batchHint": "أفلت مجلدًا لفحصه بحثًا عن ملفات فيديو",
     "folderNotSupported": "هذا مجلد. أفلت ملف فيديو هنا، أو استخدم صفحة الدفعة لفحص مجلد.",
     "batchNeedsFolder": "أفلت مجلدًا هنا لفحصه. يمكن فتح ملف فيديو واحد من صفحة الترجمة."
   },

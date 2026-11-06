@@ -24,6 +24,12 @@ pub enum TranslateError {
     /// reqwest error.
     #[error("connect_failed")]
     ConnectFailed,
+    /// The engine answered, but could not get GPU memory (an Ollama `cudaMalloc failed`, a CUDA
+    /// OOM, a llama.cpp allocation failure). Distinct from `Api` because retrying the same batch
+    /// harder cannot help: the model does not fit. The `out_of_memory:` prefix is a stable code
+    /// the UI matches to show an actionable message.
+    #[error("out_of_memory: {0}")]
+    OutOfMemory(String),
 }
 
 /// Send a request, distinguishing a connection-refused/unreachable-host
@@ -229,6 +235,55 @@ pub(crate) async fn translate_openai_with_base(
     .await
 }
 
+/// True when a provider body is a GPU-allocation failure rather than a normal API error.
+///
+/// Ollama reports it as HTTP 500 with llama.cpp's stderr in the body:
+/// `cudaMalloc failed: out of memory` / `failed to allocate CUDA0 buffer of size N`.
+/// The worst thing to do with it is retry the batch smaller: the model is simply too big for
+/// what is free right now.
+fn out_of_memory_needed_mb(body: &str) -> Option<Option<u64>> {
+    let lower = body.to_ascii_lowercase();
+    let looks_like_oom = (lower.contains("cudamalloc")
+        || lower.contains("cuda error: out of memory")
+        || lower.contains("failed to allocate cuda")
+        || lower.contains("failed to allocate compute buffers")
+        || lower.contains("out of memory"))
+        && !lower.contains("context length");
+    if !looks_like_oom {
+        return None;
+    }
+    // "failed to allocate CUDA0 buffer of size 485572608"
+    let needed = lower
+        .split("buffer of size ")
+        .nth(1)
+        .and_then(|rest| {
+            rest.split(|c: char| !c.is_ascii_digit())
+                .next()
+                .filter(|digits| !digits.is_empty())
+                .and_then(|digits| digits.parse::<u64>().ok())
+        })
+        .map(|bytes| bytes / (1024 * 1024));
+    Some(needed)
+}
+
+/// Human sentence for an OOM, naming the model and what to do about it.
+fn out_of_memory_message(provider: &str, model: &str, needed_mb: Option<u64>) -> String {
+    let short = model.trim();
+    let short = if short.is_empty() {
+        "the selected model"
+    } else {
+        short
+    };
+    let needed = match needed_mb {
+        Some(mb) if mb > 0 => format!(" It asked for about {mb} MB more of GPU memory."),
+        _ => String::new(),
+    };
+    format!(
+        "{provider} could not load '{short}': the GPU is out of memory.{needed} \
+         Close other GPU apps, choose a smaller model, or run on the CPU."
+    )
+}
+
 /// Error text for a failed provider call. Always names the HTTP status, since
 /// several providers (and proxies) reject requests with an empty body.
 fn api_error_message(provider: &str, status: reqwest::StatusCode, body: &str) -> String {
@@ -285,6 +340,11 @@ Do not add explanations or markdown formatting.\n\nLines:\n{texts}\n\nReturn for
     if !resp.status().is_success() {
         let status = resp.status();
         let text = resp.text().await.unwrap_or_default();
+        if let Some(needed) = out_of_memory_needed_mb(&text) {
+            return Err(TranslateError::OutOfMemory(out_of_memory_message(
+                "Ollama", model, needed,
+            )));
+        }
         return Err(TranslateError::Api(api_error_message(
             "Ollama", status, &text,
         )));
@@ -661,6 +721,64 @@ pub(crate) async fn test_google_key_with_base(
             "Google Translate returned {}",
             resp.status()
         )))
+    }
+}
+
+#[cfg(test)]
+mod out_of_memory_tests {
+    use super::{out_of_memory_message, out_of_memory_needed_mb};
+
+    /// The exact body a user pasted from the batch screen: Ollama 500, llama.cpp stderr inside.
+    const REAL_BODY: &str = r#"{"error":{"message":"llama-server process has terminated: exit status 1: cudaMalloc failed: out of memory\nggml_gallocr_reserve_n_impl: failed to allocate CUDA0 buffer of size 485572608\ngraph_reserve: failed to allocate compute buffers\nllama_init_from_model: failed to initialize the context: failed to allocate compute pp buffers","type":"api_error"}}"#;
+
+    #[test]
+    fn the_real_ollama_body_is_recognised_with_its_size() {
+        assert_eq!(out_of_memory_needed_mb(REAL_BODY), Some(Some(463)));
+    }
+
+    #[test]
+    fn an_oom_without_a_size_still_counts() {
+        assert_eq!(
+            out_of_memory_needed_mb("CUDA error: out of memory"),
+            Some(None)
+        );
+    }
+
+    #[test]
+    fn a_context_length_error_is_not_an_oom() {
+        assert_eq!(
+            out_of_memory_needed_mb("the model is out of memory because context length 9000"),
+            None
+        );
+        assert_eq!(
+            out_of_memory_needed_mb("{\"error\":\"model not found\"}"),
+            None
+        );
+    }
+
+    #[test]
+    fn the_message_names_the_model_the_size_and_the_way_out() {
+        let message = out_of_memory_message("Ollama", "gemma3:12b", Some(463));
+        assert!(message.contains("gemma3:12b"), "{message}");
+        assert!(message.contains("463 MB"), "{message}");
+        assert!(message.contains("smaller model"), "{message}");
+        assert!(message.contains("CPU"), "{message}");
+
+        // No model configured and no size parsed: still readable, no empty quotes.
+        let message = out_of_memory_message("Ollama", "  ", None);
+        assert!(message.contains("the selected model"), "{message}");
+        assert!(!message.contains("''"), "{message}");
+    }
+
+    #[test]
+    fn the_stable_code_prefix_lets_the_ui_localise_it() {
+        let error = super::TranslateError::OutOfMemory(out_of_memory_message(
+            "Ollama",
+            "gemma3:12b",
+            Some(463),
+        ));
+        let text = error.to_string();
+        assert!(text.starts_with("out_of_memory: "), "{text}");
     }
 }
 

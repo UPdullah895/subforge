@@ -6,11 +6,24 @@ import { apiInvoke } from "../api/client";
 import { apiListen } from "../api/events";
 import { useBatchStore } from "../stores/batchStore";
 import { useAppStore } from "../stores/appStore";
-import { useTranslateStore, type EngineType, mapJobErrorMessage } from "../stores/translateStore";
+import {
+  useTranslateStore,
+  type EngineType,
+  isFatalEngineError,
+  mapJobErrorMessage,
+} from "../stores/translateStore";
 import { useSubtitleSourcesStore } from "../stores/subtitleSourcesStore";
 import { useJobQueue } from "../composables/useJobQueue";
 import { isDeeplSupported } from "../utils/languageNames";
-import { AlertTriangle, CheckCircle2, XCircle, Loader2, Pause, Play, Square } from "lucide-vue-next";
+import {
+  AlertTriangle,
+  CheckCircle2,
+  XCircle,
+  Loader2,
+  Pause,
+  Play,
+  Square,
+} from "lucide-vue-next";
 
 const { t } = useI18n();
 
@@ -91,7 +104,10 @@ type FileStage =
   | "merging"
   | "done"
   | "error"
-  | "cancelled";
+  | "cancelled"
+  // Not attempted because an earlier file hit an error that no retry can fix (e.g. the model
+  // does not fit in the GPU's memory).
+  | "skipped";
 
 interface FileJob {
   path: string;
@@ -138,7 +154,12 @@ function trackLabel(tr: {
 
 interface RankableTrack {
   id: number;
-  properties?: { track_name?: string; forced_track?: boolean; hearing_impaired?: boolean; default_track?: boolean };
+  properties?: {
+    track_name?: string;
+    forced_track?: boolean;
+    hearing_impaired?: boolean;
+    default_track?: boolean;
+  };
 }
 
 // Which kind of track is best to translate from: the full-dialogue one.
@@ -171,13 +192,19 @@ const ambiguousFiles = computed(() => {
     const file = batchStore.scannedFiles.find((f) => f.path === path);
     if (!file) continue;
     const matches = file.tracks.filter(
-      (tr) => tr.track_type === "subtitles" && aliases.includes((tr.properties?.language || "").toLowerCase())
+      (tr) =>
+        tr.track_type === "subtitles" &&
+        aliases.includes((tr.properties?.language || "").toLowerCase())
     );
     const ranked = bestFirst(matches);
     const bestRank = ranked.length > 0 ? trackKindRank(ranked[0]) : 0;
     const tied = ranked.filter((tr) => trackKindRank(tr) === bestRank);
     if (tied.length > 1) {
-      result.push({ path, name: file.name, candidates: tied.map((tr) => ({ id: tr.id, label: trackLabel(tr) })) });
+      result.push({
+        path,
+        name: file.name,
+        candidates: tied.map((tr) => ({ id: tr.id, label: trackLabel(tr) })),
+      });
     }
   }
   return result;
@@ -191,15 +218,20 @@ watch(ambiguousFiles, (files) => {
   }
 });
 
-watch(() => provider.value, (newProvider) => {
-  // When switching to deepl, uncheck any target languages it doesn't support
-  if (newProvider === "deepl") {
-    targetLangs.value = targetLangs.value.filter((lang) => isDeeplSupported(lang));
+watch(
+  () => provider.value,
+  (newProvider) => {
+    // When switching to deepl, uncheck any target languages it doesn't support
+    if (newProvider === "deepl") {
+      targetLangs.value = targetLangs.value.filter((lang) => isDeeplSupported(lang));
+    }
   }
-});
+);
 
 const showSetDefaultSubtitle = computed(() =>
-  props.files.some((path) => (batchStore.scannedFiles.find((f) => f.path === path)?.subtitle_count ?? 0) > 0)
+  props.files.some(
+    (path) => (batchStore.scannedFiles.find((f) => f.path === path)?.subtitle_count ?? 0) > 0
+  )
 );
 
 watch(
@@ -312,7 +344,8 @@ async function startPipeline() {
     }
   });
 
-  for (const job of fileJobs.value) {
+  for (let index = 0; index < fileJobs.value.length; index += 1) {
+    const job = fileJobs.value[index];
     if (subtitleSourcesStore.searchEnabled()) {
       job.stage = "searching";
       const metadata = batchStore.resolvedMetadata[job.path];
@@ -324,10 +357,11 @@ async function startPipeline() {
       if (!title) {
         try {
           const fileName = job.path.split(/[/\\]/).pop() || job.path;
-          const parsed = await apiInvoke<{ series_guess: string; season?: number; episode?: number }>(
-            "parse_filename",
-            { name: fileName }
-          );
+          const parsed = await apiInvoke<{
+            series_guess: string;
+            season?: number;
+            episode?: number;
+          }>("parse_filename", { name: fileName });
           title = parsed.series_guess;
           season = parsed.season;
           episode = parsed.episode;
@@ -400,8 +434,19 @@ async function startPipeline() {
       job.stage = "extracting";
       await batchStore.registerPipelineJob(jobId, job.path, job.lang);
     } catch (e) {
+      const raw = e instanceof Error ? e.message : String(e);
       job.stage = "error";
-      job.message = mapJobErrorMessage(e instanceof Error ? e.message : String(e));
+      job.message = mapJobErrorMessage(raw);
+      // A GPU that is out of memory will stay out of memory: the next file fails the same way,
+      // so say it once instead of filling the list with the same paragraph.
+      if (isFatalEngineError(raw)) {
+        for (const remaining of fileJobs.value.slice(index + 1)) {
+          remaining.stage = "skipped";
+          remaining.progress = 0;
+          remaining.message = t("autoTranslate.skippedAfterFatal");
+        }
+        break;
+      }
     }
   }
 }
@@ -445,12 +490,17 @@ async function stopJob(job: FileJob) {
   <Modal :open="open" :title="t('autoTranslate.title')" @close="close">
     <div class="space-y-5">
       <div v-if="!running">
-        <div v-if="probed && providerOptions.length === 0" class="p-3 rounded-lg bg-warning/10 border border-warning/20 text-xs text-warning">
+        <div
+          v-if="probed && providerOptions.length === 0"
+          class="p-3 rounded-lg bg-warning/10 border border-warning/20 text-xs text-warning"
+        >
           {{ t("autoTranslate.noProviders") }}
         </div>
         <template v-else>
           <div>
-            <label class="block text-xs font-medium text-text-secondary mb-1.5">{{ t("autoTranslate.provider") }}</label>
+            <label class="block text-xs font-medium text-text-secondary mb-1.5">{{
+              t("autoTranslate.provider")
+            }}</label>
             <select
               v-model="provider"
               class="w-full px-4 py-2.5 rounded-lg bg-bg-primary border border-border text-sm text-text-primary focus:outline-none focus:border-accent"
@@ -460,7 +510,9 @@ async function stopJob(job: FileJob) {
           </div>
 
           <div class="mt-4">
-            <label class="block text-xs font-medium text-text-secondary mb-1.5">{{ t("translate.source") }}</label>
+            <label class="block text-xs font-medium text-text-secondary mb-1.5">{{
+              t("translate.source")
+            }}</label>
             <select
               v-model="sourceLang"
               class="w-full px-4 py-2.5 rounded-lg bg-bg-primary border border-border text-sm text-text-primary focus:outline-none focus:border-accent"
@@ -472,13 +524,19 @@ async function stopJob(job: FileJob) {
                 :disabled="provider === 'deepl' && !isDeeplSupported(lang.code)"
               >
                 {{ lang.label }}
-                {{ provider === "deepl" && !isDeeplSupported(lang.code) ? t("translate.deeplUnsupportedSuffix") : "" }}
+                {{
+                  provider === "deepl" && !isDeeplSupported(lang.code)
+                    ? t("translate.deeplUnsupportedSuffix")
+                    : ""
+                }}
               </option>
             </select>
           </div>
 
           <div class="mt-4">
-            <label class="block text-xs font-medium text-text-secondary mb-1.5">{{ t("autoTranslate.targetLanguages") }}</label>
+            <label class="block text-xs font-medium text-text-secondary mb-1.5">{{
+              t("autoTranslate.targetLanguages")
+            }}</label>
             <div class="grid grid-cols-3 gap-1.5">
               <label
                 v-for="lang in languageOptions"
@@ -487,7 +545,7 @@ async function stopJob(job: FileJob) {
                   'flex items-center gap-1.5 px-2 py-1.5 rounded-md border border-border text-xs cursor-pointer',
                   provider === 'deepl' && !isDeeplSupported(lang.code)
                     ? 'bg-bg-tertiary text-text-muted opacity-50 cursor-not-allowed'
-                    : 'bg-bg-primary text-text-secondary'
+                    : 'bg-bg-primary text-text-secondary',
                 ]"
               >
                 <input
@@ -498,13 +556,19 @@ async function stopJob(job: FileJob) {
                   @change="toggleTargetLang(lang.code)"
                 />
                 {{ lang.label }}
-                {{ provider === "deepl" && !isDeeplSupported(lang.code) ? t("translate.deeplUnsupportedSuffix") : "" }}
+                {{
+                  provider === "deepl" && !isDeeplSupported(lang.code)
+                    ? t("translate.deeplUnsupportedSuffix")
+                    : ""
+                }}
               </label>
             </div>
           </div>
 
           <div v-if="ambiguousFiles.length > 0" class="mt-4 space-y-2">
-            <div class="flex items-center gap-2 p-2.5 rounded-lg bg-warning/10 border border-warning/20 text-xs text-warning">
+            <div
+              class="flex items-center gap-2 p-2.5 rounded-lg bg-warning/10 border border-warning/20 text-xs text-warning"
+            >
               <AlertTriangle class="w-3.5 h-3.5 shrink-0" />
               {{ t("autoTranslate.ambiguousTrack", { count: ambiguousFiles.length }) }}
             </div>
@@ -530,7 +594,10 @@ async function stopJob(job: FileJob) {
             <input v-model="autoMerge" type="checkbox" class="accent-accent" />
             {{ t("autoTranslate.autoMerge") }}
           </label>
-          <label v-if="autoMerge && showSetDefaultSubtitle" class="flex items-center gap-2 text-xs text-text-secondary mt-2">
+          <label
+            v-if="autoMerge && showSetDefaultSubtitle"
+            class="flex items-center gap-2 text-xs text-text-secondary mt-2"
+          >
             <input v-model="setDefaultSubtitle" type="checkbox" class="accent-accent" />
             {{ t("autoTranslate.setDefaultSubtitle") }}
           </label>
@@ -551,9 +618,18 @@ async function stopJob(job: FileJob) {
             <span class="text-sm text-text-primary truncate">{{ job.name }}</span>
             <span class="inline-flex items-center gap-1.5 text-xs shrink-0">
               <CheckCircle2 v-if="job.stage === 'done'" class="w-3.5 h-3.5 text-success" />
-              <XCircle v-else-if="job.stage === 'error' || job.stage === 'cancelled'" class="w-3.5 h-3.5 text-error" />
+              <XCircle
+                v-else-if="job.stage === 'error' || job.stage === 'cancelled'"
+                class="w-3.5 h-3.5 text-error"
+              />
               <Loader2 v-else class="w-3.5 h-3.5 text-accent animate-spin" />
-              <span :class="job.stage === 'error' || job.stage === 'cancelled' ? 'text-error' : 'text-text-secondary'">
+              <span
+                :class="
+                  job.stage === 'error' || job.stage === 'cancelled'
+                    ? 'text-error'
+                    : 'text-text-secondary'
+                "
+              >
                 {{ stageLabel(job.stage) }}
               </span>
               <template v-if="isJobActive(job)">
@@ -596,7 +672,9 @@ async function stopJob(job: FileJob) {
       </button>
       <button
         v-if="!running"
-        :disabled="starting || providerOptions.length === 0 || files.length === 0 || targetLangs.length === 0"
+        :disabled="
+          starting || providerOptions.length === 0 || files.length === 0 || targetLangs.length === 0
+        "
         class="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-accent text-white text-xs font-medium hover:bg-accent-hover active:bg-accent-active transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
         @click="startPipeline"
       >
