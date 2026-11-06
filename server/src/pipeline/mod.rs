@@ -10,6 +10,7 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 use subforge_pipeline::Policy;
 
+pub mod engines;
 pub mod watch;
 
 /// `pipeline.json` in the config directory (or `SUBFORGE_PIPELINE_CONFIG`). Missing means the
