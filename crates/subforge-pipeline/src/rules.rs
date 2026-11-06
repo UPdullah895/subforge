@@ -480,6 +480,34 @@ fn parse_and_report(path: &Path, rules: &Rules) -> Result<(Vec<Cue>, LintReport)
     ))
 }
 
+/// Reports what a reader would notice, without changing the file. This is what an agent asks for
+/// before deciding whether a subtitle is worth keeping.
+pub fn inspect(path: &Path, profile: RuleProfile) -> Result<LintReport, String> {
+    let Some(rules) = Rules::for_profile(profile) else {
+        return Ok(LintReport {
+            profile: "off".to_string(),
+            found: Vec::new(),
+            rewrapped: 0,
+            split: 0,
+            retimed: 0,
+            written: false,
+        });
+    };
+    let text = std::fs::read_to_string(path).map_err(|error| format!("{}: {error}", path.display()))?;
+    let cues = parse_srt(&text);
+    if cues.is_empty() {
+        return Err(format!("{}: no SRT cues found (only SRT can be linted)", path.display()));
+    }
+    Ok(LintReport {
+        profile: rules.name.to_string(),
+        found: violations(&cues, &rules).iter().map(Violation::to_string).collect(),
+        rewrapped: 0,
+        split: 0,
+        retimed: 0,
+        written: false,
+    })
+}
+
 /// Lints a subtitle file and writes it back when anything changed. Returns the report; the file is
 /// only touched when a fix was applied, so a clean file keeps its exact bytes.
 pub fn lint_file(path: &Path, profile: RuleProfile) -> Result<LintReport, String> {
