@@ -35,7 +35,11 @@ fn describe(steps: &[Step]) -> String {
 /// Returns the summary a human (or the job log) reads. An error means the episode is **not** in
 /// the state the policy asked for; the pipeline's own atomic publish means the file is either
 /// the original or the finished version, never something in between.
-pub async fn process(file: String, policy: Policy) -> Result<String, String> {
+pub async fn process(
+    file: String,
+    policy: Policy,
+    arr: Option<crate::pipeline::arr::ArrRef>,
+) -> Result<String, String> {
     let paths = crate::tools::tool_paths();
     let plan = {
         let file = file.clone();
@@ -98,11 +102,22 @@ pub async fn process(file: String, policy: Policy) -> Result<String, String> {
     .await
     .map_err(|error| format!("the pipeline panicked: {error}"))?;
 
-    if ok {
-        Ok(summary)
-    } else {
-        Err(summary)
+    if !ok {
+        return Err(summary);
     }
+
+    // The episode is correct on disk; telling the *arr is a courtesy, so a failure is logged and
+    // swallowed rather than turning a finished job into a failed one.
+    if let Some(reference) = arr {
+        let client = reqwest::Client::new();
+        if let Err(error) = crate::pipeline::arr::request_rescan(&client, &reference).await {
+            eprintln!(
+                "[arr] {} was not told to rescan: {error}",
+                reference.endpoint.url
+            );
+        }
+    }
+    Ok(summary)
 }
 
 #[cfg(test)]

@@ -66,6 +66,9 @@ pub struct HookEvent {
     pub missing: Vec<String>,
     /// True when every file already has every target language.
     pub already_present: bool,
+    /// Sonarr series id / Radarr movie id, when the payload carries one.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub resource_id: Option<i64>,
 }
 
 fn languages(value: Option<&Value>, key: &str) -> Vec<String> {
@@ -105,33 +108,39 @@ pub fn parse(kind: ArrKind, payload: &Value) -> Result<HookEvent, String> {
         return Err("the payload has no eventType".to_string());
     }
 
-    let (title, files) = match kind {
+    let (title, resource_id, files) = match kind {
         ArrKind::Sonarr => {
-            let title = payload
-                .get("series")
+            let series = payload.get("series");
+            let title = series
                 .and_then(|series| series.get("title"))
                 .and_then(Value::as_str)
                 .map(str::to_string);
+            let resource_id = series
+                .and_then(|series| series.get("id"))
+                .and_then(Value::as_i64);
             // Always an array, even for a single episode: older builds sent one object.
             let files = payload
                 .get("episodeFiles")
                 .and_then(Value::as_array)
                 .map(|list| list.iter().filter_map(file_from).collect())
                 .unwrap_or_default();
-            (title, files)
+            (title, resource_id, files)
         }
         ArrKind::Radarr => {
-            let title = payload
-                .get("movie")
+            let movie = payload.get("movie");
+            let title = movie
                 .and_then(|movie| movie.get("title"))
                 .and_then(Value::as_str)
                 .map(str::to_string);
+            let resource_id = movie
+                .and_then(|movie| movie.get("id"))
+                .and_then(Value::as_i64);
             let files = payload
                 .get("movieFile")
                 .and_then(file_from)
                 .into_iter()
                 .collect();
-            (title, files)
+            (title, resource_id, files)
         }
     };
 
@@ -142,6 +151,7 @@ pub fn parse(kind: ArrKind, payload: &Value) -> Result<HookEvent, String> {
         files,
         missing: Vec::new(),
         already_present: false,
+        resource_id,
     })
 }
 
@@ -218,6 +228,26 @@ pub async fn post_hook(
         })));
     }
 
+    // The payload says which series/movie changed; the config says which instance to tell
+    // afterwards. A webhook from an *arr that is not in `pipeline.json` is still processed, it
+    // just does not get a rescan request.
+    let reference = event.resource_id.and_then(|resource_id| {
+        config
+            .arr
+            .iter()
+            .find(|endpoint| {
+                matches!(
+                    (endpoint.kind, kind),
+                    (crate::pipeline::arr::ArrKind::Sonarr, ArrKind::Sonarr)
+                        | (crate::pipeline::arr::ArrKind::Radarr, ArrKind::Radarr)
+                )
+            })
+            .map(|endpoint| crate::pipeline::arr::ArrRef {
+                endpoint: endpoint.clone(),
+                resource_id,
+            })
+    });
+
     let handle = tokio::runtime::Handle::current();
     let mut queued = 0usize;
     let mut skipped = 0usize;
@@ -231,6 +261,7 @@ pub async fn post_hook(
             &config.policy,
             &state.scheduler,
             &state.job_queue,
+            reference.clone(),
             &handle,
         );
         queued += 1;

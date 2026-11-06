@@ -111,7 +111,8 @@ fn spawn_arr(
     eprintln!("[arr] following {}", endpoint.url);
     let on_import: crate::pipeline::arr::OnImport = Box::new(move |import| {
         let path = PathBuf::from(&import.path);
-        handle_file(&path, &policy, &scheduler, &queue, &handle);
+        // The *arr is told afterwards, so its own UI shows the new subtitle.
+        handle_file(&path, &policy, &scheduler, &queue, import.arr, &handle);
     });
     tokio::spawn(super::arr::follow(endpoint, on_import));
 }
@@ -122,6 +123,7 @@ pub fn handle_file(
     policy: &Policy,
     scheduler: &Scheduler,
     queue: &crate::jobs::SharedJobQueue,
+    arr: Option<crate::pipeline::arr::ArrRef>,
     handle: &Handle,
 ) {
     if policy.dry_run {
@@ -177,7 +179,7 @@ pub fn handle_file(
                 let mut jobs = queue.lock().unwrap_or_else(|error| error.into_inner());
                 jobs.update_status(&job_id, crate::jobs::JobStatus::Running);
             }
-            let outcome = super::run::process(file, policy).await;
+            let outcome = super::run::process(file, policy, arr).await;
             let mut jobs = queue.lock().unwrap_or_else(|error| error.into_inner());
             match outcome {
                 Ok(summary) => {
@@ -225,7 +227,7 @@ fn run(
 
         for path in ready {
             pending.remove(&path);
-            handle_file(&path, &policy, &scheduler, &queue, &handle);
+            handle_file(&path, &policy, &scheduler, &queue, None, &handle);
         }
     }
 }
@@ -303,7 +305,7 @@ mod tests {
         let handle = runtime.handle().clone();
 
         // A dry run must not enqueue anything, even for a file it cannot plan.
-        handle_file(&file, &Policy::arabic(), &scheduler, &queue, &handle);
+        handle_file(&file, &Policy::arabic(), &scheduler, &queue, None, &handle);
         assert!(scheduler.snapshot().is_empty());
         assert!(
             queue.lock().unwrap().jobs.is_empty(),

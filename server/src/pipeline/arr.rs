@@ -130,10 +130,20 @@ pub fn is_interesting(target: &str) -> bool {
     )
 }
 
+/// Which *arr instance and which record a file came from, so the *arr can be told afterwards.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ArrRef {
+    pub endpoint: ArrEndpoint,
+    /// Sonarr series id, Radarr movie id.
+    pub resource_id: i64,
+}
+
 /// A file the *arr has just finished importing.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ImportedFile {
     pub path: String,
+    /// Present when the *arr can be told to rescan afterwards.
+    pub arr: Option<ArrRef>,
 }
 
 /// One history record, in the subset the API returns that we rely on.
@@ -145,6 +155,10 @@ struct HistoryRecord {
     movie_file_id: Option<i64>,
     #[serde(default)]
     event_type: Option<String>,
+    #[serde(default, rename = "seriesId")]
+    series_id: Option<i64>,
+    #[serde(default, rename = "movieId")]
+    movie_id: Option<i64>,
     #[serde(default)]
     episode: Option<Value>,
     #[serde(default)]
@@ -214,12 +228,23 @@ impl ArrClient {
                 ArrKind::Sonarr => record.episode_file_id,
                 ArrKind::Radarr => record.movie_file_id,
             };
+            let resource_id = match self.endpoint.kind {
+                ArrKind::Sonarr => record.series_id,
+                ArrKind::Radarr => record.movie_id,
+            };
+            let reference = resource_id.map(|resource_id| ArrRef {
+                endpoint: self.endpoint.clone(),
+                resource_id,
+            });
             let Some(file_id) = file_id else {
                 // Older history rows and deletions have no file: fall back to the embedded
                 // resource when it carries a path.
                 if let Some(path) = embedded_path(&record) {
                     if self.seen.insert(path.clone()) {
-                        imports.push(ImportedFile { path });
+                        imports.push(ImportedFile {
+                            path,
+                            arr: reference,
+                        });
                     }
                 }
                 continue;
@@ -227,7 +252,10 @@ impl ArrClient {
             match self.file_path(file_id).await {
                 Ok(Some(path)) => {
                     if self.seen.insert(path.clone()) {
-                        imports.push(ImportedFile { path });
+                        imports.push(ImportedFile {
+                            path,
+                            arr: reference,
+                        });
                     }
                 }
                 Ok(None) => {}
@@ -292,6 +320,41 @@ fn embedded_path(record: &HistoryRecord) -> Option<String> {
         })
         .and_then(Value::as_str)
         .map(str::to_string)
+}
+
+/// Tells the *arr that the file changed, so its own UI shows the new subtitle immediately.
+///
+/// Sonarr/Radarr answer this with a command id and do the work asynchronously; we only need the
+/// request to be accepted, and a failure here must never fail the pipeline — the episode is
+/// already correct on disk.
+pub async fn request_rescan(client: &reqwest::Client, reference: &ArrRef) -> Result<(), String> {
+    let kind = reference.endpoint.kind;
+    let body = match kind {
+        ArrKind::Sonarr => serde_json::json!({
+            "name": "RescanSeries",
+            "seriesId": reference.resource_id,
+        }),
+        ArrKind::Radarr => serde_json::json!({
+            "name": "RescanMovie",
+            "movieId": reference.resource_id,
+        }),
+    };
+    let url = reference.endpoint.api("command");
+    let response = client
+        .post(&url)
+        .header("X-Api-Key", &reference.endpoint.api_key)
+        .json(&body)
+        .send()
+        .await
+        .map_err(|error| format!("rescan request failed: {error}"))?;
+    if response.status().is_success() {
+        Ok(())
+    } else {
+        Err(format!(
+            "the *arr refused the rescan: HTTP {}",
+            response.status().as_u16()
+        ))
+    }
 }
 
 /// What the watcher does with an import: this module stays out of the decision, so the same code
@@ -528,13 +591,67 @@ mod tests {
         assert_eq!(
             imports,
             vec![ImportedFile {
-                path: "/media/tv/Show/Season 01/Show.S01E01.mkv".to_string()
+                path: "/media/tv/Show/Season 01/Show.S01E01.mkv".to_string(),
+                // The fake history carries no seriesId, so there is nobody to tell afterwards.
+                arr: None,
             }],
             "the grabbed record must be skipped and the import resolved to its path"
         );
 
         // A second sweep sees the same history and must not re-emit the file.
         assert!(client.recent_imports().await.unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn the_rescan_names_the_command_and_the_record() {
+        use std::sync::{Arc, Mutex};
+
+        // A fake *arr that records the command it was asked to run.
+        let seen: Arc<Mutex<Vec<(String, serde_json::Value)>>> = Arc::default();
+        let sink = seen.clone();
+        let app = axum::Router::new().route(
+            "/api/v3/command",
+            axum::routing::post(move |body: String| {
+                let sink = sink.clone();
+                async move {
+                    let value: serde_json::Value = serde_json::from_str(&body).unwrap();
+                    sink.lock().unwrap().push(("command".to_string(), value));
+                    axum::Json(json!({"id": 1, "name": "RescanSeries", "status": "queued"}))
+                }
+            }),
+        );
+        let listener = tokio::net::TcpListener::bind(("127.0.0.1", 18090))
+            .await
+            .unwrap();
+        tokio::spawn(async move {
+            let _ = axum::serve(listener, app).await;
+        });
+        tokio::time::sleep(Duration::from_millis(200)).await;
+
+        let client = reqwest::Client::new();
+        for (kind, expected) in [
+            (ArrKind::Sonarr, "RescanSeries"),
+            (ArrKind::Radarr, "RescanMovie"),
+        ] {
+            let reference = ArrRef {
+                endpoint: ArrEndpoint {
+                    kind,
+                    url: "http://127.0.0.1:18090".to_string(),
+                    api_key: "k".to_string(),
+                },
+                resource_id: 42,
+            };
+            request_rescan(&client, &reference).await.unwrap();
+            let seen = seen.lock().unwrap();
+            let body = &seen.last().unwrap().1;
+            assert_eq!(body["name"], expected);
+            let id_field = if kind == ArrKind::Sonarr {
+                "seriesId"
+            } else {
+                "movieId"
+            };
+            assert_eq!(body[id_field], 42, "{body}");
+        }
     }
 
     #[tokio::test]
