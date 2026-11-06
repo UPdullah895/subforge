@@ -1,10 +1,10 @@
-//! The folder watcher: turn new episodes into plans.
+//! The folder watcher: turn new episodes into plans, and plans into files.
 //!
-//! Deliberately conservative. It only runs when a policy file enables it, it ignores partial
-//! downloads and sidecar files, it waits for a file to stop changing before looking at it, and
-//! while `dry_run` is on it logs the plan instead of touching anything. A policy that asks for
-//! `dry_run: false` is refused: execution needs the engines wired and the scheduler's heavy
-//! slot, and pretending otherwise would be worse than doing nothing.
+//! Conservative on purpose. It only runs when a policy file enables it, it ignores partial
+//! downloads and sidecar files, and it waits for a file to stop changing before looking at it.
+//! While `dry_run` is on it logs the plan and touches nothing. When it is off, every file goes
+//! through the scheduler's heavy slot, so a season unpacked in one go becomes one transcription
+//! at a time instead of ten.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -13,36 +13,41 @@ use std::time::{Duration, Instant};
 
 use notify::{RecursiveMode, Watcher};
 use subforge_pipeline::Policy;
+use tokio::runtime::Handle;
 
-use super::is_episode_candidate;
-use super::PipelineConfig;
+use super::arr::ArrEndpoint;
+use super::{is_episode_candidate, PipelineConfig};
+use crate::jobs::scheduler::{JobSource, Scheduler};
+use crate::jobs::JobType;
 
 /// How long a file has to stay untouched before it counts as finished.
 const SETTLE: Duration = Duration::from_secs(3);
 
-/// Starts the watcher if the policy enables it. Never fails: a server without a policy, or
-/// with an unreadable folder, still has to start and serve the rest of its API.
-pub fn spawn() {
+/// Starts the triggers: one task per configured *arr, plus the folder watcher when folders are
+/// configured. Never fails: a server without a policy, or with an unreadable folder, still has to
+/// start and serve the rest of its API.
+pub fn spawn(scheduler: Scheduler, queue: crate::jobs::SharedJobQueue) {
     let config = PipelineConfig::load();
-    // The *arr feed is a separate trigger: an instance configured without watch folders is a
-    // legitimate setup ("let Sonarr tell me"), so it is started before the folder check.
+    let handle = Handle::current();
+
+    // The *arr feed is a separate trigger: an instance with no watch folders is a legitimate
+    // setup ("let Sonarr tell me"), so it is started before the folder check.
     for endpoint in config.arr.clone() {
-        spawn_arr(endpoint, config.policy.clone());
+        spawn_arr(
+            endpoint,
+            config.policy.clone(),
+            scheduler.clone(),
+            queue.clone(),
+            handle.clone(),
+        );
     }
+
     if config.policy.target_languages.is_empty() {
         eprintln!("[pipeline] the policy has no target languages; nothing would be planned");
         return;
     }
     if config.watch_dirs.is_empty() {
-        // Perfectly normal when the *arr feed is the trigger.
         eprintln!("[pipeline] no watch_dirs configured; only the *arr feed triggers work");
-        return;
-    }
-    if !config.policy.dry_run {
-        eprintln!(
-            "[pipeline] execution is not wired yet, so dry_run=false is refused; \
-             keep dry_run on to see the plans in the log"
-        );
         return;
     }
 
@@ -82,39 +87,123 @@ pub fn spawn() {
     }
 
     eprintln!(
-        "[pipeline] watching {watched} folder(s) for {} (dry run)",
-        config.policy.target_languages.join(", ")
+        "[pipeline] watching {watched} folder(s) for {} ({})",
+        config.policy.target_languages.join(", "),
+        if config.policy.dry_run {
+            "dry run"
+        } else {
+            "live"
+        }
     );
     let policy = config.policy.clone();
     // The watcher must outlive this function; it is moved into the thread with the receiver.
-    std::thread::spawn(move || run(rx, policy, watcher));
+    std::thread::spawn(move || run(rx, policy, watcher, scheduler, queue, handle));
 }
 
-/// Follows one *arr instance and plans every file it reports as imported.
-fn spawn_arr(endpoint: crate::pipeline::arr::ArrEndpoint, policy: Policy) {
-    let label = endpoint.url.clone();
-    let on_import: crate::pipeline::arr::OnImport =
-        Box::new(
-            move |import| match plan_one(std::path::Path::new(&import.path), &policy) {
-                Ok(Some(plan)) if plan.is_noop() => {
-                    eprintln!("[arr] {} already satisfies the policy", import.path)
+/// Follows one *arr instance and processes every file it reports as imported.
+fn spawn_arr(
+    endpoint: ArrEndpoint,
+    policy: Policy,
+    scheduler: Scheduler,
+    queue: crate::jobs::SharedJobQueue,
+    handle: Handle,
+) {
+    eprintln!("[arr] following {}", endpoint.url);
+    let on_import: crate::pipeline::arr::OnImport = Box::new(move |import| {
+        let path = PathBuf::from(&import.path);
+        handle_file(&path, &policy, &scheduler, &queue, &handle);
+    });
+    tokio::spawn(super::arr::follow(endpoint, on_import));
+}
+
+/// What happens to one finished file: a logged plan, or a job on the heavy slot.
+pub fn handle_file(
+    path: &Path,
+    policy: &Policy,
+    scheduler: &Scheduler,
+    queue: &crate::jobs::SharedJobQueue,
+    handle: &Handle,
+) {
+    if policy.dry_run {
+        match plan_one(path, policy) {
+            Ok(Some(plan)) if plan.is_noop() => {
+                eprintln!("[pipeline] {} already satisfies the policy", path.display())
+            }
+            Ok(Some(plan)) => eprintln!(
+                "[pipeline] {} needs {} language(s); plan: {}",
+                path.display(),
+                plan.missing.len(),
+                describe(&plan.steps)
+            ),
+            Ok(None) => {}
+            Err(error) => eprintln!("[pipeline] cannot plan {}: {error}", path.display()),
+        }
+        return;
+    }
+
+    if !path.is_file() {
+        return;
+    }
+    let file = path.to_string_lossy().to_string();
+    let job_id = format!("pipeline-{}", uuid::Uuid::new_v4());
+    let policy = policy.clone();
+    let label = file.clone();
+    let queue = queue.clone();
+
+    // The job list is the audit trail: without these two updates a failed episode would show up
+    // as "completed" because the queue only knows what the caller tells it.
+    {
+        let mut jobs = queue.lock().unwrap_or_else(|error| error.into_inner());
+        jobs.add(crate::jobs::Job {
+            id: job_id.clone(),
+            job_type: JobType::BatchOperation,
+            status: crate::jobs::JobStatus::Pending,
+            input_file: file.clone(),
+            output_file: None,
+            progress: 0.0,
+            message: Some("queued by the pipeline".to_string()),
+        });
+    }
+
+    // `gated` spawns the job, which needs a runtime context even from the watcher's thread.
+    let _entered = handle.enter();
+    scheduler.gated(
+        job_id.clone(),
+        JobType::BatchOperation,
+        JobSource::Automation,
+        file.clone(),
+        async move {
+            {
+                let mut jobs = queue.lock().unwrap_or_else(|error| error.into_inner());
+                jobs.update_status(&job_id, crate::jobs::JobStatus::Running);
+            }
+            let outcome = super::run::process(file, policy).await;
+            let mut jobs = queue.lock().unwrap_or_else(|error| error.into_inner());
+            match outcome {
+                Ok(summary) => {
+                    eprintln!("[pipeline] {summary}");
+                    jobs.update_progress(&job_id, 100.0, Some(summary));
+                    jobs.update_status(&job_id, crate::jobs::JobStatus::Completed);
                 }
-                Ok(Some(plan)) => eprintln!(
-                    "[arr] {} needs {} language(s); plan: {}",
-                    import.path,
-                    plan.missing.len(),
-                    describe(&plan.steps)
-                ),
-                Ok(None) => {}
-                Err(error) => eprintln!("[arr] cannot plan {}: {error}", import.path),
-            },
-        );
-    eprintln!("[arr] following {label}");
-    tokio::spawn(crate::pipeline::arr::follow(endpoint, on_import));
+                Err(error) => {
+                    eprintln!("[pipeline] {label}: {error}");
+                    jobs.update_progress(&job_id, 0.0, Some(error));
+                    jobs.update_status(&job_id, crate::jobs::JobStatus::Failed);
+                }
+            }
+        },
+    );
 }
 
-/// Collects paths, waits until each stops changing, then plans it.
-fn run(rx: mpsc::Receiver<PathBuf>, policy: Policy, _watcher: impl Watcher + Send) {
+/// Collects paths, waits until each stops changing, then hands it over.
+fn run(
+    rx: mpsc::Receiver<PathBuf>,
+    policy: Policy,
+    _watcher: impl Watcher + Send,
+    scheduler: Scheduler,
+    queue: crate::jobs::SharedJobQueue,
+    handle: Handle,
+) {
     let mut pending: HashMap<PathBuf, Instant> = HashMap::new();
     loop {
         match rx.recv_timeout(Duration::from_millis(500)) {
@@ -136,21 +225,7 @@ fn run(rx: mpsc::Receiver<PathBuf>, policy: Policy, _watcher: impl Watcher + Sen
 
         for path in ready {
             pending.remove(&path);
-            match plan_one(&path, &policy) {
-                Ok(Some(plan)) if plan.is_noop() => {
-                    eprintln!("[pipeline] {} already satisfies the policy", path.display());
-                }
-                Ok(Some(plan)) => {
-                    eprintln!(
-                        "[pipeline] {} needs {} language(s); plan: {}",
-                        path.display(),
-                        plan.missing.len(),
-                        describe(&plan.steps)
-                    );
-                }
-                Ok(None) => {}
-                Err(error) => eprintln!("[pipeline] cannot plan {}: {error}", path.display()),
-            }
+            handle_file(&path, &policy, &scheduler, &queue, &handle);
         }
     }
 }
@@ -205,5 +280,36 @@ mod tests {
             },
         ];
         assert_eq!(describe(&steps), "search:ar -> mux:ar");
+    }
+
+    #[test]
+    fn a_dry_run_hands_nothing_to_the_scheduler() {
+        let dir = std::env::temp_dir().join(format!("sf_watch_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("E01.mkv");
+        std::fs::write(&file, b"x").unwrap();
+
+        let queue: crate::jobs::SharedJobQueue =
+            std::sync::Arc::new(std::sync::Mutex::new(crate::jobs::JobQueue::new()));
+        let scheduler = Scheduler::with_journal(
+            queue.clone(),
+            crate::jobs::create_event_channel().0,
+            Some(dir.join("journal")),
+        );
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let handle = runtime.handle().clone();
+
+        // A dry run must not enqueue anything, even for a file it cannot plan.
+        handle_file(&file, &Policy::arabic(), &scheduler, &queue, &handle);
+        assert!(scheduler.snapshot().is_empty());
+        assert!(
+            queue.lock().unwrap().jobs.is_empty(),
+            "a dry run must not create job entries"
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

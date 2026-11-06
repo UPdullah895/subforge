@@ -12,6 +12,7 @@ use subforge_pipeline::Policy;
 
 pub mod arr;
 pub mod engines;
+pub mod run;
 pub mod watch;
 
 /// `pipeline.json` in the config directory (or `SUBFORGE_PIPELINE_CONFIG`). Missing means the

@@ -165,7 +165,9 @@ impl StepRunner for CoreRunner {
     }
 
     fn mux(&mut self, file: &str, subtitle: &str, language: &str) -> Result<String, String> {
-        let temporary = self.scratch(&format!("{}.muxed", stem_of(file)), "mkv");
+        // Beside the episode, not in `work_dir`: the publish is a rename, and a rename across
+        // filesystems fails (EXDEV) when the config directory is on another mount.
+        let temporary = PathBuf::from(format!("{file}.subforge-tmp.mkv"));
         let _ = std::fs::remove_file(&temporary);
         let spec = SubtitleMergeSpec {
             path: subtitle.to_string(),

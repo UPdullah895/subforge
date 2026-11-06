@@ -60,9 +60,10 @@ async fn main() {
         scheduler,
     };
 
-    // The watcher is opt-in through pipeline.json; it logs instead of touching files while
-    // dry_run is on (see `pipeline::watch`).
-    pipeline::watch::spawn();
+    // The triggers are opt-in through pipeline.json: the *arr feed and the folder watcher. While
+    // `dry_run` is on they log plans; when it is off every file goes through the scheduler's
+    // heavy slot (see `pipeline::watch`).
+    pipeline::watch::spawn(state.scheduler.clone(), state.job_queue.clone());
 
     let app = Router::new()
         .nest("/api", api_routes())
