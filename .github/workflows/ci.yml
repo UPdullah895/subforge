@@ -38,6 +38,7 @@ jobs:
             crates/subforge-metadata
             crates/subforge-subtitle-sources
             crates/subforge-mcp
+            crates/subforge-pipeline
       - run: cargo test
         working-directory: crates/subforge-core
       - run: cargo test --features tokio
@@ -48,6 +49,8 @@ jobs:
         working-directory: crates/subforge-subtitle-sources
       - run: cargo test
         working-directory: crates/subforge-mcp
+      - run: cargo test
+        working-directory: crates/subforge-pipeline
 
   rust-tauri:
     runs-on: ubuntu-latest
