@@ -382,7 +382,6 @@ pub async fn set_track_metadata(
     Ok(StatusCode::OK)
 }
 
-
 #[derive(Debug, Deserialize)]
 pub struct CleanRequest {
     pub input: String,
@@ -403,9 +402,7 @@ pub struct CleanResult {
 }
 
 /// Preview (`apply: false`) or write (`apply: true`) a cleaned subtitle.
-pub async fn clean_subtitle(
-    Json(req): Json<CleanRequest>,
-) -> Result<Json<CleanResult>, AppError> {
+pub async fn clean_subtitle(Json(req): Json<CleanRequest>) -> Result<Json<CleanResult>, AppError> {
     use subforge_core::subtitle::clean::{clean_file_to, CleanOptions};
 
     let outcome = blocking(move || {
@@ -422,15 +419,10 @@ pub async fn clean_subtitle(
     Ok(Json(CleanResult {
         removed: outcome.report.removed,
         kept: outcome.report.kept,
-        output_path: outcome
-            .output
-            .map(|p| p.to_string_lossy().into_owned()),
-        backup_path: outcome
-            .backup
-            .map(|p| p.to_string_lossy().into_owned()),
+        output_path: outcome.output.map(|p| p.to_string_lossy().into_owned()),
+        backup_path: outcome.backup.map(|p| p.to_string_lossy().into_owned()),
     }))
 }
-
 
 #[derive(Debug, Deserialize)]
 pub struct SyncCheckRequest {
@@ -456,8 +448,8 @@ pub async fn check_subtitle_sync(
 
     let response = blocking(move || -> Result<SyncCheckResponse, String> {
         let paths = tool_paths();
-        let doc = subtitle::SubtitleDoc::load(Path::new(&req.subtitle))
-            .map_err(|e| e.to_string())?;
+        let doc =
+            subtitle::SubtitleDoc::load(Path::new(&req.subtitle)).map_err(|e| e.to_string())?;
         let media = subforge_core::tools::ffmpeg::probe_media(&paths, &req.video)
             .map_err(|e| e.to_string())?;
         let check = sync::check(&doc, &media);
@@ -548,9 +540,7 @@ pub async fn fix_subtitle_sync(
 
     Ok(Json(SyncFixResponse {
         output_path: outcome.output.to_string_lossy().into_owned(),
-        backup_path: outcome
-            .backup
-            .map(|p| p.to_string_lossy().into_owned()),
+        backup_path: outcome.backup.map(|p| p.to_string_lossy().into_owned()),
         cues: outcome.cues,
     }))
 }

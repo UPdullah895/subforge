@@ -305,3 +305,41 @@ async fn whisper_download_rejects_unknown_model() {
         "{body}"
     );
 }
+
+#[tokio::test]
+async fn pipeline_config_is_reported_and_off_by_default() {
+    let _cfg = TestConfigDir::new();
+    let res = test_app()
+        .oneshot(
+            Request::get("/api/pipeline/config")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    let json = body_json(res).await;
+    assert_eq!(json["enabled"], false);
+    assert_eq!(json["recursive"], true);
+    assert!(json["config_path"]
+        .as_str()
+        .unwrap()
+        .ends_with("pipeline.json"));
+}
+
+#[tokio::test]
+async fn pipeline_plan_reports_a_missing_file_as_unprocessable() {
+    let _cfg = TestConfigDir::new();
+    let res = test_app()
+        .oneshot(
+            Request::post("/api/pipeline/plan")
+                .header("content-type", "application/json")
+                .body(Body::from(r#"{"file":"/nope/missing.mkv"}"#))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    let json = body_json(res).await;
+    assert!(json["error"].as_str().is_some());
+}

@@ -242,9 +242,7 @@ pub async fn check_subsource_status() -> Json<SubsourceStatus> {
         .await;
     Json(match response {
         Ok(resp) if resp.status().is_success() => subsource_status(true, true, "ok"),
-        Ok(resp) if resp.status().as_u16() == 429 => {
-            subsource_status(true, true, "rate_limited")
-        }
+        Ok(resp) if resp.status().as_u16() == 429 => subsource_status(true, true, "rate_limited"),
         Ok(resp) if matches!(resp.status().as_u16(), 401 | 403) => {
             subsource_status(true, false, "invalid_key")
         }

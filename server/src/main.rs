@@ -13,6 +13,7 @@ use tower_http::services::ServeDir;
 mod config;
 mod error;
 mod jobs;
+mod pipeline;
 mod routes;
 #[cfg(test)]
 mod tests;
@@ -54,6 +55,10 @@ async fn main() {
         whisper_downloads: Default::default(),
     };
 
+    // The watcher is opt-in through pipeline.json; it logs instead of touching files while
+    // dry_run is on (see `pipeline::watch`).
+    pipeline::watch::spawn();
+
     let app = Router::new()
         .nest("/api", api_routes())
         .route("/ws", get(ws::ws_handler))
@@ -87,6 +92,9 @@ fn api_routes() -> Router<AppState> {
         .route("/fs/list", get(routes::fs::list_dir))
         // ── Tool registry ────────────────────────────────────────────────────
         .route("/tools/registry", get(routes::tools::get_registry))
+        // ── Library automation (policy + dry run) ────────────────────────────
+        .route("/pipeline/config", get(routes::pipeline::get_config))
+        .route("/pipeline/plan", post(routes::pipeline::post_plan))
         .route("/tools/status", get(routes::tools::get_status))
         // ── Dependencies (startup check + one-click install) ─────────────────
         .route("/deps", get(routes::deps::get_deps))
@@ -119,7 +127,10 @@ fn api_routes() -> Router<AppState> {
             "/subtitle/check-sync",
             post(routes::subtitle::check_subtitle_sync),
         )
-        .route("/subtitle/fix-sync", post(routes::subtitle::fix_subtitle_sync))
+        .route(
+            "/subtitle/fix-sync",
+            post(routes::subtitle::fix_subtitle_sync),
+        )
         .route("/subtitle/meta", post(routes::subtitle::set_track_metadata))
         // ── Audio operations ─────────────────────────────────────────────────
         .route("/audio/tracks", post(routes::audio::list_audio_tracks))

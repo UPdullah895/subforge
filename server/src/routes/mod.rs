@@ -5,6 +5,7 @@ pub mod deps;
 pub mod fs;
 pub mod health;
 pub mod jobs;
+pub mod pipeline;
 pub mod providers;
 pub mod rename;
 pub mod subtitle;
