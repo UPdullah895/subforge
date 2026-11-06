@@ -24,8 +24,18 @@ const SETTLE: Duration = Duration::from_secs(3);
 /// with an unreadable folder, still has to start and serve the rest of its API.
 pub fn spawn() {
     let config = PipelineConfig::load();
-    if !config.enabled() {
-        eprintln!("[pipeline] no watch_dirs/target_languages configured; watcher is off");
+    // The *arr feed is a separate trigger: an instance configured without watch folders is a
+    // legitimate setup ("let Sonarr tell me"), so it is started before the folder check.
+    for endpoint in config.arr.clone() {
+        spawn_arr(endpoint, config.policy.clone());
+    }
+    if config.policy.target_languages.is_empty() {
+        eprintln!("[pipeline] the policy has no target languages; nothing would be planned");
+        return;
+    }
+    if config.watch_dirs.is_empty() {
+        // Perfectly normal when the *arr feed is the trigger.
+        eprintln!("[pipeline] no watch_dirs configured; only the *arr feed triggers work");
         return;
     }
     if !config.policy.dry_run {
@@ -78,6 +88,29 @@ pub fn spawn() {
     let policy = config.policy.clone();
     // The watcher must outlive this function; it is moved into the thread with the receiver.
     std::thread::spawn(move || run(rx, policy, watcher));
+}
+
+/// Follows one *arr instance and plans every file it reports as imported.
+fn spawn_arr(endpoint: crate::pipeline::arr::ArrEndpoint, policy: Policy) {
+    let label = endpoint.url.clone();
+    let on_import: crate::pipeline::arr::OnImport =
+        Box::new(
+            move |import| match plan_one(std::path::Path::new(&import.path), &policy) {
+                Ok(Some(plan)) if plan.is_noop() => {
+                    eprintln!("[arr] {} already satisfies the policy", import.path)
+                }
+                Ok(Some(plan)) => eprintln!(
+                    "[arr] {} needs {} language(s); plan: {}",
+                    import.path,
+                    plan.missing.len(),
+                    describe(&plan.steps)
+                ),
+                Ok(None) => {}
+                Err(error) => eprintln!("[arr] cannot plan {}: {error}", import.path),
+            },
+        );
+    eprintln!("[arr] following {label}");
+    tokio::spawn(crate::pipeline::arr::follow(endpoint, on_import));
 }
 
 /// Collects paths, waits until each stops changing, then plans it.

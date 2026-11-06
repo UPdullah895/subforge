@@ -14,11 +14,24 @@ use crate::pipeline::PipelineConfig;
 /// `GET /api/pipeline/config`
 pub async fn get_config() -> Json<Value> {
     let config = PipelineConfig::load();
+    // The API key is a credential: the UI needs to know an instance is configured, never the key.
+    let arr: Vec<Value> = config
+        .arr
+        .iter()
+        .map(|endpoint| {
+            json!({
+                "kind": endpoint.kind,
+                "url": endpoint.url,
+                "api_key": if endpoint.api_key.is_empty() { "" } else { "***" },
+            })
+        })
+        .collect();
     Json(json!({
-        "enabled": config.enabled(),
+        "enabled": config.enabled() || !config.arr.is_empty(),
         "watch_dirs": config.watch_dirs,
         "recursive": config.recursive,
         "policy": config.policy,
+        "arr": arr,
         "config_path": PipelineConfig::path().map(|path| path.to_string_lossy().to_string()),
     }))
 }

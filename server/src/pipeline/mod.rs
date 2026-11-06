@@ -10,6 +10,7 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 use subforge_pipeline::Policy;
 
+pub mod arr;
 pub mod engines;
 pub mod watch;
 
@@ -26,6 +27,9 @@ pub struct PipelineConfig {
     /// The policy the watcher applies.
     #[serde(default)]
     pub policy: Policy,
+    /// Sonarr/Radarr instances to follow. Empty means "watch folders only".
+    #[serde(default)]
+    pub arr: Vec<arr::ArrEndpoint>,
 }
 
 fn default_true() -> bool {
@@ -40,6 +44,7 @@ impl Default for PipelineConfig {
             watch_dirs: Vec::new(),
             recursive: true,
             policy: Policy::default(),
+            arr: Vec::new(),
         }
     }
 }
