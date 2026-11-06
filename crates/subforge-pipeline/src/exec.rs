@@ -69,6 +69,15 @@ pub trait StepRunner {
     fn verify(&mut self, file: &str, language: &str) -> Result<(), String>;
     /// Delete the external subtitle a successful mux came from.
     fn cleanup(&mut self, subtitle: &str) -> Result<(), String>;
+    /// Apply a readability rule-set to a subtitle in place. The default is a no-op so a runner
+    /// that cannot lint reports "skipped" instead of lying about having fixed the file.
+    fn lint(
+        &mut self,
+        _subtitle: &str,
+        _profile: crate::RuleProfile,
+    ) -> Result<Option<String>, String> {
+        Ok(None)
+    }
 }
 
 /// Runs every step of `plan` in order, stopping a language at its first failure.
@@ -163,6 +172,17 @@ pub fn execute<R: StepRunner>(plan: &Plan, runner: &mut R) -> Report {
                 }
             }
 
+            Step::Lint { profile, .. } => match pending.clone() {
+                None => Outcome::Skipped("no subtitle to lint".to_string()),
+                Some(subtitle) => match runner.lint(&subtitle, *profile) {
+                    // `Some(report)` is the summary the user sees; `None` means the runner has no
+                    // linter, which is a skip, not a success.
+                    Ok(Some(report)) => Outcome::Done(report),
+                    Ok(None) => Outcome::Skipped("this runner cannot lint subtitles".to_string()),
+                    Err(error) => Outcome::Failed(error),
+                },
+            },
+
             Step::Mux { language } => match pending.clone() {
                 None => {
                     language_failed = true;
@@ -220,6 +240,7 @@ fn step_language(step: &Step) -> Option<String> {
         | Step::Mux { language }
         | Step::Verify { language }
         | Step::CleanupSource { language } => Some(language.clone()),
+        Step::Lint { language, .. } => Some(language.clone()),
         Step::Translate { to, .. } => Some(to.clone()),
         Step::Transcribe { language } => language.clone(),
     }
@@ -488,6 +509,40 @@ mod tests {
         let report = execute(&plan, &mut runner);
         assert!(report.ok);
         assert_eq!(runner.calls.first().unwrap(), "transcribe /lib/E02.mkv");
+    }
+
+    #[test]
+    fn a_runner_without_a_linter_reports_a_skip_not_a_success() {
+        let plan = Plan {
+            file: "/tv/E01.mkv".to_string(),
+            present: vec!["en".to_string()],
+            missing: vec!["ar".to_string()],
+            steps: vec![
+                Step::SearchOnline {
+                    language: "ar".to_string(),
+                },
+                Step::Lint {
+                    language: "ar".to_string(),
+                    profile: crate::RuleProfile::NetflixAdult,
+                },
+                Step::Mux {
+                    language: "ar".to_string(),
+                },
+            ],
+        };
+        // `Fake` does not override `lint`, so the default trait method applies.
+        let mut runner = Fake::default().with_search_hit();
+        let report = execute(&plan, &mut runner);
+        let lint = report
+            .results
+            .iter()
+            .find(|result| matches!(result.step, Step::Lint { .. }))
+            .expect("the plan has a lint step");
+        assert!(
+            matches!(&lint.outcome, Outcome::Skipped(reason) if reason.contains("cannot lint")),
+            "{:?}",
+            lint.outcome
+        );
     }
 
     #[test]

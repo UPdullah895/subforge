@@ -139,6 +139,7 @@ fn describe(steps: &[subforge_pipeline::Step]) -> String {
             subforge_pipeline::Step::SearchOnline { language } => format!("search:{language}"),
             subforge_pipeline::Step::Transcribe { .. } => "transcribe".to_string(),
             subforge_pipeline::Step::Translate { to, .. } => format!("translate:{to}"),
+            subforge_pipeline::Step::Lint { language, .. } => format!("lint:{language}"),
             subforge_pipeline::Step::Mux { language } => format!("mux:{language}"),
             subforge_pipeline::Step::Verify { language } => format!("verify:{language}"),
             subforge_pipeline::Step::CleanupSource { language } => format!("cleanup:{language}"),

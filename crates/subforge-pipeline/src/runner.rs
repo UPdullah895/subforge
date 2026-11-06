@@ -233,13 +233,33 @@ impl StepRunner for CoreRunner {
             Err(error) => Err(format!("cannot remove {subtitle}: {error}")),
         }
     }
+
+    fn lint(
+        &mut self,
+        subtitle: &str,
+        profile: crate::RuleProfile,
+    ) -> Result<Option<String>, String> {
+        let report = crate::rules::lint_file(Path::new(subtitle), profile)?;
+        Ok(Some(if report.written {
+            format!(
+                "{}: re-wrapped {}, split {}, retimed {}, {} left",
+                report.profile,
+                report.rewrapped,
+                report.split,
+                report.retimed,
+                report.found.len()
+            )
+        } else {
+            format!("{}: already within the rules", report.profile)
+        }))
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::exec::{execute, Outcome};
-    use crate::{plan, Inventory, Policy};
+    use crate::{plan, Inventory, Policy, Step};
 
     fn fixture(name: &str) -> PathBuf {
         Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -293,6 +313,7 @@ mod tests {
             delete_source_after_mux: true,
             dry_run: false,
             translate_engine: None,
+            rule_profile: crate::RuleProfile::NetflixAdult,
         }
     }
 
@@ -433,6 +454,70 @@ mod tests {
         assert!(error.contains("not configured"));
         // Search is optional in a different way: no providers configured means "nothing found".
         assert_eq!(runner.search_online("/x.mkv", "ar").unwrap(), None);
+    }
+
+    #[test]
+    fn a_messy_subtitle_is_linted_before_it_is_muxed() {
+        let Some(paths) = tool_paths() else {
+            eprintln!("skipping: no mkvmerge available");
+            return;
+        };
+        let workspace = Workspace::new();
+        let episode = workspace.episode();
+        let messy = workspace.dir.join("messy.srt");
+        std::fs::write(
+            &messy,
+            "1\n00:00:01,000 --> 00:00:02,000\nThis is a very long line of dialogue that no subtitle profile would ever allow on one row, honestly it would not.\n\n",
+        )
+        .unwrap();
+        let messy_path = messy.to_string_lossy().to_string();
+        let before = std::fs::read_to_string(&messy).unwrap();
+
+        let inventory = Inventory {
+            subtitle: vec!["en".to_string()],
+            audio: vec!["und".to_string()],
+        };
+        // No cleanup, so the linted file is still there to inspect afterwards.
+        let policy = Policy {
+            delete_source_after_mux: false,
+            ..policy()
+        };
+        let plan = plan(&episode, &inventory, &policy);
+        assert!(
+            plan.steps
+                .iter()
+                .any(|step| matches!(step, Step::Lint { .. })),
+            "the policy asked for a rule profile, so a lint step must exist"
+        );
+
+        let searched = messy_path.clone();
+        let mut runner = CoreRunner::new(paths, workspace.dir.join("work"))
+            .with_search(Box::new(move |_, _| Ok(Some(searched.clone()))));
+        let report = execute(&plan, &mut runner);
+        assert!(report.ok, "steps failed: {:?}", report.results);
+
+        let lint = report
+            .results
+            .iter()
+            .find(|result| matches!(result.step, Step::Lint { .. }))
+            .expect("a lint result");
+        assert!(
+            matches!(&lint.outcome, Outcome::Done(message) if message.contains("re-wrapped")),
+            "the lint step should report what it changed: {:?}",
+            lint.outcome
+        );
+
+        // The subtitle itself now fits the profile, and it is not byte-identical to the input.
+        let after = std::fs::read_to_string(&messy).unwrap();
+        assert_ne!(after, before, "the file should have been rewritten");
+        for line in after.lines().filter(|line| {
+            !line.contains("-->") && line.chars().any(|c| c.is_alphabetic() || c == ' ')
+        }) {
+            assert!(
+                line.chars().count() <= 42,
+                "a line is wider than the profile allows: {line:?}"
+            );
+        }
     }
 
     #[test]

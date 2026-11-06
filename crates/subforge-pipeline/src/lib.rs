@@ -15,9 +15,11 @@ use subforge_core::tools::{mkvtoolnix, ToolPaths};
 
 pub mod exec;
 pub mod language;
+pub mod rules;
 pub mod runner;
 
 pub use language::normalize_language;
+pub use rules::RuleProfile;
 
 /// One job's worth of decisions for one file, from the policy file a library owner writes.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -38,6 +40,10 @@ pub struct Policy {
     /// Plan only: report what would happen, change nothing. On by default for a new library.
     #[serde(default = "default_true")]
     pub dry_run: bool,
+    /// Readability rule-set applied to the produced subtitle before it is muxed. `off` by
+    /// default: rewriting text is something the library owner has to ask for.
+    #[serde(default)]
+    pub rule_profile: RuleProfile,
 }
 
 fn default_true() -> bool {
@@ -52,6 +58,7 @@ impl Default for Policy {
             translate_engine: None,
             delete_source_after_mux: false,
             dry_run: true,
+            rule_profile: RuleProfile::Off,
         }
     }
 }
@@ -117,6 +124,11 @@ pub enum Step {
         to: String,
         #[serde(default)]
         only_if_no_subtitle: bool,
+    },
+    /// Apply a readability rule-set to the subtitle before it is muxed (re-wrap, split, retime).
+    Lint {
+        language: String,
+        profile: RuleProfile,
     },
     /// Mux the produced subtitle into the video with its language and flags.
     Mux { language: String },
@@ -198,6 +210,12 @@ pub fn plan(file: &str, inventory: &Inventory, policy: &Policy) -> Plan {
             }
         }
 
+        if policy.rule_profile != RuleProfile::Off {
+            steps.push(Step::Lint {
+                language: language.clone(),
+                profile: policy.rule_profile,
+            });
+        }
         steps.push(Step::Mux {
             language: language.clone(),
         });
@@ -254,6 +272,44 @@ mod tests {
             subtitle: subtitle.iter().map(|s| s.to_string()).collect(),
             audio: audio.iter().map(|s| s.to_string()).collect(),
         }
+    }
+
+    #[test]
+    fn a_rule_profile_puts_the_lint_step_before_the_mux() {
+        let policy = Policy {
+            rule_profile: RuleProfile::NetflixAdult,
+            ..Policy::arabic()
+        };
+        let with_lint = plan("/tv/Show.S01E01.mkv", &inventory(&["en"], &["ja"]), &policy);
+        let kinds: Vec<&str> = with_lint
+            .steps
+            .iter()
+            .map(|step| match step {
+                Step::SearchOnline { .. } => "search",
+                Step::Transcribe { .. } => "transcribe",
+                Step::Translate { .. } => "translate",
+                Step::Lint { .. } => "lint",
+                Step::Mux { .. } => "mux",
+                Step::Verify { .. } => "verify",
+                Step::CleanupSource { .. } => "cleanup",
+            })
+            .collect();
+        assert_eq!(
+            kinds,
+            vec!["search", "translate", "lint", "mux", "verify"],
+            "lint must land between the text and the mux"
+        );
+
+        // Off is the default, and it adds nothing.
+        let without_lint = plan(
+            "/tv/Show.S01E01.mkv",
+            &inventory(&["en"], &["ja"]),
+            &Policy::arabic(),
+        );
+        assert!(!without_lint
+            .steps
+            .iter()
+            .any(|step| matches!(step, Step::Lint { .. })));
     }
 
     #[test]
