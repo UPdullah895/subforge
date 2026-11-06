@@ -27,6 +27,7 @@ export function collectVersions(read) {
     "src-tauri/tauri.conf.json": JSON.parse(read("src-tauri/tauri.conf.json")).version,
     "src-tauri/Cargo.toml": cargoVersion(read("src-tauri/Cargo.toml")),
     "src-tauri/Cargo.lock": lockVersion(read("src-tauri/Cargo.lock"), "subforge"),
+    "crates/subforge-mcp/Cargo.toml": cargoVersion(read("crates/subforge-mcp/Cargo.toml")),
     "server/Cargo.toml": cargoVersion(read("server/Cargo.toml")),
     "server/Cargo.lock": lockVersion(read("server/Cargo.lock"), "subforge-server"),
     "packaging/aur/subforge/PKGBUILD": pkgbuildVersion(read("packaging/aur/subforge/PKGBUILD")),

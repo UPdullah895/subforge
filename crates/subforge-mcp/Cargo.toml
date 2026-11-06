@@ -1,0 +1,17 @@
+[package]
+name = "subforge-mcp"
+version = "0.3.0"
+description = "MCP server for SubForge: lets an AI agent inspect and edit subtitle/media files"
+authors = ["UPdullah895"]
+license = "GPL-3.0-only"
+repository = "https://github.com/UPdullah895/subforge"
+edition = "2021"
+
+[[bin]]
+name = "subforge-mcp"
+path = "src/main.rs"
+
+[dependencies]
+subforge-core = { path = "../subforge-core" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"

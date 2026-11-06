@@ -92,6 +92,20 @@ winget install MoritzBunkus.MKVToolNix Gyan.FFmpeg
 
 Developers can print the same dependency report in a terminal with `cargo run --example check` inside `crates/subforge-deps`.
 
+### MCP server (AI control)
+`subforge-mcp` is a [Model Context Protocol](https://modelcontextprotocol.io) server, so an agent — Claude Desktop, an IDE, a script — can inspect and edit media without a human clicking: `list_tracks`, `find_missing_languages`, `extract_subtitles`, `merge_subtitles`, `convert_subtitle`, `shift_subtitle`, `probe_media`. Every tool calls the same Rust core the app does; nothing is built from shell strings.
+```bash
+cargo build --release --manifest-path crates/subforge-mcp/Cargo.toml
+```
+Register it with a client (this is Claude Desktop's format):
+```json
+{ "mcpServers": { "subforge": {
+    "command": "/path/to/subforge-mcp",
+    "env": { "SUBFORGE_BUNDLED_DIR": "/path/to/bin" }
+} } }
+```
+Run `subforge-mcp --list-tools` to see the tool table. Transcription, translation and the vision scan join once they can be queued as jobs — see [docs/ROADMAP.md](docs/ROADMAP.md).
+
 ### Server mode
 `subforge-server` shows the same dependency dialog in the web UI. A server has no OS keychain, so server mode keeps API keys in `config.json` instead of the keyring; if you run both the desktop app and the server on the same machine, note that the desktop app removes keys from that file and you will need to enter them again for the server (and vice versa). Because installing software on a server is sensitive, without `SUBFORGE_ALLOW_INSTALL=1` the server refuses installs and returns a message containing the command to run on the server yourself; set `SUBFORGE_ALLOW_INSTALL=1` to let the Install button run it.
 
