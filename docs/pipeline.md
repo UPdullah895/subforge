@@ -34,7 +34,7 @@ Everything below is off until a policy file exists. A fresh server plans nothing
 | `watch_dirs` | Folders to watch. Empty is fine when `arr` is configured. |
 | `recursive` | Descend into `Series/Season 01/`. Default `true`. |
 | `policy.target_languages` | Languages the library should end up with. Empty = nothing to do. |
-| `policy.prefer_human_subtitle` | Search the providers before machine-translating. Default `true`. |
+| `policy.prefer_human_subtitle` | Search the providers before machine-translating. Default `true`. Needs a provider key (below); with none, the search answers "nothing found" and translation runs — a log line, not an error. |
 | `policy.translate_engine` | `ollama`, `openai`, `libretranslate`, `deepl`, `google`. Unset = the saved config's engine, then Ollama. |
 | `policy.delete_source_after_mux` | Remove the external subtitle **after** a verified mux. Default `false`. |
 | `policy.dry_run` | Log the plan, touch nothing. Default `true` — so a new library is never modified before you have read a plan. |
@@ -120,6 +120,19 @@ services:
    like `needs 1 language(s); plan: search:ar -> translate:ar -> mux:ar -> verify:ar`.
 3. When the plans look right, set `"dry_run": false`. The first live run is the moment to have a
    backup of one episode, not of the library.
+
+## Providers (the search step)
+
+`search:ar` asks OpenSubtitles first (by file hash, then by title) and SubSource second. Credentials
+live in `config.json` — `opensubtitles_api_key` **plus** `opensubtitles_username`/`_password` (the
+API allows 5 downloads per IP per day without a login), and `subsource_api_key`. OpenSubtitles
+needs one key per *application* and rejects a default `User-Agent`; SubForge sends
+`SubForge/<version>`.
+
+A subtitle that comes back is kept only if it belongs to this file: a frame-rate mismatch or a
+subtitle that runs past the end of the video is discarded and the translation path runs instead,
+because a translated subtitle built on a wrong one looks like a translation failure. A constant
+shift under half a second is kept — that is a different release, not a different cut.
 
 ## Notes that save an evening
 

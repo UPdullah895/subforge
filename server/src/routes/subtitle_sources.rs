@@ -88,7 +88,7 @@ pub async fn search_online_subtitle(
 
     match result {
         SubtitleSearchResult::Found {
-            downloaded_path: text,
+            text,
             source,
             matched_via,
         } => match write_subtitle_next_to_video(&video_path, &request.language, &text) {

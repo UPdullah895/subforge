@@ -8,9 +8,13 @@
 use std::path::{Path, PathBuf};
 
 use subforge_core::lines;
+use subforge_core::subtitle::sync::{self, SyncVerdict};
 use subforge_core::translate;
 use subforge_core::whisper::{models, transcribe::TranscribeOptions, Device};
-use subforge_pipeline::runner::{TranscribeFn, TranslateFn};
+use subforge_pipeline::runner::{SearchFn, TranscribeFn, TranslateFn};
+use subforge_subtitle_sources::{
+    find_subtitle, OpenSubtitlesCredentials, SearchRequest, SubtitleSearchResult,
+};
 use tokio_util::sync::CancellationToken;
 
 use crate::config::AppConfig;
@@ -44,6 +48,121 @@ pub fn output_path(input: &str, language: &str) -> PathBuf {
         .map(|stem| stem.to_string_lossy().to_string())
         .unwrap_or_else(|| "subtitle".to_string());
     path.with_file_name(format!("{stem}.{language}.srt"))
+}
+
+/// The user agent the subtitle APIs see. OpenSubtitles answers `403 User-Agent header is wrong`
+/// to a default client string, so this is not cosmetic.
+fn user_agent() -> String {
+    format!("SubForge/{}", env!("CARGO_PKG_VERSION"))
+}
+
+/// What to search for, from the file name alone: the pipeline has no library metadata, and the
+/// *arr payload that does know the title arrives through a different door.
+pub fn search_request_for(file: &str, language: &str) -> SearchRequest {
+    let stem = Path::new(file)
+        .file_stem()
+        .map(|stem| stem.to_string_lossy().to_string())
+        .unwrap_or_else(|| file.to_string());
+    let mut parsed = subforge_metadata::parser::parse_filename(&stem);
+    if parsed.series_guess.trim().is_empty() {
+        // `Bleach/S17E46.mkv`: the title lives on the folder, the numbers on the file.
+        if let Some(folder) = Path::new(file)
+            .parent()
+            .and_then(|parent| parent.file_name())
+            .map(|name| name.to_string_lossy().to_string())
+        {
+            let from_folder = subforge_metadata::parser::parse_filename(&folder);
+            parsed.series_guess = from_folder.series_guess;
+            parsed.season = parsed.season.or(from_folder.season);
+            parsed.episode = parsed.episode.or(from_folder.episode);
+        }
+    }
+    SearchRequest {
+        title: parsed.series_guess,
+        year: None,
+        season: parsed.season,
+        episode: parsed.episode,
+        language: language.to_string(),
+    }
+}
+
+/// Whether a downloaded subtitle is worth keeping.
+///
+/// A subtitle that is a frame-rate off, or that runs past the end of the file, is worse than no
+/// subtitle: it will be translated, muxed, verified and watched, and the user will blame the
+/// translation. A constant shift is recoverable (the sync step knows the number) — but only if it
+/// is small enough to be a different release rather than a different cut.
+pub fn verdict_is_acceptable(verdict: SyncVerdict, shift_ms: Option<i64>) -> bool {
+    match verdict {
+        SyncVerdict::Good | SyncVerdict::Uncertain => true,
+        SyncVerdict::Offset => shift_ms.map(|ms| ms.abs() <= 500).unwrap_or(true),
+        SyncVerdict::Framerate | SyncVerdict::Truncated => false,
+    }
+}
+
+/// A search closure: ask the providers, write what comes back into the work directory, and keep
+/// it only if it looks like it belongs to this file.
+pub fn searcher(work_dir: PathBuf) -> Result<SearchFn, String> {
+    let handle = tokio::runtime::Handle::try_current().map_err(|_| {
+        "the pipeline needs a tokio runtime to reach the subtitle providers".to_string()
+    })?;
+    Ok(Box::new(move |file: &str, language: &str| {
+        let config = AppConfig::load();
+        let credentials = match (
+            config.opensubtitles_api_key.clone(),
+            config.opensubtitles_username.clone(),
+            config.opensubtitles_password.clone(),
+        ) {
+            (Some(api_key), Some(username), Some(password)) if !api_key.is_empty() => {
+                Some(OpenSubtitlesCredentials {
+                    api_key,
+                    username,
+                    password,
+                })
+            }
+            _ => None,
+        };
+        let subsource_key = config.subsource_api_key.clone().unwrap_or_default();
+        if credentials.is_none() && subsource_key.is_empty() {
+            // No providers configured is "nothing found", not a failure: translation is the
+            // documented fallback and the log should not pretend otherwise.
+            return Ok(None);
+        }
+
+        let request = search_request_for(file, language);
+        let agent = user_agent();
+        let result = handle.block_on(find_subtitle(
+            &request,
+            Path::new(file),
+            credentials.as_ref(),
+            &subsource_key,
+            &agent,
+        ));
+        let SubtitleSearchResult::Found { text, source, .. } = result else {
+            return Ok(None);
+        };
+
+        let stem = Path::new(file)
+            .file_stem()
+            .map(|stem| stem.to_string_lossy().to_string())
+            .unwrap_or_else(|| "episode".to_string());
+        let _ = std::fs::create_dir_all(&work_dir);
+        let out = work_dir.join(format!("{stem}.{language}.found.srt"));
+        std::fs::write(&out, &text)
+            .map_err(|error| format!("cannot save {source} subtitle: {error}"))?;
+
+        let verdict = sync::quick_check(&crate::tools::tool_paths(), Path::new(file), &out)
+            .ok()
+            .map(|check| (check.verdict, check.suggested_shift_ms));
+        match verdict {
+            Some((verdict, shift)) if !verdict_is_acceptable(verdict, shift) => {
+                // Keep the file out of the library: the caller will translate instead.
+                let _ = std::fs::remove_file(&out);
+                Ok(None)
+            }
+            _ => Ok(Some(out.to_string_lossy().to_string())),
+        }
+    }))
 }
 
 /// The model to transcribe with: the policy's choice, then `SUBFORGE_WHISPER_MODEL`, then the
@@ -263,6 +382,41 @@ mod tests {
         assert_eq!(batch_size("openai"), 25);
         assert_eq!(batch_size("deepl"), 10);
         assert_eq!(batch_size("libretranslate"), 10);
+    }
+
+    #[test]
+    fn a_file_name_becomes_a_search_request() {
+        // The title is on the folder, the numbers on the file.
+        let request = search_request_for("/media/tv/Bleach/S17E46.mkv", "ar");
+        assert_eq!(request.title, "Bleach");
+        assert_eq!(request.season, Some(17));
+        assert_eq!(request.episode, Some(46));
+        assert_eq!(request.language, "ar");
+
+        // …or both on the file, which is the usual scene release.
+        let scene = search_request_for("/media/tv/Bleach.S17E46.1080p.mkv", "ar");
+        assert_eq!(scene.title, "Bleach");
+        assert_eq!(scene.season, Some(17));
+
+        let movie = search_request_for("/media/movies/Dune.2021.2160p.mkv", "fr");
+        assert!(movie.title.starts_with("Dune"), "{:?}", movie.title);
+        assert_eq!(movie.season, None);
+        assert_eq!(movie.episode, None);
+        assert_eq!(movie.language, "fr");
+    }
+
+    #[test]
+    fn only_plausible_subtitles_survive_the_sync_gate() {
+        use subforge_core::subtitle::sync::SyncVerdict;
+        assert!(verdict_is_acceptable(SyncVerdict::Good, None));
+        assert!(verdict_is_acceptable(SyncVerdict::Uncertain, None));
+        // A small constant shift is a different release; a large one is a different cut.
+        assert!(verdict_is_acceptable(SyncVerdict::Offset, Some(-320)));
+        assert!(verdict_is_acceptable(SyncVerdict::Offset, Some(480)));
+        assert!(!verdict_is_acceptable(SyncVerdict::Offset, Some(9_000)));
+        // These would be translated, muxed and blamed on the translation.
+        assert!(!verdict_is_acceptable(SyncVerdict::Framerate, None));
+        assert!(!verdict_is_acceptable(SyncVerdict::Truncated, None));
     }
 
     #[test]

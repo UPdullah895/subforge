@@ -60,6 +60,9 @@ pub async fn process(file: String, policy: Policy) -> Result<String, String> {
     // The runner drives async engines from a blocking task, so it needs a handle to this runtime.
     let translate = crate::pipeline::engines::translator(policy.translate_engine.clone())?;
     let work_dir = work_dir();
+    // Search is optional: with no provider key configured it answers "nothing found" and the
+    // translation path runs, which is the documented fallback rather than an error.
+    let search = crate::pipeline::engines::searcher(work_dir.clone()).ok();
     let (ok, summary) = tokio::task::spawn_blocking(move || {
         let mut runner = CoreRunner::new(paths, work_dir.clone())
             .with_translate(translate)
@@ -67,6 +70,9 @@ pub async fn process(file: String, policy: Policy) -> Result<String, String> {
                 work_dir.clone(),
                 None,
             ));
+        if let Some(search) = search {
+            runner = runner.with_search(search);
+        }
         let report = execute(&plan, &mut runner);
         let mut parts: Vec<String> = Vec::new();
         for result in &report.results {
