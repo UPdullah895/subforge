@@ -95,22 +95,37 @@ New crates: `subforge-mcp`, `subforge-pipeline` (policy + steps + verification),
 The goal "one heavy operation at a time, and vision only after transcription" is a scheduler
 property, not a UI trick.
 
-- [ ] Global concurrency limit (default **1** heavy job) with per-kind weights: transcription and
+- [x] Global concurrency limit (default **1** heavy job) with per-kind weights: transcription and
       vision never run together; cheap jobs (probe, convert, mux) may run while a heavy one runs.
-- [ ] Priority: user-initiated > watcher-initiated; per-library fairness so one library cannot starve another.
-- [ ] Persist the queue (SQLite) and resume pending jobs after a restart or crash.
-- [ ] Per-file lock + temp-file convention (`file.mkv.part`) so two jobs cannot write the same episode.
-- [ ] Progress + stage name on the existing WebSocket; `job.stage` and `job.eta`.
+      *(#6: `jobs::scheduler`, `SUBFORGE_MAX_HEAVY_JOBS` / `SUBFORGE_MAX_LIGHT_JOBS`.)*
+- [x] Priority: user-initiated > watcher-initiated. *(#6: rank, then FIFO. Per-library fairness
+      arrives with the watcher in P2, where libraries become a concept.)*
+- [x] A journal that survives a restart, and honest reporting of interrupted work.
+      *(#6: `<config dir>/server/jobs.jsonl`; restart marks queued/running jobs `failed: interrupted`.)*
+- [ ] Re-submission after a crash. Needs declarative jobs — the pipeline in P2 — because a generic
+      closure cannot be replayed.
+- [x] Per-file lock so two jobs cannot write the same episode. *(#6: one async lock per canonical path.)*
+- [x] Progress + stage name on the existing WebSocket, and `GET /api/jobs`.
+- [ ] `job.eta` and the temp-file convention (`file.mkv.part`) — the pipeline owns both.
+- [ ] Cross-kind ordering for transcription: `subforge-core` already serialises transcriptions
+      against each other (`TRANSCRIBE_SLOT`), but a transcription and a translation can still
+      overlap. Fixing it means handing the scheduler's gate to the core job starter.
 
 **Done when:** two batch jobs are started → the second shows `queued`, the first finishes, and
 killing the process mid-job leaves the queue intact and resumable.
 
 ### P1 — MCP server (AI control) — ~1–2 weeks
 
-- [ ] `subforge-mcp` on the official Rust MCP SDK (`rmcp`), transports: **stdio** (local agents) and
-      **streamable HTTP** (network agents), both mapping onto existing core functions — not onto
-      shell commands.
-- [ ] Tools (structured JSON in/out, every heavy one returns a `job_id`):
+- [x] `subforge-mcp` over **stdio**, every tool a direct call into `subforge-core` — not a shell
+      command. *(#7: hand-written JSON-RPC 2.0 framing so the transport layer stays replaceable;
+      `initialize` negotiation, `tools/list`, `tools/call`, spec error codes, tool failures as
+      `isError` results.)*
+- [ ] **streamable HTTP** transport for agents on another machine — the same tool table behind a
+      different reader. Deliberate next step; the tool layer is already transport-independent, and
+      swapping in `rmcp` later only replaces the framing.
+- [x] Seven tools shipped: `list_tracks`, `find_missing_languages`, `extract_subtitles`,
+      `merge_subtitles`, `convert_subtitle`, `shift_subtitle`, `probe_media`. *(#7)*
+- [ ] The heavy half, each returning a `job_id` from the scheduler:
       `scan_library`, `list_tracks`, `find_missing_languages`, `extract_subtitles`,
       `transcribe`, `translate`, `search_online_subtitles`, `merge_subtitles`, `remove_tracks`,
       `clean_subtitles`, `convert_subtitle`, `shift_subtitle`, `align_audio`, `split_video`,
