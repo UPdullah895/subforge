@@ -32,7 +32,61 @@ async fn health() -> impl IntoResponse {
     )
 }
 
+/// Origins a browser may send. The spec requires validating `Origin` so a web page cannot
+/// drive the server through DNS rebinding: `http://localhost:8091` is fine, `http://evil.example`
+/// resolving to 127.0.0.1 is not. Non-browser clients (CLI, agents) send no Origin at all, which
+/// is why absence is allowed and a foreign value is refused.
+///
+/// `SUBFORGE_MCP_ALLOWED_ORIGINS` adds hosts (comma separated) for the case where the server is
+/// fronted by a real web UI on another origin.
+fn origin_allowed(origin: &str) -> bool {
+    let extra: Vec<String> = std::env::var("SUBFORGE_MCP_ALLOWED_ORIGINS")
+        .map(|list| {
+            list.split(',')
+                .map(|item| item.trim().to_ascii_lowercase())
+                .filter(|item| !item.is_empty())
+                .collect()
+        })
+        .unwrap_or_default();
+    origin_allowed_with(origin, &extra)
+}
+
+fn origin_allowed_with(origin: &str, extra: &[String]) -> bool {
+    let origin = origin.trim().to_ascii_lowercase();
+    if extra.iter().any(|allowed| allowed == &origin) {
+        return true;
+    }
+    // Compare the host only: the port a page was served from says nothing about safety.
+    let after_scheme = origin
+        .split_once("://")
+        .map(|(_, rest)| rest)
+        .unwrap_or(&origin);
+    let host_and_port = after_scheme.split('/').next().unwrap_or(after_scheme);
+    let host = if let Some(stripped) = host_and_port.strip_prefix('[') {
+        stripped.split(']').next().unwrap_or(stripped)
+    } else {
+        host_and_port.split(':').next().unwrap_or(host_and_port)
+    };
+    matches!(
+        host,
+        "localhost" | "127.0.0.1" | "::1" | "0.0.0.0" | "[::1]"
+    )
+}
+
 async fn handle(_state: State<()>, headers: HeaderMap, body: Bytes) -> Response {
+    if let Some(origin) = headers
+        .get(header::ORIGIN)
+        .and_then(|value| value.to_str().ok())
+    {
+        if !origin_allowed(origin) {
+            return (
+                StatusCode::FORBIDDEN,
+                "this origin may not talk to the MCP endpoint (set SUBFORGE_MCP_ALLOWED_ORIGINS)",
+            )
+                .into_response();
+        }
+    }
+
     // MCP clients must accept JSON; be lenient if the header is missing entirely, but refuse
     // an explicit "text/event-stream only" request rather than answering in the wrong shape.
     let accepts_json = headers
@@ -127,6 +181,24 @@ mod tests {
         let value = respond("{oops").unwrap();
         assert_eq!(value["error"]["code"], json!(-32700));
         assert_eq!(value["id"], serde_json::Value::Null);
+    }
+
+    #[test]
+    fn a_foreign_origin_is_refused_but_loopback_is_not() {
+        // The spec's DNS-rebinding rule: a page on any origin must not reach the endpoint.
+        assert!(origin_allowed_with("http://localhost:3000", &[]));
+        assert!(origin_allowed_with("http://127.0.0.1:8091", &[]));
+        assert!(origin_allowed_with("https://[::1]:8443", &[]));
+        assert!(origin_allowed_with("HTTP://LOCALHOST", &[]));
+
+        assert!(!origin_allowed_with("http://evil.example", &[]));
+        assert!(!origin_allowed_with("http://localhost.evil.example", &[]));
+        assert!(!origin_allowed_with("null", &[]));
+
+        // An operator can allow the origin their own UI is served from.
+        let extra = vec!["https://media.example".to_string()];
+        assert!(origin_allowed_with("https://media.example", &extra));
+        assert!(!origin_allowed_with("https://other.example", &extra));
     }
 
     #[test]
