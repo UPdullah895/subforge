@@ -137,10 +137,20 @@ impl StepRunner for CoreRunner {
     }
 
     fn transcribe(&mut self, file: &str, language: Option<&str>) -> Result<String, String> {
-        match &self.transcribe {
-            Some(transcribe) => transcribe(file, language),
-            None => Err("transcription engine is not configured".to_string()),
+        let Some(transcribe) = &self.transcribe else {
+            return Err("transcription engine is not configured".to_string());
+        };
+        let path = transcribe(file, language)?;
+        // Silence, music and wrong audio streams produce an empty file. Passing that on would
+        // mux an empty track and call it success.
+        let text = std::fs::read_to_string(&path).unwrap_or_default();
+        if crate::rules::parse_srt(&text).is_empty() {
+            return Err(format!(
+                "no speech was detected in {file}, so there is no subtitle to write \
+                 (wrong audio track, music only, or a silent file?)"
+            ));
         }
+        Ok(path)
     }
 
     fn extract_existing(&mut self, file: &str, language: Option<&str>) -> Result<String, String> {
@@ -444,6 +454,22 @@ mod tests {
             .extract_existing(&audio_only.to_string_lossy(), Some("ar"))
             .unwrap_err();
         assert!(!error.is_empty());
+    }
+
+    #[test]
+    fn an_empty_transcript_is_a_failure_not_an_empty_track() {
+        let dir = std::env::temp_dir().join(format!("sf_silent_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let silent = dir.join("silent.srt");
+        std::fs::write(&silent, "").unwrap();
+        let path = silent.to_string_lossy().to_string();
+
+        let mut runner = CoreRunner::new(ToolPaths::default(), dir.clone())
+            .with_transcribe(Box::new(move |_, _| Ok(path.clone())));
+        let error = runner.transcribe("/tv/E01.mkv", None).unwrap_err();
+        assert!(error.contains("no speech was detected"), "{error}");
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

@@ -9,7 +9,9 @@ use std::path::{Path, PathBuf};
 
 use subforge_core::lines;
 use subforge_core::translate;
-use subforge_pipeline::runner::TranslateFn;
+use subforge_core::whisper::{models, transcribe::TranscribeOptions, Device};
+use subforge_pipeline::runner::{TranscribeFn, TranslateFn};
+use tokio_util::sync::CancellationToken;
 
 use crate::config::AppConfig;
 
@@ -42,6 +44,79 @@ pub fn output_path(input: &str, language: &str) -> PathBuf {
         .map(|stem| stem.to_string_lossy().to_string())
         .unwrap_or_else(|| "subtitle".to_string());
     path.with_file_name(format!("{stem}.{language}.srt"))
+}
+
+/// The model to transcribe with: the policy's choice, then `SUBFORGE_WHISPER_MODEL`, then the
+/// largest model already downloaded — and never a download behind the user's back.
+pub fn resolve_model(policy_model: Option<&str>, cache: &Path) -> Result<String, String> {
+    if let Some(name) = policy_model.map(str::trim).filter(|name| !name.is_empty()) {
+        return Ok(name.to_string());
+    }
+    if let Some(name) = std::env::var("SUBFORGE_WHISPER_MODEL")
+        .ok()
+        .map(|name| name.trim().to_string())
+        .filter(|name| !name.is_empty())
+    {
+        return Ok(name);
+    }
+    let downloaded = models::list_downloaded(cache);
+    let best = downloaded
+        .iter()
+        .filter_map(|name| models::spec_for(name))
+        .max_by_key(|spec| spec.size_mb)
+        .map(|spec| spec.name.to_string());
+    match best {
+        Some(name) => Ok(name),
+        None => Err(format!(
+            "no speech model is downloaded in {}; download one in the app (Settings → Speech), \
+             or set SUBFORGE_WHISPER_MODEL",
+            cache.display()
+        )),
+    }
+}
+
+/// A transcription closure for the pipeline. Runs whisper.cpp synchronously; the executor calls
+/// it from a blocking task, so no runtime is needed here.
+pub fn transcriber(work_dir: PathBuf, model: Option<String>) -> TranscribeFn {
+    Box::new(move |file: &str, language: Option<&str>| {
+        let cache = models::default_cache_dir();
+        let model = resolve_model(model.as_deref(), &cache)?;
+        let stem = Path::new(file)
+            .file_stem()
+            .map(|stem| stem.to_string_lossy().to_string())
+            .unwrap_or_else(|| "episode".to_string());
+        let _ = std::fs::create_dir_all(&work_dir);
+        let output = work_dir.join(format!("{stem}.whisper.srt"));
+
+        // `und` is mkvmerge's "unknown", not a language whisper understands.
+        let language = language
+            .map(str::trim)
+            .filter(|code| !code.is_empty() && !code.eq_ignore_ascii_case("und"))
+            .map(str::to_string);
+        // VAD only when its model is present: a missing little model must not fail the episode.
+        let vad = models::model_path(&cache, &models::VAD_MODEL).is_file();
+
+        let options = TranscribeOptions {
+            input: PathBuf::from(file),
+            output: output.clone(),
+            model,
+            device: Device::Auto,
+            language,
+            format: Default::default(),
+            word_timestamps: false,
+            vad_filter: vad,
+            cache_dir: Some(cache),
+        };
+        let mut progress = |_pct: f64, _message: Option<&str>| {};
+        subforge_core::whisper::transcribe(
+            &crate::tools::tool_paths(),
+            &options,
+            &mut progress,
+            CancellationToken::new(),
+        )
+        .map_err(|error| error.to_string())?;
+        Ok(output.to_string_lossy().to_string())
+    })
 }
 
 /// A translation closure for the pipeline. Fails at construction when there is no runtime to
@@ -188,6 +263,24 @@ mod tests {
         assert_eq!(batch_size("openai"), 25);
         assert_eq!(batch_size("deepl"), 10);
         assert_eq!(batch_size("libretranslate"), 10);
+    }
+
+    #[test]
+    fn an_empty_cache_asks_for_a_download_instead_of_downloading() {
+        let dir = std::env::temp_dir().join(format!("sf_models_{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&dir);
+        let error = resolve_model(None, &dir).unwrap_err();
+        assert!(error.contains("no speech model is downloaded"), "{error}");
+        assert!(error.contains("Settings → Speech"), "{error}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn the_policy_model_wins_over_whatever_is_on_disk() {
+        let dir = std::env::temp_dir();
+        assert_eq!(resolve_model(Some("medium"), &dir).unwrap(), "medium");
+        // Blank means "decide for me", not "use a model called ''".
+        assert!(resolve_model(Some("   "), &dir).is_err());
     }
 
     #[test]

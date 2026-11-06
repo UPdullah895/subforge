@@ -89,8 +89,14 @@ pub fn execute<R: StepRunner>(plan: &Plan, runner: &mut R) -> Report {
     let mut language_failed = false;
     let mut current_language: Option<String> = None;
 
-    for step in &plan.steps {
-        let language = step_language(step);
+    // A "language block" is the run of steps that finishes one target language. A transcription
+    // has no target of its own (it produces the source text), so it inherits the block of the
+    // step that follows it — otherwise transcribe(None) → translate("ar") would look like two
+    // blocks and the transcript would be thrown away before it is translated.
+    let block_keys = block_keys(&plan.steps);
+
+    for (index, step) in plan.steps.iter().enumerate() {
+        let language = block_keys[index].clone();
         if language != current_language {
             // A new language block starts clean.
             current_language = language.clone();
@@ -313,6 +319,25 @@ impl StepRunner for DryRun {
     }
 }
 
+/// The block each step belongs to.
+///
+/// A transcription carries the *audio* language (`eng`), not a target, and the block it serves is
+/// the one that follows it — a plan for a Japanese file that needs Arabic is
+/// `transcribe(ja) → translate(ar) → mux(ar)`, and treating those two as different blocks throws
+/// the transcript away half a step after making it.
+fn block_keys(steps: &[Step]) -> Vec<Option<String>> {
+    let mut keys: Vec<Option<String>> = steps.iter().map(step_language).collect();
+    for index in (0..steps.len()).rev() {
+        let is_transcription = matches!(steps[index], Step::Transcribe { .. });
+        if is_transcription || keys[index].is_none() {
+            if let Some(next) = steps[index + 1..].iter().find_map(step_language) {
+                keys[index] = Some(next);
+            }
+        }
+    }
+    keys
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -509,6 +534,143 @@ mod tests {
         let report = execute(&plan, &mut runner);
         assert!(report.ok);
         assert_eq!(runner.calls.first().unwrap(), "transcribe /lib/E02.mkv");
+    }
+
+    #[test]
+    fn a_transcript_is_not_thrown_away_by_the_step_after_it() {
+        // The regression that made a subtitle-less file fail: transcribe has no target language
+        // of its own, so it looked like a new block and the transcript was dropped before the
+        // translate step could use it.
+        let plan = Plan {
+            file: "/tv/E01.mkv".to_string(),
+            present: vec![],
+            missing: vec!["ar".to_string()],
+            steps: vec![
+                Step::Transcribe { language: None },
+                Step::Translate {
+                    from: None,
+                    to: "ar".to_string(),
+                    only_if_no_subtitle: false,
+                },
+                Step::Mux {
+                    language: "ar".to_string(),
+                },
+                Step::Verify {
+                    language: "ar".to_string(),
+                },
+            ],
+        };
+        let mut runner = Fake::default();
+        let report = execute(&plan, &mut runner);
+        assert!(report.ok, "{:?}", report.results);
+        assert!(
+            !runner.calls.iter().any(|call| call.starts_with("extract")),
+            "the transcript exists; nothing should be extracted: {:?}",
+            runner.calls
+        );
+        assert!(
+            runner
+                .calls
+                .iter()
+                .any(|call| call.starts_with("translate /tmp/src-")),
+            "the translate step must consume the transcript: {:?}",
+            runner.calls
+        );
+    }
+
+    #[test]
+    fn a_transcription_of_another_language_still_belongs_to_the_next_block() {
+        // The live failure: the audio is English, the target is Arabic, so transcribe carried
+        // "eng" and the translate step started a "new block" that had nothing pending.
+        let plan = Plan {
+            file: "/tv/E01.mkv".to_string(),
+            present: vec![],
+            missing: vec!["ar".to_string()],
+            steps: vec![
+                Step::Transcribe {
+                    language: Some("eng".to_string()),
+                },
+                Step::Translate {
+                    from: Some("eng".to_string()),
+                    to: "ar".to_string(),
+                    only_if_no_subtitle: false,
+                },
+                Step::Mux {
+                    language: "ar".to_string(),
+                },
+                Step::Verify {
+                    language: "ar".to_string(),
+                },
+            ],
+        };
+        let mut runner = Fake::default();
+        let report = execute(&plan, &mut runner);
+        assert!(report.ok, "{:?}", report.results);
+        assert!(
+            !runner.calls.iter().any(|call| call.starts_with("extract")),
+            "the transcript must reach the translate step: {:?}",
+            runner.calls
+        );
+        assert!(
+            runner
+                .calls
+                .iter()
+                .any(|call| call.starts_with("translate /tmp/src-")),
+            "{:?}",
+            runner.calls
+        );
+    }
+
+    #[test]
+    fn a_second_language_starts_clean() {
+        let plan = Plan {
+            file: "/tv/E01.mkv".to_string(),
+            present: vec![],
+            missing: vec!["ar".to_string(), "fr".to_string()],
+            steps: vec![
+                Step::Transcribe { language: None },
+                Step::Translate {
+                    from: None,
+                    to: "ar".to_string(),
+                    only_if_no_subtitle: false,
+                },
+                Step::Mux {
+                    language: "ar".to_string(),
+                },
+                Step::Verify {
+                    language: "ar".to_string(),
+                },
+                Step::Transcribe { language: None },
+                Step::Translate {
+                    from: None,
+                    to: "fr".to_string(),
+                    only_if_no_subtitle: false,
+                },
+                Step::Mux {
+                    language: "fr".to_string(),
+                },
+                Step::Verify {
+                    language: "fr".to_string(),
+                },
+            ],
+        };
+        let mut runner = Fake::default();
+        let report = execute(&plan, &mut runner);
+        assert!(report.ok, "{:?}", report.results);
+        // Two transcriptions, and each translate used its own transcript — never the first one.
+        let transcribed: Vec<&String> = runner
+            .calls
+            .iter()
+            .filter(|call| call.starts_with("transcribe"))
+            .collect();
+        assert_eq!(transcribed.len(), 2, "{:?}", runner.calls);
+        let translated: Vec<&String> = runner
+            .calls
+            .iter()
+            .filter(|call| call.starts_with("translate"))
+            .collect();
+        assert_eq!(translated.len(), 2, "{:?}", runner.calls);
+        assert_ne!(translated[0], translated[1], "both languages used one file");
     }
 
     #[test]

@@ -61,14 +61,30 @@ pub async fn process(file: String, policy: Policy) -> Result<String, String> {
     let translate = crate::pipeline::engines::translator(policy.translate_engine.clone())?;
     let work_dir = work_dir();
     let (ok, summary) = tokio::task::spawn_blocking(move || {
-        let mut runner = CoreRunner::new(paths, work_dir).with_translate(translate);
+        let mut runner = CoreRunner::new(paths, work_dir.clone())
+            .with_translate(translate)
+            .with_transcribe(crate::pipeline::engines::transcriber(
+                work_dir.clone(),
+                None,
+            ));
         let report = execute(&plan, &mut runner);
         let mut parts: Vec<String> = Vec::new();
         for result in &report.results {
+            // Name the step: a summary that says only "failed: ..." leaves the user guessing
+            // which part of the pipeline is talking.
+            let step = match &result.step {
+                Step::SearchOnline { .. } => "search",
+                Step::Transcribe { .. } => "transcribe",
+                Step::Translate { .. } => "translate",
+                Step::Lint { .. } => "lint",
+                Step::Mux { .. } => "mux",
+                Step::Verify { .. } => "verify",
+                Step::CleanupSource { .. } => "cleanup",
+            };
             match &result.outcome {
-                Outcome::Failed(error) => parts.push(format!("failed: {error}")),
-                Outcome::Skipped(reason) => parts.push(format!("skipped: {reason}")),
-                Outcome::Done(detail) => parts.push(detail.clone()),
+                Outcome::Failed(error) => parts.push(format!("{step} failed: {error}")),
+                Outcome::Skipped(reason) => parts.push(format!("{step} skipped: {reason}")),
+                Outcome::Done(detail) => parts.push(format!("{step}: {detail}")),
             }
         }
         (report.ok, format!("{file}: {}", parts.join("; ")))
