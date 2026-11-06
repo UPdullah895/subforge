@@ -13,6 +13,7 @@
 use serde::{Deserialize, Serialize};
 use subforge_core::tools::{mkvtoolnix, ToolPaths};
 
+pub mod exec;
 pub mod language;
 
 pub use language::normalize_language;
@@ -107,7 +108,15 @@ pub enum Step {
     /// Transcribe the audio (needed when the file has no text subtitle at all).
     Transcribe { language: Option<String> },
     /// Machine-translate an existing subtitle into this language.
-    Translate { from: Option<String>, to: String },
+    ///
+    /// `only_if_no_subtitle` is true when the step is the *fallback* to an online search:
+    /// the executor skips it if the search already produced a human subtitle.
+    Translate {
+        from: Option<String>,
+        to: String,
+        #[serde(default)]
+        only_if_no_subtitle: bool,
+    },
     /// Mux the produced subtitle into the video with its language and flags.
     Mux { language: String },
     /// Re-read the file: the track must be there, complete and in sync.
@@ -167,6 +176,7 @@ pub fn plan(file: &str, inventory: &Inventory, policy: &Policy) -> Plan {
             steps.push(Step::Translate {
                 from: inventory.source_language().map(str::to_string),
                 to: language.clone(),
+                only_if_no_subtitle: policy.prefer_human_subtitle,
             });
         } else {
             // No subtitle track at all: the text has to be produced from the audio first, and
@@ -182,6 +192,7 @@ pub fn plan(file: &str, inventory: &Inventory, policy: &Policy) -> Plan {
                 steps.push(Step::Translate {
                     from: inventory.source_language().map(str::to_string),
                     to: language.clone(),
+                    only_if_no_subtitle: false,
                 });
             }
         }
@@ -272,7 +283,8 @@ mod tests {
                 },
                 Step::Translate {
                     from: Some("ja".into()),
-                    to: "ar".into()
+                    to: "ar".into(),
+                    only_if_no_subtitle: true,
                 },
                 Step::Mux {
                     language: "ar".into()
@@ -299,7 +311,8 @@ mod tests {
         );
         assert!(plan.steps.contains(&Step::Translate {
             from: Some("ja".into()),
-            to: "ar".into()
+            to: "ar".into(),
+            only_if_no_subtitle: false,
         }));
     }
 
@@ -338,7 +351,9 @@ mod tests {
             plan.steps.first(),
             Some(&Step::Translate {
                 from: Some("ja".into()),
-                to: "ar".into()
+                to: "ar".into(),
+                // No human search in this policy, so the translation is unconditional.
+                only_if_no_subtitle: false,
             })
         );
     }
