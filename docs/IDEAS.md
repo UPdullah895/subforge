@@ -260,3 +260,76 @@ polls. *Effort*: M.
 - Whisper speed numbers come from the projects' own READMEs (plus a peer-reviewed benchmark for
   `small` on CPU); none were re-measured on this machine except the GCC-PHAT/ducking probes.
 - The moderation model licence question is **open**; do not ship a detector until it is answered.
+
+---
+
+## H. Competitor map — what they solve, and the gap they leave
+
+**H1. VideoLingo (Apache-2.0, 19k★) is the closest thing to the same product.**
+Its README describes "Netflix-level subtitle cutting, translation, alignment and dubbing", a
+Streamlit pipeline that runs one operation at a time, local Qwen3-ASR + ForcedAligner, a
+`custom_terms.xlsx` glossary, JSON-structured LLM output with response caching and retry, and TTS
+through OpenAI/Fish/GPT-SoVITS/Edge/F5
+([github.com/Huanshere/VideoLingo](https://github.com/Huanshere/VideoLingo)).
+Two honest limits are stated in its own docs: *"the dubbing workflow does not automatically assign
+a separate voice to each speaker"* and *"speed adjustment does not guarantee natural delivery or
+perfect synchronization."* **That is the gap.** Apache-2.0 also means its glossary and
+JSON-schema-with-cache design can be borrowed outright.
+*Take*: the termbase file, the cached structured output, "cut at sentence boundaries" as the
+alignment strategy. *Beat it with*: per-speaker voices, a real rule-set linter, and a library
+workflow instead of one video at a time.
+
+**H2. pyVideoTrans (GPL-3.0, 19.6k★) sets the feature bar.**
+ASR → subtitle translation → TTS → video synthesis in one click, **speaker diarization**,
+**multi-role AI dubbing** (a different voice per speaker), zero-shot voice cloning (F5-TTS,
+CosyVoice, GPT-SoVITS), stage-by-stage manual proofreading, and a toolkit with vocal separation
+and audio/video alignment; GPU needs CUDA 12.8 + cuDNN 9.11
+([github.com/jianchang512/pyvideotrans](https://github.com/jianchang512/pyvideotrans)).
+*Read it for scope, do not copy code* (GPL-3.0). Its existence is why "dubbing with per-speaker
+voices" belongs on our roadmap rather than in a wish list.
+
+**H3. Subtitles that are merely out of sync are the cheapest quality win available.**
+ffsubsync (MIT, 7.9k★, maintained) aligns a subtitle to a video by comparing VAD audio activity
+([github.com/smacke/ffsubsync](https://github.com/smacke/ffsubsync)); alass does language-agnostic
+alignment but is **GPL-3.0** and idle since 2023
+([github.com/kaegi/alass](https://github.com/kaegi/alass)). *Where*: `Step::SyncExisting` before
+translation — a downloaded subtitle that is 1.5 s off produces a translated subtitle that is
+1.5 s off, and users blame the translation. Our `subtitle/sync.rs` already has the offset
+detection; wiring it into the pipeline is small. *Effort*: S.
+
+**H4. Be the backend other tools call.**
+Lingarr (906★) is a separate self-hosted translation service that Bazarr talks to; Bazarr gained a
+Lingarr integration on its own
+([github.com/lingarr-translate/lingarr](https://github.com/lingarr-translate/lingarr)).
+The lesson is distribution, not features: a clean HTTP + MCP surface lets SubForge be *the*
+translation/dubbing engine for tools people already run, without winning a UI war first.
+*Where*: our server API + MCP already are that surface; document them as one (OpenAPI + a
+one-page "call it from n8n/Sonarr/Bazarr" recipe). *Effort*: S.
+
+**H5. Bazarr's own issue list is a list of design rules for us.**
+Open/recent issues cluster around: Whisper subtitles never passing a movie's minimum score, an
+OpenAI-compatible translator failing on strict endpoints (Groq) because of hardcoded parameters,
+picking the wrong audio stream when several exist, provider outages breaking the whole run, and
+translation arriving through a bolt-on service
+([issues](https://github.com/morpheus65535/bazarr/issues)).
+*Rules for us*: (a) never gate a transcript behind a provider score; (b) expose every engine
+parameter instead of hardcoding one vendor's defaults; (c) let the policy name the audio track or
+pick by language + channel count, never "the first one"; (d) one provider failing must degrade to
+the next, not fail the episode; (e) translation is a first-class step, not an integration.
+
+---
+
+## I. Two features the competitors prove are needed
+
+**I1. Speaker diarization, because "a voice per speaker" is already table stakes.**
+pyVideoTrans ships multi-role dubbing; VideoLingo explicitly does not. The gap between those two
+sentences is the product. *Where*: a `Step::Diarize` producing speaker-labelled segments that the
+translation prompt and the TTS voice selection both consume. *Caveat*: the best-known diarization
+model (pyannote) is gated behind a Hugging Face token and its own terms — check before bundling.
+*Effort*: L.
+
+**I2. A termbase, because names are what make a translation look machine-made.**
+VideoLingo's `custom_terms.xlsx` exists for exactly this. *Where*: `policy.json` gains
+`terms: [{source, target, note}]`, injected into every batch prompt; the linter gains an
+"entity preserved?" check. *Effort*: S — and it is the single cheapest visible quality upgrade
+for anime and drama, where names repeat every episode.
