@@ -236,33 +236,6 @@ polls. *Effort*: M.
 
 ---
 
-## Roadmap mapping
-
-| Idea | Phase | Notes |
-|---|---|---|
-| A1 */arr hooks* | P2 | unblocks "monitored only" and kills polling |
-| B1 linter + B2 CPS-aware translation | P2/P3 | ships with the pipeline, not after it |
-| A3 provider keys + counters | P2 | legal-first, before any provider work |
-| F3/F4 MCP tools + progress | P1/P3 | wraps existing code |
-| C1 dual ASR, C2 word timings, C3 alignment | P4 | the توزين milestone |
-| E1/E2/E3 packaging | P2 | parallel, do it with the Docker work |
-| D1 OCR, D2 scenes | P4 | after the pipeline is trusted |
-| C4 mix, C5 TTS | P5 | licence review first |
-| D3 moderation | P5 | report-only until proven |
-
----
-
-## Research gaps (honest)
-
-- The Docker/Unraid/TrueNAS pass ran on first-party pages only; Synology and TrueNAS template
-  specifics were **not** verified in this round.
-- No test on arm64 hardware — the ARM claims here are from documentation, not measurement.
-- Whisper speed numbers come from the projects' own READMEs (plus a peer-reviewed benchmark for
-  `small` on CPU); none were re-measured on this machine except the GCC-PHAT/ducking probes.
-- The moderation model licence question is **open**; do not ship a detector until it is answered.
-
----
-
 ## H. Competitor map — what they solve, and the gap they leave
 
 **H1. VideoLingo (Apache-2.0, 19k★) is the closest thing to the same product.**
@@ -333,3 +306,32 @@ VideoLingo's `custom_terms.xlsx` exists for exactly this. *Where*: `policy.json`
 `terms: [{source, target, note}]`, injected into every batch prompt; the linter gains an
 "entity preserved?" check. *Effort*: S — and it is the single cheapest visible quality upgrade
 for anime and drama, where names repeat every episode.
+
+---
+
+## Roadmap mapping
+
+| Idea | Phase | Notes |
+|---|---|---|
+| A1 */arr hooks* | P2 | unblocks "monitored only" and kills polling |
+| B1 linter + B2 CPS-aware translation | P2/P3 | ships with the pipeline, not after it |
+| A3 provider keys + counters | P2 | legal-first, before any provider work |
+| F3/F4 MCP tools + progress | P1/P3 | wraps existing code |
+| C1 dual ASR, C2 word timings, C3 alignment | P4 | the توزين milestone |
+| E1/E2/E3 packaging | P2 | parallel, do it with the Docker work |
+| D1 OCR, D2 scenes | P4 | after the pipeline is trusted |
+| C4 mix, C5 TTS | P5 | licence review first |
+| D3 moderation | P5 | report-only until proven |
+
+---
+
+## Research gaps (honest)
+
+- The Docker/Unraid/TrueNAS pass ran on first-party pages only; Synology and TrueNAS template
+  specifics were **not** verified in this round.
+- No test on arm64 hardware — the ARM claims here are from documentation, not measurement.
+- Whisper speed numbers come from the projects' own READMEs (plus a peer-reviewed benchmark for
+  `small` on CPU); none were re-measured on this machine except the GCC-PHAT/ducking probes.
+- The moderation model licence question is **open**; do not ship a detector until it is answered.
+
+---
