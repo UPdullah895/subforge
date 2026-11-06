@@ -1,0 +1,17 @@
+# Keep the build context small and the image deterministic.
+.git
+.github
+node_modules
+dist
+**/target
+**/node_modules
+.vscode
+docs
+packaging
+crates/subforge-core/tests/fixtures/media
+crates/subforge-core/tests/fixtures/fonts
+*.AppImage
+*.deb
+*.rpm
+*.msi
+*.exe
