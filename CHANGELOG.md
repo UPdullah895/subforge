@@ -6,7 +6,7 @@ All notable changes to this project are documented here. Format based on
 ## [Unreleased]
 
 ### Added
-- **`subforge-mcp`** — a Model Context Protocol server over stdio, so an agent can drive SubForge: seven tools (`list_tracks`, `find_missing_languages`, `extract_subtitles`, `merge_subtitles`, `convert_subtitle`, `shift_subtitle`, `probe_media`), each mapped onto the shared core. Verified with a real MCP client: initialise, list, extract, convert, retime, mux, and re-read the merged file to confirm the new track's language and name.
+- **`subforge-mcp`** — a Model Context Protocol server (stdio **and** streamable HTTP, `--http ADDR`), so an agent can drive SubForge: seven tools (`list_tracks`, `find_missing_languages`, `extract_subtitles`, `merge_subtitles`, `convert_subtitle`, `shift_subtitle`, `probe_media`), each mapped onto the shared core. Verified with a real MCP client: initialise, list, extract, convert, retime, mux, and re-read the merged file to confirm the new track's language and name.
 - `scripts/install-appimage.sh`: installs the Linux AppImage for the current user — copies it to `~/.local/bin/subforge`, adds the menu entry and the icons, and supports `--uninstall`. An AppImage installs none of that by itself, so a user who is not a developer previously had no launcher icon and no `subforge` command.
 - The release workflow publishes `SHA256SUMS.txt` for the installers of every release, so a download can be verified with `sha256sum -c` before it is run.
 - An update notice: the app asks GitHub once a day whether a newer release exists and shows a bar with a link when there is one (dismissible per version, no download). The version comes from `package.json` through a Vite define, so the web UI served by `server/` shows it too.

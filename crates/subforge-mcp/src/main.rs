@@ -9,6 +9,7 @@
 //! tools works here (`SUBFORGE_BUNDLED_DIR`, or a `bin` directory next to the binary, or the
 //! tools on `PATH`).
 
+mod http;
 mod jsonrpc;
 mod tools;
 
@@ -20,34 +21,83 @@ use jsonrpc::{Incoming, Response, INVALID_PARAMS, METHOD_NOT_FOUND};
 
 const SERVER_NAME: &str = "subforge-mcp";
 
-fn main() {
-    let args: Vec<String> = std::env::args().skip(1).collect();
-    for arg in &args {
-        match arg.as_str() {
+enum Mode {
+    Stdio,
+    Http(std::net::SocketAddr),
+}
+
+/// `--http [addr]` (or `--http=addr`); everything else prints and exits.
+fn parse_args(args: &[String]) -> Result<Mode, String> {
+    let mut mode = Mode::Stdio;
+    let mut index = 0;
+    while index < args.len() {
+        let arg = args[index].as_str();
+        match arg {
             "--version" | "-V" => {
                 println!("{} {}", SERVER_NAME, env!("CARGO_PKG_VERSION"));
-                return;
+                std::process::exit(0);
             }
             "--list-tools" => {
                 // Handy for debugging without an MCP client.
                 println!("{}", serde_json::to_string_pretty(&tools::specs()).unwrap());
-                return;
+                std::process::exit(0);
             }
             "--help" | "-h" => {
                 println!(
-                    "{SERVER_NAME} {}\n\nMCP server over stdio (newline-delimited JSON-RPC).\n\
-                     \nOptions:\n  --list-tools   print the tool table and exit\n  \
-                     --version      print the version and exit\n\n\
+                    "{SERVER_NAME} {}\n\n\
+                     MCP server. Default transport: stdio (one JSON-RPC message per line).\n\
+                     \nOptions:\n  \
+                     --http [ADDR]   serve streamable HTTP instead, POSTing to /mcp\n  \
+                     \x20                (ADDR defaults to 127.0.0.1:8091, or use --http=ADDR)\n  \
+                     --list-tools    print the tool table and exit\n  \
+                     --version       print the version and exit\n\n\
                      Point SUBFORGE_BUNDLED_DIR at a directory holding mkvmerge/mkvextract/\n\
                      ffmpeg, or put them on PATH.",
                     env!("CARGO_PKG_VERSION")
                 );
-                return;
+                std::process::exit(0);
             }
-            other => {
-                eprintln!("unknown argument: {other} (try --help)");
-                std::process::exit(2);
+            "--http" => {
+                let addr = match args.get(index + 1).map(String::as_str) {
+                    Some(next) if !next.starts_with('-') => {
+                        index += 1;
+                        next
+                    }
+                    _ => "127.0.0.1:8091",
+                };
+                mode = Mode::Http(
+                    addr.parse()
+                        .map_err(|e| format!("invalid address {addr:?}: {e}"))?,
+                );
             }
+            other if other.starts_with("--http=") => {
+                let addr = &other["--http=".len()..];
+                mode = Mode::Http(
+                    addr.parse()
+                        .map_err(|e| format!("invalid address {addr:?}: {e}"))?,
+                );
+            }
+            other => return Err(format!("unknown argument: {other} (try --help)")),
+        }
+        index += 1;
+    }
+    Ok(mode)
+}
+
+fn main() {
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    match parse_args(&args) {
+        Ok(Mode::Http(addr)) => {
+            if let Err(error) = http::serve(addr) {
+                eprintln!("[subforge-mcp] cannot serve on {addr}: {error}");
+                std::process::exit(1);
+            }
+            return;
+        }
+        Ok(Mode::Stdio) => {}
+        Err(message) => {
+            eprintln!("{message}");
+            std::process::exit(2);
         }
     }
 
@@ -71,8 +121,10 @@ fn main() {
     }
 }
 
-/// Handles one line; `None` means "notification, stay silent".
-fn handle_line(line: &str) -> Option<Response> {
+/// Handles one JSON-RPC message; `None` means "notification, stay silent".
+///
+/// Shared by both transports: stdio calls it per line, HTTP per request body.
+pub(crate) fn handle_line(line: &str) -> Option<Response> {
     let incoming = match jsonrpc::parse_line(line) {
         Ok(incoming) => incoming,
         Err(response) => return Some(response),
